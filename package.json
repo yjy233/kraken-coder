@@ -1,0 +1,172 @@
+{
+  "name": "kraken-coder",
+  "displayName": "Kraken Coder",
+  "description": "A pragmatic coding assistant for VS Code with reviewable code changes.",
+  "version": "0.1.0",
+  "publisher": "kraken",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:krakenCoder.chatView",
+    "onCommand:kraken.openChat",
+    "onCommand:kraken.configureModel",
+    "onCommand:kraken.setApiKey",
+    "onCommand:kraken.clearSession",
+    "onCommand:kraken.explainSelection",
+    "onCommand:kraken.fixSelection",
+    "onCommand:kraken.generateTests",
+    "onCommand:kraken.addSelectionToContext"
+  ],
+  "main": "./out/extension.js",
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "check": "tsc -p ./ --noEmit"
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "krakenCoder",
+          "title": "Kraken Coder",
+          "icon": "resources/kraken.svg"
+        }
+      ]
+    },
+    "views": {
+      "krakenCoder": [
+        {
+          "type": "webview",
+          "id": "krakenCoder.chatView",
+          "name": "Chat"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "kraken.openChat",
+        "title": "Kraken: Open Chat",
+        "category": "Kraken"
+      },
+      {
+        "command": "kraken.configureModel",
+        "title": "Kraken: Configure Model",
+        "category": "Kraken"
+      },
+      {
+        "command": "kraken.setApiKey",
+        "title": "Kraken: Set API Key",
+        "category": "Kraken"
+      },
+      {
+        "command": "kraken.clearSession",
+        "title": "Kraken: Clear Session",
+        "category": "Kraken"
+      },
+      {
+        "command": "kraken.explainSelection",
+        "title": "Kraken: Explain Selection",
+        "category": "Kraken"
+      },
+      {
+        "command": "kraken.fixSelection",
+        "title": "Kraken: Fix Selection",
+        "category": "Kraken"
+      },
+      {
+        "command": "kraken.generateTests",
+        "title": "Kraken: Generate Tests",
+        "category": "Kraken"
+      },
+      {
+        "command": "kraken.addSelectionToContext",
+        "title": "Kraken: Add Selection To Context",
+        "category": "Kraken"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "kraken.explainSelection",
+          "group": "navigation@20",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "kraken.fixSelection",
+          "group": "navigation@21",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "kraken.generateTests",
+          "group": "navigation@22"
+        },
+        {
+          "command": "kraken.addSelectionToContext",
+          "group": "navigation@23",
+          "when": "editorHasSelection"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "kraken.clearSession",
+          "when": "view == krakenCoder.chatView",
+          "group": "navigation"
+        },
+        {
+          "command": "kraken.configureModel",
+          "when": "view == krakenCoder.chatView",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Kraken Coder",
+      "properties": {
+        "kraken.model.baseUrl": {
+          "type": "string",
+          "default": "https://api.openai.com/v1",
+          "description": "Base URL for an OpenAI-compatible model API."
+        },
+        "kraken.model.provider": {
+          "type": "string",
+          "default": "openai-compatible",
+          "enum": [
+            "openai-compatible"
+          ],
+          "description": "Model provider adapter."
+        },
+        "kraken.model.name": {
+          "type": "string",
+          "default": "",
+          "description": "Model name to use. Leave empty to be prompted on first request."
+        },
+        "kraken.context.maxChars": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 2000,
+          "description": "Maximum approximate context characters sent to the model."
+        },
+        "kraken.agent.autoApply": {
+          "type": "boolean",
+          "default": false,
+          "description": "Apply generated changes automatically. Off by default."
+        },
+        "kraken.agent.allowTerminal": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow Kraken to suggest terminal validation commands."
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.4.5"
+  }
+}
