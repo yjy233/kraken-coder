@@ -166,7 +166,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
 
     try {
       const maxContextChars = vscode.workspace.getConfiguration('kraken').get<number>('context.maxChars') ?? 60000;
-      const tools = createVSCodeToolRegistry();
+      const tools = createVSCodeToolRegistry((summary, changes) => this.addChangeProposal(summary, changes));
       const result = await this.runtime.run({
         userText,
         history: this.session.messages.slice(0, -1),

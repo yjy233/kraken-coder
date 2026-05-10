@@ -159,7 +159,44 @@
         "kraken.agent.allowTerminal": {
           "type": "boolean",
           "default": false,
-          "description": "Allow Kraken to suggest terminal validation commands."
+          "description": "Allow Kraken to run shell commands through the shell_command tool."
+        },
+        "kraken.agent.allowFileWriteTool": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow Kraken to write files directly through write_file and replace."
+        },
+        "kraken.agent.allowBrowserTool": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow Kraken to control agent-browser."
+        },
+        "kraken.agent.browserBin": {
+          "type": "string",
+          "default": "agent-browser",
+          "description": "Executable path for the agent_browser tool."
+        },
+        "kraken.agent.browserMaxOutput": {
+          "type": "number",
+          "default": 50000,
+          "minimum": 1000,
+          "description": "Maximum output characters returned by agent_browser."
+        },
+        "kraken.agent.browserDefaultTimeout": {
+          "type": "number",
+          "default": 25000,
+          "minimum": 1000,
+          "description": "Default timeout in milliseconds for agent_browser actions."
+        },
+        "kraken.agent.browserAllowedDomains": {
+          "type": "string",
+          "default": "",
+          "description": "Optional comma-separated domain allowlist for agent_browser."
+        },
+        "kraken.skills.dir": {
+          "type": "string",
+          "default": "",
+          "description": "Optional skill install/discovery directory. Falls back to KRAKEN_SKILLS_DIR or ~/kraken/skills."
         }
       }
     }
