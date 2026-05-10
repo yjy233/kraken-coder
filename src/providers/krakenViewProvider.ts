@@ -16,10 +16,13 @@ import { SecretStore } from '../vscode/secrets';
 import {
   getActiveSelectionContext,
   getDiagnosticsContext,
+  getWorkspaceRoot,
   getWorkspaceTreeContext
 } from '../vscode/workspace';
 import { getWebviewHtml } from '../webview/html';
 import { getKrakenConfig } from '../vscode/krakenConfig';
+import { parseSlashCommand } from '../slash/parser';
+import { buildSlashHelp, findSlashCommand } from '../slash/registry';
 
 export class KrakenViewProvider implements vscode.WebviewViewProvider {
   static readonly viewType = 'krakenCoder.chatView';
@@ -141,6 +144,12 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    const slashInvocation = parseSlashCommand(userText);
+    if (slashInvocation) {
+      await this.runSlashCommand(userText, slashInvocation);
+      return;
+    }
+
     const settings = await ensureModelConfigured();
     if (!settings) {
       return;
@@ -180,6 +189,43 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       });
 
       await this.handleAgentResult(result);
+    } finally {
+      this.session.busy = false;
+      this.postSession();
+    }
+  }
+
+  private async runSlashCommand(userText: string, invocation: NonNullable<ReturnType<typeof parseSlashCommand>>): Promise<void> {
+    const command = findSlashCommand(invocation.name);
+    const userMessage: ChatMessage = {
+      id: createId('msg'),
+      role: 'user',
+      content: userText,
+      createdAt: Date.now()
+    };
+    this.session.messages.push(userMessage);
+
+    if (!command) {
+      this.postAssistantMessage([
+        `Unknown slash command: /${invocation.name}`,
+        '',
+        buildSlashHelp(),
+      ].join('\n'));
+      this.postSession();
+      return;
+    }
+
+    this.session.busy = true;
+    this.postSession();
+
+    try {
+      await command.execute(invocation, {
+        workspaceRoot: getWorkspaceRoot()?.fsPath,
+        postAssistantMessage: (content) => this.postAssistantMessage(content),
+        postProgress: (message) => this.postProgress(message),
+        clearSession: () => this.clearSession(),
+        addReviewableChangeProposal: (summary, changes) => this.addReviewableChangeProposal(summary, changes),
+      });
     } finally {
       this.session.busy = false;
       this.postSession();
@@ -240,6 +286,17 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     return `Created reviewable change proposal ${changeSet.id} (${changeSet.files.length} file(s)). The user can inspect the diff and apply it from the Kraken panel.`;
   }
 
+  private async addReviewableChangeProposal(summary: string, changes: AgentResult['changes']): Promise<string> {
+    if (!changes?.length) {
+      throw new Error('A change proposal requires at least one file change.');
+    }
+
+    const changeSet = await buildChangeSet(summary || 'Kraken proposed changes', summary, changes);
+    this.session.changeSets.unshift(changeSet);
+    this.postSession();
+    return `Created reviewable change proposal ${changeSet.id} (${changeSet.files.length} file(s)). The user can inspect the diff and apply it from the Kraken panel.`;
+  }
+
   private async addAutomaticContext(): Promise<void> {
     const contexts = await Promise.all([
       getActiveSelectionContext(),
@@ -292,6 +349,16 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       type: 'session.updated',
       session: this.session
     });
+  }
+
+  private postAssistantMessage(content: string): void {
+    this.session.messages.push({
+      id: createId('msg'),
+      role: 'assistant',
+      content,
+      createdAt: Date.now()
+    });
+    this.postSession();
   }
 
   private postProgress(message: string): void {

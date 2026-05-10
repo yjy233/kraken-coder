@@ -30,6 +30,8 @@ export class PromptBuilder {
     const sections: string[] = [
       this.basePrompt,
       '',
+      this.buildProjectInstructionsPolicy(),
+      '',
       this.buildWorkingProcess(),
       '',
       this.buildAvailableTools(),
@@ -63,6 +65,18 @@ export class PromptBuilder {
     }
 
     return sections.join('\n')
+  }
+
+  /** 项目级 AGENT.md 读取策略 */
+  private buildProjectInstructionsPolicy(): string {
+    return [
+      '## Project Instructions Policy',
+      '- If the task depends on project conventions, build commands, architecture, or repository-specific rules, first read `AGENT.md` with `read_file` when it exists.',
+      '- Do not assume `AGENT.md` content without reading it in the current run.',
+      '- If `AGENT.md` is long, summarize it into concise task-relevant working notes before using it.',
+      '- Preserve real project commands from `AGENT.md`, but verify them against local files when they appear outdated.',
+      '- Follow `AGENT.md` unless it conflicts with system/tool safety rules or the user\'s explicit request.',
+    ].join('\n')
   }
 
   /** 通用工作流指导 */

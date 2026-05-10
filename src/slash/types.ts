@@ -1,0 +1,25 @@
+import type { FileChange } from '../shared/types';
+
+export interface SlashCommandInvocation {
+  raw: string;
+  name: string;
+  argsText: string;
+  flags: Record<string, string | boolean>;
+  positionals: string[];
+}
+
+export interface SlashCommandContext {
+  workspaceRoot?: string;
+  postAssistantMessage: (content: string) => void;
+  postProgress: (message: string) => void;
+  clearSession: () => Promise<void>;
+  addReviewableChangeProposal: (summary: string, changes: FileChange[]) => Promise<string>;
+}
+
+export interface SlashCommand {
+  name: string;
+  aliases?: string[];
+  description: string;
+  usage: string;
+  execute: (invocation: SlashCommandInvocation, context: SlashCommandContext) => Promise<void>;
+}
