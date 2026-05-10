@@ -19,3 +19,5 @@ skill 扫描应该是  ~/kraken-coder/skill
 然后也可以用配置 workspace/kraken-coder/config
 
 优先级比全局的高
+
+先读取 configs-and-workspace.md config 是使用 json toml xml yaml 哪个格式比较好.

@@ -19,7 +19,6 @@ import { searchTool } from './search.js'
 import { replaceTool } from './replace.js'
 import { skillTool } from './skill.js'
 import { skillInstallTool } from './skill-install.js'
-import { proposeChangesTool } from './propose-changes.js'
 import { buildSessionSandboxPolicy } from './sandbox.js'
 import type { SessionSandboxConfig } from './types.js'
 import type { Skill, SkillRuntimeState } from '../skills/types.js'
@@ -66,7 +65,6 @@ export function createToolRegistry(options: CreateRegistryOptions, request?: {
     replaceTool,
     skillTool,
     skillInstallTool,
-    proposeChangesTool,
   ]
 
   const tools = allTools.filter((tool) => {
