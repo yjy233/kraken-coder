@@ -19,6 +19,7 @@ import {
   getWorkspaceTreeContext
 } from '../vscode/workspace';
 import { getWebviewHtml } from '../webview/html';
+import { getKrakenConfig } from '../vscode/krakenConfig';
 
 export class KrakenViewProvider implements vscode.WebviewViewProvider {
   static readonly viewType = 'krakenCoder.chatView';
@@ -165,7 +166,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     this.postProgress('Thinking...');
 
     try {
-      const maxContextChars = vscode.workspace.getConfiguration('kraken').get<number>('context.maxChars') ?? 60000;
+      const maxContextChars = getKrakenConfig().context.maxChars;
       const tools = createVSCodeToolRegistry((summary, changes) => this.addChangeProposal(summary, changes));
       const result = await this.runtime.run({
         userText,
@@ -212,7 +213,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       const changeSet = await buildChangeSet(result.summary || 'Kraken proposed changes', result.summary, result.changes);
       this.session.changeSets.unshift(changeSet);
 
-      const autoApply = vscode.workspace.getConfiguration('kraken').get<boolean>('agent.autoApply') ?? false;
+      const autoApply = getKrakenConfig().agent.autoApply;
       if (autoApply) {
         await applyChangeSet(changeSet);
         vscode.window.showInformationMessage(`Applied Kraken changes: ${changeSet.title}`);
@@ -229,7 +230,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     this.session.changeSets.unshift(changeSet);
     this.postSession();
 
-    const autoApply = vscode.workspace.getConfiguration('kraken').get<boolean>('agent.autoApply') ?? false;
+    const autoApply = getKrakenConfig().agent.autoApply;
     if (autoApply) {
       await applyChangeSet(changeSet);
       vscode.window.showInformationMessage(`Applied Kraken changes: ${changeSet.title}`);

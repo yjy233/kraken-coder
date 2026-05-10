@@ -1,0 +1,49 @@
+# Kraken Coder example config.
+# Copy to one of:
+# - ~/kraken-coder/config/config.toml
+# - <workspace>/kraken-coder/config/config.toml
+#
+# Workspace config overrides global config.
+# API keys are stored in VS Code SecretStorage, not in this file.
+
+[model]
+# OpenAI-compatible API base URL.
+baseUrl = "https://api.openai.com/v1"
+
+# Model name. Leave empty to be prompted by the extension.
+name = ""
+
+[context]
+# Maximum approximate context characters sent to the model.
+maxChars = 60000
+
+[agent]
+# Apply generated change proposals automatically.
+autoApply = false
+
+# Allow the shell_command tool.
+allowTerminal = false
+
+# Allow write_file and replace tools to edit files directly.
+allowFileWriteTool = false
+
+# Allow the agent_browser tool.
+allowBrowserTool = false
+
+# Executable path for the agent_browser tool.
+browserBin = "agent-browser"
+
+# Maximum output characters returned by agent_browser.
+browserMaxOutput = 50000
+
+# Default timeout in milliseconds for agent_browser actions.
+browserDefaultTimeout = 25000
+
+# Optional domain allowlist for agent_browser.
+# This can also be a comma-separated string: "example.com,docs.example.com"
+browserAllowedDomains = []
+
+[skills]
+# Optional skill install/discovery directory.
+# If empty, Kraken Coder falls back to KRAKEN_SKILLS_DIR or ~/kraken-coder/skill.
+dir = ""

@@ -1,12 +1,13 @@
 import * as vscode from 'vscode';
 import { ModelSettings } from '../shared/types';
+import { getKrakenConfig, normalizeBaseUrl, updateGlobalKrakenConfig } from './krakenConfig';
 
 export function getModelSettings(): ModelSettings {
-  const config = vscode.workspace.getConfiguration('kraken');
+  const config = getKrakenConfig();
   return {
-    baseUrl: normalizeBaseUrl(config.get<string>('model.baseUrl') ?? 'https://api.openai.com/v1'),
+    baseUrl: config.model.baseUrl,
     provider: 'openai-compatible',
-    model: config.get<string>('model.name')?.trim() ?? ''
+    model: config.model.name
   };
 }
 
@@ -27,9 +28,11 @@ export async function ensureModelConfigured(): Promise<ModelSettings | undefined
     return undefined;
   }
 
-  await vscode.workspace
-    .getConfiguration('kraken')
-    .update('model.name', model.trim(), vscode.ConfigurationTarget.Global);
+  await updateGlobalKrakenConfig({
+    model: {
+      name: model.trim()
+    }
+  });
 
   return {
     ...current,
@@ -61,13 +64,11 @@ export async function configureModel(): Promise<void> {
     return;
   }
 
-  const config = vscode.workspace.getConfiguration('kraken');
-  await config.update('model.baseUrl', normalizeBaseUrl(baseUrl), vscode.ConfigurationTarget.Global);
-  await config.update('model.name', model.trim(), vscode.ConfigurationTarget.Global);
-  vscode.window.showInformationMessage('Kraken model configuration updated.');
+  const configPath = await updateGlobalKrakenConfig({
+    model: {
+      baseUrl: normalizeBaseUrl(baseUrl),
+      name: model.trim()
+    }
+  });
+  vscode.window.showInformationMessage(`Kraken model configuration updated: ${configPath}`);
 }
-
-function normalizeBaseUrl(value: string): string {
-  return value.trim().replace(/\/+$/, '');
-}
-

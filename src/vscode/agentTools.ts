@@ -1,10 +1,11 @@
 import * as path from 'path'
-import * as vscode from 'vscode'
 import { createToolRegistry } from '../tools/registry'
 import type { ToolDefinition } from '../agent/types'
-import { getAvailableSkills } from '../skills/manager'
+import { refreshSkills } from '../skills/manager'
 import { createProposeChangesTool, type ProposeChangesHandler } from '../tools/propose-changes'
 import { getWorkspaceRoot } from './workspace'
+import { getKrakenConfig } from './krakenConfig'
+import { configureSkillPaths } from '../skills/paths'
 
 export function createVSCodeToolRegistry(proposeChanges: ProposeChangesHandler): ToolDefinition[] {
   const root = getWorkspaceRoot()
@@ -12,23 +13,29 @@ export function createVSCodeToolRegistry(proposeChanges: ProposeChangesHandler):
     throw new Error('Open a workspace folder before using tools.')
   }
 
-  const config = vscode.workspace.getConfiguration('kraken')
+  const config = getKrakenConfig()
+  configureSkillPaths({
+    globalSkillDir: config.paths.globalSkillDir,
+    workspaceSkillDir: config.paths.workspaceSkillDir,
+    installRoot: config.skills.dir,
+  })
+  const availableSkills = refreshSkills()
   const tools = createToolRegistry({
     rootDir: extensionRootFallback(root.fsPath),
-    allowShellTool: config.get<boolean>('agent.allowTerminal') ?? parseBoolean(process.env.ALLOW_SHELL_TOOL, false),
-    allowFileWriteTool: config.get<boolean>('agent.allowFileWriteTool') ?? parseBoolean(process.env.ALLOW_FILE_WRITE_TOOL, false),
-    allowAgentBrowserTool: config.get<boolean>('agent.allowBrowserTool') ?? parseBoolean(process.env.ALLOW_AGENT_BROWSER, false),
-    agentBrowserBin: config.get<string>('agent.browserBin') || process.env.AGENT_BROWSER_BIN || 'agent-browser',
-    agentBrowserMaxOutput: config.get<number>('agent.browserMaxOutput') ?? parseInteger(process.env.AGENT_BROWSER_MAX_OUTPUT, 50000),
-    agentBrowserDefaultTimeout: config.get<number>('agent.browserDefaultTimeout') ?? parseInteger(process.env.AGENT_BROWSER_DEFAULT_TIMEOUT, 25000),
-    agentBrowserAllowedDomains: config.get<string>('agent.browserAllowedDomains') || process.env.AGENT_BROWSER_ALLOWED_DOMAINS,
+    allowShellTool: config.agent.allowTerminal,
+    allowFileWriteTool: config.agent.allowFileWriteTool,
+    allowAgentBrowserTool: config.agent.allowBrowserTool,
+    agentBrowserBin: config.agent.browserBin,
+    agentBrowserMaxOutput: config.agent.browserMaxOutput,
+    agentBrowserDefaultTimeout: config.agent.browserDefaultTimeout,
+    agentBrowserAllowedDomains: config.agent.browserAllowedDomains,
     enablePathSandbox: false,
     enableSeatbelt: false,
     defaultWorkspaceRoot: root.fsPath,
     sensitivePaths: [],
   }, {
     sessionId: 'vscode-session',
-    availableSkills: getAvailableSkills(),
+    availableSkills,
     skillState: { loadedSkillNames: new Set<string>() },
   })
 
@@ -45,16 +52,4 @@ export function createVSCodeToolRegistry(proposeChanges: ProposeChangesHandler):
 
 function extensionRootFallback(workspaceRoot: string): string {
   return path.resolve(workspaceRoot)
-}
-
-function parseInteger(value: unknown, fallback: number): number {
-  const parsed = Number.parseInt(String(value || ''), 10)
-  return Number.isFinite(parsed) ? parsed : fallback
-}
-
-function parseBoolean(value: unknown, fallback: boolean): boolean {
-  if (value === undefined) {
-    return fallback
-  }
-  return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase())
 }

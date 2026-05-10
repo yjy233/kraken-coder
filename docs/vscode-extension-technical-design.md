@@ -283,9 +283,9 @@ interface ChangeSet {
         "type": "string",
         "default": ""
       },
-      "kraken.context.maxTokens": {
+      "kraken.context.maxChars": {
         "type": "number",
-        "default": 24000
+        "default": 60000
       },
       "kraken.agent.autoApply": {
         "type": "boolean",
