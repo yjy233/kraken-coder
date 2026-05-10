@@ -254,6 +254,7 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     const vscode = acquireVsCodeApi();
     let session = undefined;
     let busy = false;
+    let progress = 'Thinking...';
 
     const messagesEl = document.getElementById('messages');
     const contextEl = document.getElementById('context');
@@ -287,10 +288,15 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       if (message.type === 'session.updated') {
         session = message.session;
         busy = Boolean(session.busy);
+        if (!busy) {
+          progress = 'Thinking...';
+        }
         render();
       }
       if (message.type === 'agent.progress') {
+        progress = message.message || 'Thinking...';
         errorEl.hidden = true;
+        renderMessages();
       }
       if (message.type === 'error') {
         errorEl.textContent = message.message;
@@ -330,7 +336,7 @@ export function getWebviewHtml(webview: vscode.Webview): string {
         const item = document.createElement('div');
         item.className = 'message assistant';
         item.appendChild(label('assistant'));
-        item.appendChild(text('Thinking...'));
+        item.appendChild(text(progress));
         messagesEl.appendChild(item);
       }
     }
@@ -442,4 +448,3 @@ function createNonce(): string {
   }
   return text;
 }
-

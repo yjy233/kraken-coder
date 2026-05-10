@@ -9,6 +9,7 @@ import {
   ContextItem,
   WebviewToExtensionMessage
 } from '../shared/types';
+import { createWorkspaceTools } from '../vscode/agentTools';
 import { ensureModelConfigured } from '../vscode/config';
 import { applyChangeSet, buildChangeSet, openChangeDiff } from '../vscode/edits';
 import { SecretStore } from '../vscode/secrets';
@@ -165,13 +166,16 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
 
     try {
       const maxContextChars = vscode.workspace.getConfiguration('kraken').get<number>('context.maxChars') ?? 60000;
+      const tools = createWorkspaceTools((summary, changes) => this.addChangeProposal(summary, changes));
       const result = await this.runtime.run({
         userText,
         history: this.session.messages.slice(0, -1),
         context: this.session.context,
         settings,
         apiKey,
-        maxContextChars
+        maxContextChars,
+        tools,
+        onProgress: (message) => this.postProgress(message)
       });
 
       await this.handleAgentResult(result);
@@ -214,6 +218,25 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
         vscode.window.showInformationMessage(`Applied Kraken changes: ${changeSet.title}`);
       }
     }
+  }
+
+  private async addChangeProposal(summary: string, changes: AgentResult['changes']): Promise<string> {
+    if (!changes?.length) {
+      throw new Error('propose_changes requires at least one file change.');
+    }
+
+    const changeSet = await buildChangeSet(summary || 'Kraken proposed changes', summary, changes);
+    this.session.changeSets.unshift(changeSet);
+    this.postSession();
+
+    const autoApply = vscode.workspace.getConfiguration('kraken').get<boolean>('agent.autoApply') ?? false;
+    if (autoApply) {
+      await applyChangeSet(changeSet);
+      vscode.window.showInformationMessage(`Applied Kraken changes: ${changeSet.title}`);
+      return `Created and applied change proposal ${changeSet.id} (${changeSet.files.length} file(s)).`;
+    }
+
+    return `Created reviewable change proposal ${changeSet.id} (${changeSet.files.length} file(s)). The user can inspect the diff and apply it from the Kraken panel.`;
   }
 
   private async addAutomaticContext(): Promise<void> {

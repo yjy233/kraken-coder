@@ -80,15 +80,59 @@ export interface ModelSettings {
   model: string;
 }
 
-export interface ModelMessage {
-  role: 'system' | 'user' | 'assistant';
+export type JsonRecord = Record<string, unknown>;
+
+export interface ModelAssistantToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+export type ModelMessage =
+  | {
+      role: 'system' | 'user';
+      content: string;
+    }
+  | {
+      role: 'assistant';
+      content: string | null;
+      tool_calls?: ModelAssistantToolCall[];
+    }
+  | {
+      role: 'tool';
+      content: string;
+      tool_call_id: string;
+    };
+
+export interface ModelToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: JsonRecord;
+  };
+}
+
+export interface ModelToolCall {
+  id: string;
+  name: string;
+  arguments: JsonRecord;
+  rawArguments: string;
+}
+
+export interface ModelResponse {
   content: string;
+  toolCalls: ModelToolCall[];
+  finishReason?: string;
 }
 
 export interface ModelRequest {
   settings: ModelSettings;
   apiKey: string;
   messages: ModelMessage[];
+  tools?: ModelToolDefinition[];
   signal?: AbortSignal;
 }
-
