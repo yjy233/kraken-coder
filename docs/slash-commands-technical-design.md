@@ -181,7 +181,7 @@ const commands = [
 
 1. 检查当前 VS Code workspace root。
 2. 检查是否存在 `<workspace>/kraken-coder/config/config.toml`。
-3. 检查是否存在 `<workspace>/kraken-coder/AGENTS.md` 或 `<workspace>/kraken-coder/README.md`。
+3. 检查是否存在 `<workspace>/AGENT.md`。
 4. 读取项目文件树、`package.json`、README、常见配置文件。
 5. 生成一个 change proposal，而不是直接写文件。
 6. 在 Chat 中说明生成了哪些文件，用户可以 Apply。
@@ -192,9 +192,9 @@ const commands = [
 kraken-coder/
   config/
     config.toml
-  AGENTS.md
   skill/
     .gitkeep
+AGENT.md
 ```
 
 `config.toml` 示例：
@@ -210,7 +210,7 @@ allowFileWriteTool = false
 allowBrowserTool = false
 ```
 
-`AGENTS.md` 用来记录项目级 agent 指令：
+`AGENT.md` 用来记录项目级 agent 指令：
 
 ```md
 # Project Instructions
@@ -235,7 +235,7 @@ Describe the project purpose, runtime, and important entry points.
 /init --force
 ```
 
-`--force` 表示允许在 change proposal 中修改已有 `kraken-coder/config/config.toml` 和 `AGENTS.md`，但仍然不直接写入文件。实际覆盖仍由用户点击 Apply 决定。
+`--force` 表示允许在 change proposal 中修改已有 `kraken-coder/config/config.toml` 和 `AGENT.md`，但仍然不直接写入文件。实际覆盖仍由用户点击 Apply 决定。
 
 ### 5.3 `--dry-run`
 
@@ -250,7 +250,7 @@ Describe the project purpose, runtime, and important entry points.
 首期 `/init` 可以分两层：
 
 - MVP：不调用模型，只生成固定模板。
-- 增强版：调用 Agent Runtime，让模型根据项目文件树、README、package scripts 生成更贴合项目的 `AGENTS.md`。
+- 增强版：调用 Agent Runtime，让模型根据项目文件树、README、package scripts 生成更贴合项目的 `AGENT.md`。
 
 建议先做 MVP，保证命令系统闭环；之后再把项目摘要作为上下文交给 Agent 优化文档内容。
 
@@ -265,7 +265,7 @@ Initialized Kraken Coder workspace files.
 
 Created reviewable change proposal change_xxx:
 - kraken-coder/config/config.toml
-- kraken-coder/AGENTS.md
+- AGENT.md
 - kraken-coder/skill/.gitkeep
 ```
 
@@ -401,7 +401,7 @@ Scope: {{args}}
 
 ## 11. Open Questions
 
-- `/init` 的项目说明文件使用 `AGENTS.md` 还是 `kraken-coder/AGENTS.md`？
+- `/init` 是否需要同时兼容 `AGENTS.md`？建议首期只使用 workspace 根目录的 `AGENT.md`。
 - `commands/*.md` 是放在 `<workspace>/kraken-coder/commands`，还是也支持 `~/kraken-coder/commands`？
 - 自定义命令是否允许覆盖内置命令？建议首期不允许。
 - Slash command 是否需要出现在 Command Palette？建议首期不需要，避免两套入口状态不一致。
