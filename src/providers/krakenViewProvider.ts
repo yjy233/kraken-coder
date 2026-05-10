@@ -9,7 +9,8 @@ import {
   ContextItem,
   WebviewToExtensionMessage
 } from '../shared/types';
-import { createWorkspaceTools } from '../vscode/agentTools';
+import { configureProposeChangesHandler } from '../tools/propose-changes';
+import { createVSCodeToolRegistry } from '../vscode/agentTools';
 import { ensureModelConfigured } from '../vscode/config';
 import { applyChangeSet, buildChangeSet, openChangeDiff } from '../vscode/edits';
 import { SecretStore } from '../vscode/secrets';
@@ -166,7 +167,8 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
 
     try {
       const maxContextChars = vscode.workspace.getConfiguration('kraken').get<number>('context.maxChars') ?? 60000;
-      const tools = createWorkspaceTools((summary, changes) => this.addChangeProposal(summary, changes));
+      configureProposeChangesHandler((summary, changes) => this.addChangeProposal(summary, changes));
+      const tools = createVSCodeToolRegistry();
       const result = await this.runtime.run({
         userText,
         history: this.session.messages.slice(0, -1),

@@ -1,77 +1,139 @@
-import { ChatMessage, ContextItem, ModelSettings, AgentResult } from '../shared/types';
-import { buildModelMessages } from './promptBuilder';
-import { OpenAICompatibleModelClient } from './modelClient';
-import { parseAgentResult } from './resultParser';
-import { AgentTool, executeToolCall, toModelToolDefinitions } from './tools';
+import { ChatMessage, ContextItem, ModelSettings, AgentResult } from '../shared/types'
+import { ReActAgent } from './react-agent'
+import type { AgentMessage, EmitFn, ToolDefinition } from './types'
+import { configureModelRequest } from './model'
+import { PromptBuilder } from './prompt-builder'
+import { parseAgentResult } from './resultParser'
+
+const baseSystemPrompt = `You are Kraken Agent, an all-purpose AI assistant running inside VS Code.
+
+Before answering, think step by step:
+1. Understand the user's intent and the core problem.
+2. Determine whether a tool can help (search, file operations, code execution, etc.).
+3. If a tool is needed, plan the sequence of calls and reason about the expected outcome of each step.
+4. After gathering all necessary information, synthesize a clear, accurate, and helpful final answer.
+
+Always reason through your plan explicitly before taking action. When you use tools, incorporate their outputs naturally into your response.`
 
 export interface RunAgentOptions {
-  userText: string;
-  history: ChatMessage[];
-  context: ContextItem[];
-  settings: ModelSettings;
-  apiKey: string;
-  maxContextChars: number;
-  tools?: AgentTool[];
-  maxSteps?: number;
-  onProgress?: (message: string) => void;
-  signal?: AbortSignal;
+  userText: string
+  history: ChatMessage[]
+  context: ContextItem[]
+  settings: ModelSettings
+  apiKey: string
+  maxContextChars: number
+  tools: ToolDefinition[]
+  maxSteps?: number
+  onProgress?: (message: string) => void
+  signal?: AbortSignal
 }
 
 export class AgentRuntime {
-  private readonly modelClient = new OpenAICompatibleModelClient();
-
   async run(options: RunAgentOptions): Promise<AgentResult> {
-    const messages = buildModelMessages(
-      options.userText,
-      options.history,
-      options.context,
-      options.maxContextChars
-    );
-    const tools = options.tools ?? [];
-    const toolDefinitions = toModelToolDefinitions(tools);
-    const maxSteps = options.maxSteps ?? 8;
+    configureModelRequest({
+      settings: options.settings,
+      apiKey: options.apiKey,
+      signal: options.signal,
+    })
 
-    for (let stepIndex = 0; stepIndex < maxSteps; stepIndex += 1) {
-      options.onProgress?.(`Thinking... step ${stepIndex + 1}/${maxSteps}`);
+    const systemPrompt = new PromptBuilder(baseSystemPrompt, options.tools).build()
+    const agent = new ReActAgent({
+      defaultModel: options.settings.model,
+      defaultSystemPrompt: systemPrompt,
+      maxSteps: options.maxSteps ?? 8,
+      maxTokens: 4096,
+      toolRegistry: options.tools,
+    })
 
-      const response = await this.modelClient.complete({
-        settings: options.settings,
-        apiKey: options.apiKey,
-        messages,
-        tools: toolDefinitions,
-        signal: options.signal
-      });
+    const result = await agent.run({
+      messages: buildAgentMessages(options.userText, options.history, options.context, options.maxContextChars),
+      model: options.settings.model,
+      systemPrompt,
+      tools: options.tools,
+      emit: buildEmit(options.onProgress),
+    })
 
-      if (!response.toolCalls.length) {
-        return parseAgentResult(response.content);
-      }
+    return parseAgentResult(result.reply)
+  }
+}
 
-      messages.push({
-        role: 'assistant',
-        content: response.content || null,
-        tool_calls: response.toolCalls.map((toolCall) => ({
-          id: toolCall.id,
-          type: 'function',
-          function: {
-            name: toolCall.name,
-            arguments: toolCall.rawArguments
-          }
-        }))
-      });
+function buildAgentMessages(
+  userText: string,
+  history: ChatMessage[],
+  context: ContextItem[],
+  maxChars: number
+): AgentMessage[] {
+  const messages: AgentMessage[] = []
+  for (const message of history.slice(-10)) {
+    if (message.role === 'system') {
+      continue
+    }
+    messages.push({
+      role: message.role,
+      content: message.content,
+    })
+  }
 
-      for (const toolCall of response.toolCalls) {
-        options.onProgress?.(`Running tool: ${toolCall.name}`);
-        const result = await executeToolCall(toolCall, tools);
-        messages.push({
-          role: 'tool',
-          tool_call_id: result.toolCallId,
-          content: result.isError ? `Error: ${result.output}` : result.output
-        });
-      }
+  messages.push({
+    role: 'user',
+    content: [
+      buildContextBlock(context, maxChars),
+      '',
+      'User task:',
+      userText,
+    ].join('\n'),
+  })
+
+  return messages
+}
+
+function buildContextBlock(context: ContextItem[], maxChars: number): string {
+  if (!context.length) {
+    return 'Workspace context: none provided.'
+  }
+
+  const sections: string[] = []
+  let used = 0
+  for (const item of context) {
+    const header = `Context: ${item.label}${item.path ? ` (${item.path})` : ''}`
+    const remaining = maxChars - used - header.length - 8
+    if (remaining <= 0) {
+      break
+    }
+    const content = item.content.length > remaining
+      ? `${item.content.slice(0, Math.max(0, remaining - 80))}\n...[truncated]`
+      : item.content
+    used += header.length + content.length
+    sections.push([header, content].join('\n'))
+  }
+
+  if (!sections.length) {
+    return 'Workspace context: omitted because token budget was exhausted.'
+  }
+
+  return ['Workspace context:', ...sections].join('\n\n')
+}
+
+function buildEmit(onProgress: RunAgentOptions['onProgress']): EmitFn {
+  return (event, data) => {
+    if (!onProgress) {
+      return
     }
 
-    return {
-      summary: `Agent stopped after reaching the maximum tool step limit (${maxSteps}).`
-    };
+    if (event === 'run:step' && isRecord(data)) {
+      onProgress(`Thinking... step ${String(data.step || '')}`)
+      return
+    }
+    if (event === 'tool:running' && isRecord(data)) {
+      onProgress(`Running tool: ${String(data.toolName || '')}`)
+      return
+    }
+    if (event === 'tool:result' && isRecord(data)) {
+      onProgress(`Tool finished: ${String(data.toolName || '')}`)
+    }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
 }

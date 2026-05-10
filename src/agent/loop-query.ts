@@ -1,0 +1,141 @@
+/**
+ * loopQuery —— ReAct 单轮查询函数
+ *
+ * 职责：执行一次"模型调用 → 工具执行"的完整回合。
+ * - 若模型未请求工具（done === true），直接返回文本结果。
+ * - 若模型请求了工具，则依次执行每个工具，并将 tool_result 追加到消息数组，
+ *   供下一轮 ReAct 循环继续使用。
+ */
+
+import { invokeModel } from './model.js'
+import type { AgentMessage, AgentContentBlock, ToolDefinition, ToolExecution, ToolUse, EmitFn, LoopQueryResult } from './types.js'
+import { collapseWhitespace, truncate } from '../utils/helpers.js'
+
+/**
+ * 执行单轮 ReAct 查询。
+ * @param params.messages   当前上下文消息（不含本轮 assistant 回复）
+ * @param params.model      使用的模型 ID
+ * @param params.systemPrompt 系统提示词
+ * @param params.tools      可用工具列表
+ * @param params.maxOutputTokens 最大输出 token 数
+ * @param params.timeout    请求超时（毫秒）
+ * @param params.step       当前步数（仅用于 emit 事件）
+ * @param params.emit       SSE 事件发射器
+ */
+export async function loopQuery(params: {
+  messages: AgentMessage[]
+  model: string
+  systemPrompt: string
+  tools: ToolDefinition[]
+  maxOutputTokens: number
+  timeout?: number
+  step: number
+  emit?: EmitFn | undefined
+}): Promise<LoopQueryResult> {
+  const { messages, model, systemPrompt, tools, maxOutputTokens, timeout, step, emit } = params
+
+  // 1. 调用模型
+  const modelOptions: Parameters<typeof invokeModel>[0] = { model, systemPrompt, messages, tools, maxOutputTokens }
+  if (timeout !== undefined) {
+    modelOptions.timeout = timeout
+  }
+  const modelResponse = await invokeModel(modelOptions)
+
+  // 2. 组装本轮 assistant 内容块
+  const assistantContent: AgentContentBlock[] = []
+  if (modelResponse.text) {
+    assistantContent.push({ type: 'text', text: modelResponse.text })
+    emit?.('assistant:delta', { step, text: modelResponse.text })
+  }
+
+  for (const toolUse of modelResponse.toolUses) {
+    assistantContent.push({ type: 'tool_use', id: toolUse.id, name: toolUse.name, input: toolUse.input })
+    emit?.('tool:requested', { step, toolUse })
+  }
+
+  const updatedMessages: AgentMessage[] = [...messages]
+  if (assistantContent.length > 0) {
+    updatedMessages.push({ role: 'assistant', content: assistantContent })
+  }
+
+  // 3. 无 tool_use → 本轮结束，直接返回
+  if (modelResponse.toolUses.length === 0) {
+    return {
+      done: true,
+      assistantText: modelResponse.text || '',
+      stopReason: modelResponse.stopReason,
+      toolUseCount: 0,
+      toolExecutions: [],
+      updatedMessages,
+      usage: modelResponse.usage,
+    }
+  }
+
+  // 4. 有 tool_use → 逐个执行工具，并把结果拼成 user message
+  const toolExecutions: ToolExecution[] = []
+  const toolResults: AgentContentBlock[] = []
+
+  for (const toolUse of modelResponse.toolUses) {
+    emit?.('tool:running', { step, toolUseId: toolUse.id, toolName: toolUse.name })
+    const toolResult = await executeTool(toolUse, tools)
+    toolExecutions.push(toolResult)
+    toolResults.push({
+      type: 'tool_result',
+      tool_use_id: toolUse.id,
+      tool_name: toolUse.name,
+      content: toolResult.output,
+      is_error: toolResult.isError,
+    })
+    emit?.('tool:result', {
+      step,
+      toolUseId: toolUse.id,
+      toolName: toolUse.name,
+      outputPreview: truncate(collapseWhitespace(toolResult.output), 320),
+      output: toolResult.output,
+      isError: toolResult.isError,
+    })
+  }
+
+  updatedMessages.push({ role: 'user', content: toolResults })
+
+  return {
+    done: false,
+    assistantText: modelResponse.text || '',
+    stopReason: modelResponse.stopReason,
+    toolUseCount: modelResponse.toolUses.length,
+    toolExecutions,
+    updatedMessages,
+    usage: modelResponse.usage,
+  }
+}
+
+/**
+ * 根据 ToolUse 在注册表中查找并执行对应工具。
+ */
+async function executeTool(toolUse: ToolUse, tools: ToolDefinition[]): Promise<ToolExecution> {
+  const tool = tools.find((entry) => entry.name === toolUse.name)
+  if (!tool) {
+    return {
+      toolUseId: toolUse.id,
+      toolName: toolUse.name,
+      isError: true,
+      output: `Unknown tool: ${toolUse.name}`,
+    }
+  }
+  try {
+    const result = await tool.execute(toolUse.input || {})
+    return {
+      toolUseId: toolUse.id,
+      toolName: toolUse.name,
+      isError: false,
+      output: String(result.output || ''),
+    }
+  } catch (error) {
+    return {
+      toolUseId: toolUse.id,
+      toolName: toolUse.name,
+      isError: true,
+      output: error instanceof Error ? error.message : 'Unknown tool error',
+    }
+  }
+}
