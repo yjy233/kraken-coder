@@ -10,6 +10,9 @@
 # OpenAI-compatible API base URL.
 baseUrl = "https://api.openai.com/v1"
 
+# Optional HTTP proxy for model requests. Leave empty to disable proxying.
+proxy = ""
+
 # Model name. Leave empty to be prompted by the extension.
 name = ""
 

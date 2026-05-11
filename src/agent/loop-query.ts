@@ -36,6 +36,9 @@ export async function loopQuery(params: {
 
   // 1. 调用模型
   const modelOptions: Parameters<typeof invokeModel>[0] = { model, systemPrompt, messages, tools, maxOutputTokens }
+  modelOptions.onDelta = (delta: string) => {
+    emit?.('assistant:delta', { step, text: delta })
+  }
   if (timeout !== undefined) {
     modelOptions.timeout = timeout
   }
@@ -45,7 +48,6 @@ export async function loopQuery(params: {
   const assistantContent: AgentContentBlock[] = []
   if (modelResponse.text) {
     assistantContent.push({ type: 'text', text: modelResponse.text })
-    emit?.('assistant:delta', { step, text: modelResponse.text })
   }
 
   for (const toolUse of modelResponse.toolUses) {

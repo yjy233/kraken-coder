@@ -126,12 +126,38 @@ function buildEmit(onProgress: RunAgentOptions['onProgress']): EmitFn {
       onProgress(`Thinking... step ${String(data.step || '')}`)
       return
     }
+    if (event === 'assistant:delta' && isRecord(data)) {
+      onProgress(JSON.stringify({
+        type: 'assistant:delta',
+        text: String(data.text || ''),
+      }))
+      return
+    }
+    if (event === 'tool:requested' && isRecord(data) && isRecord(data.toolUse)) {
+      const toolUse = data.toolUse
+      onProgress(JSON.stringify({
+        type: 'tool:requested',
+        toolUseId: String(toolUse.id || ''),
+        toolName: String(toolUse.name || ''),
+      }))
+      return
+    }
     if (event === 'tool:running' && isRecord(data)) {
-      onProgress(`Running tool: ${String(data.toolName || '')}`)
+      onProgress(JSON.stringify({
+        type: 'tool:running',
+        toolUseId: String(data.toolUseId || ''),
+        toolName: String(data.toolName || ''),
+      }))
       return
     }
     if (event === 'tool:result' && isRecord(data)) {
-      onProgress(`Tool finished: ${String(data.toolName || '')}`)
+      onProgress(JSON.stringify({
+        type: 'tool:result',
+        toolUseId: String(data.toolUseId || ''),
+        toolName: String(data.toolName || ''),
+        isError: Boolean(data.isError),
+        outputPreview: String(data.outputPreview || ''),
+      }))
     }
   }
 }

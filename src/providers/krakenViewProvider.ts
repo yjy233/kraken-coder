@@ -28,6 +28,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
   static readonly viewType = 'krakenCoder.chatView';
 
   private webviewView?: vscode.WebviewView;
+  private streamingAssistantMessageId?: string;
   private readonly runtime = new AgentRuntime();
   private readonly session: ChatSession = {
     id: createId('session'),
@@ -69,6 +70,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     this.session.context = [];
     this.session.changeSets = [];
     this.session.busy = false;
+    this.streamingAssistantMessageId = undefined;
     this.postSession();
   }
 
@@ -177,6 +179,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     try {
       const maxContextChars = getKrakenConfig().context.maxChars;
       const tools = createVSCodeToolRegistry((summary, changes) => this.addChangeProposal(summary, changes));
+      this.streamingAssistantMessageId = undefined;
       const result = await this.runtime.run({
         userText,
         history: this.session.messages.slice(0, -1),
@@ -185,11 +188,12 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
         apiKey,
         maxContextChars,
         tools,
-        onProgress: (message) => this.postProgress(message)
+        onProgress: (message) => this.handleAgentProgress(message)
       });
 
       await this.handleAgentResult(result);
     } finally {
+      this.streamingAssistantMessageId = undefined;
       this.session.busy = false;
       this.postSession();
     }
@@ -247,13 +251,22 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       parts.push('', 'Follow ups:', ...result.followUps.map((item) => `- ${item}`));
     }
 
-    const assistantMessage: ChatMessage = {
-      id: createId('msg'),
-      role: 'assistant',
-      content: parts.join('\n'),
-      createdAt: Date.now()
-    };
-    this.session.messages.push(assistantMessage);
+    const content = parts.join('\n');
+    const assistantMessage = this.streamingAssistantMessageId
+      ? this.session.messages.find((message) => message.id === this.streamingAssistantMessageId)
+      : undefined;
+    if (assistantMessage) {
+      assistantMessage.content = content;
+      assistantMessage.status = 'complete';
+    } else {
+      this.session.messages.push({
+        id: createId('msg'),
+        role: 'assistant',
+        content,
+        createdAt: Date.now(),
+        status: 'complete'
+      });
+    }
 
     if (result.changes?.length) {
       const changeSet = await buildChangeSet(result.summary || 'Kraken proposed changes', result.summary, result.changes);
@@ -368,6 +381,80 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
+  private handleAgentProgress(message: string): void {
+    this.postProgress(message);
+
+    const payload = parseProgressPayload(message);
+    if (payload?.type === 'assistant:delta') {
+      this.appendAssistantDelta(payload.text ?? '');
+      return;
+    }
+    if (payload?.type === 'tool:requested') {
+      this.upsertToolMessage(payload.toolName ?? 'tool', 'Requested', 'running', payload.toolUseId);
+      return;
+    }
+    if (payload?.type === 'tool:running') {
+      this.upsertToolMessage(payload.toolName ?? 'tool', 'Running', 'running', payload.toolUseId);
+      return;
+    }
+    if (payload?.type === 'tool:result') {
+      this.upsertToolMessage(payload.toolName ?? 'tool', payload.outputPreview || 'Finished', payload.isError ? 'error' : 'complete', payload.toolUseId);
+    }
+  }
+
+  private appendAssistantDelta(delta: string): void {
+    if (!delta) {
+      return;
+    }
+
+    let message = this.streamingAssistantMessageId
+      ? this.session.messages.find((entry) => entry.id === this.streamingAssistantMessageId)
+      : undefined;
+
+    if (!message) {
+      message = {
+        id: createId('msg'),
+        role: 'assistant',
+        content: '',
+        createdAt: Date.now(),
+        status: 'running'
+      };
+      this.session.messages.push(message);
+      this.streamingAssistantMessageId = message.id;
+    }
+
+    message.content += delta;
+    message.status = 'running';
+    this.postSession();
+  }
+
+  private upsertToolMessage(toolName: string, content: string, status: ChatMessage['status'], toolUseId?: string): void {
+    const normalizedToolName = toolName || 'tool';
+    const existing = toolUseId
+      ? this.session.messages.find((message) => message.kind === 'tool' && message.toolUseId === toolUseId)
+      : undefined;
+
+    if (existing) {
+      existing.content = content;
+      existing.status = status;
+      existing.toolName = normalizedToolName;
+      this.postSession();
+      return;
+    }
+
+    this.session.messages.push({
+      id: createId('msg'),
+      role: 'assistant',
+      kind: 'tool',
+      status,
+      toolName: normalizedToolName,
+      toolUseId,
+      content,
+      createdAt: Date.now()
+    });
+    this.postSession();
+  }
+
   private showError(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
     this.session.busy = false;
@@ -378,5 +465,40 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     });
     vscode.window.showErrorMessage(message);
     this.postSession();
+  }
+}
+
+function parseProgressPayload(value: string): {
+  type: 'assistant:delta' | 'tool:requested' | 'tool:running' | 'tool:result';
+  text?: string;
+  toolUseId?: string;
+  toolName?: string;
+  isError?: boolean;
+  outputPreview?: string;
+} | undefined {
+  if (!value.startsWith('{')) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    if (
+      parsed.type !== 'assistant:delta'
+      && parsed.type !== 'tool:requested'
+      && parsed.type !== 'tool:running'
+      && parsed.type !== 'tool:result'
+    ) {
+      return undefined;
+    }
+    return {
+      type: parsed.type,
+      text: typeof parsed.text === 'string' ? parsed.text : undefined,
+      toolUseId: typeof parsed.toolUseId === 'string' ? parsed.toolUseId : '',
+      toolName: typeof parsed.toolName === 'string' && parsed.toolName ? parsed.toolName : 'tool',
+      isError: parsed.isError === true,
+      outputPreview: typeof parsed.outputPreview === 'string' ? parsed.outputPreview : undefined,
+    };
+  } catch {
+    return undefined;
   }
 }

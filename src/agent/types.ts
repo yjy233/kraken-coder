@@ -130,6 +130,7 @@ export interface InvokeModelParams {
   systemPrompt: string
   messages: AgentMessage[]
   tools: ToolDefinition[]
+  onDelta?: (delta: string) => void
 }
 
 /** Agent 运行返回给调用方的结果 */

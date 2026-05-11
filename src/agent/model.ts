@@ -33,6 +33,7 @@ export async function invokeModel(params: InvokeModelParams & {
     ...currentModelRequest,
     messages: convertMessages(params.systemPrompt, params.messages),
     tools: convertTools(params.tools),
+    onDelta: params.onDelta,
   })
 
   return {

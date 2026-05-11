@@ -1,10 +1,18 @@
 export type ChatRole = 'user' | 'assistant' | 'system';
 
+export type ChatMessageKind = 'text' | 'tool';
+export type ChatMessageStatus = 'running' | 'complete' | 'error';
+
 export interface ChatMessage {
   id: string;
   role: ChatRole;
   content: string;
   createdAt: number;
+  kind?: ChatMessageKind;
+  status?: ChatMessageStatus;
+  toolName?: string;
+  toolUseId?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ContextItem {
@@ -78,6 +86,7 @@ export interface ModelSettings {
   baseUrl: string;
   provider: 'openai-compatible';
   model: string;
+  proxy?: string;
 }
 
 export type JsonRecord = Record<string, unknown>;
@@ -134,5 +143,6 @@ export interface ModelRequest {
   apiKey: string;
   messages: ModelMessage[];
   tools?: ModelToolDefinition[];
+  onDelta?: (delta: string) => void;
   signal?: AbortSignal;
 }

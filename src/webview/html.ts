@@ -121,6 +121,19 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       border-color: var(--vscode-focusBorder);
     }
 
+    .message.tool {
+      border-style: dashed;
+      background: var(--vscode-sideBarSectionHeader-background);
+    }
+
+    .message.running {
+      border-color: var(--vscode-progressBar-background);
+    }
+
+    .message.error {
+      border-color: var(--vscode-errorForeground);
+    }
+
     .role {
       display: block;
       margin-bottom: 4px;
@@ -217,6 +230,12 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       color: var(--vscode-errorForeground);
       margin: 0 0 8px;
       white-space: pre-wrap;
+    }
+
+    .cursor {
+      display: inline-block;
+      margin-left: 1px;
+      color: var(--muted);
     }
   </style>
 </head>
@@ -326,13 +345,19 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       messagesEl.innerHTML = '';
       for (const message of messages) {
         const item = document.createElement('div');
-        item.className = 'message ' + message.role;
-        item.appendChild(label(message.role));
+        item.className = ['message', message.role, message.kind || '', message.status || ''].filter(Boolean).join(' ');
+        item.appendChild(label(messageLabel(message)));
         item.appendChild(text(message.content));
+        if (message.status === 'running' && message.kind !== 'tool') {
+          const cursor = document.createElement('span');
+          cursor.className = 'cursor';
+          cursor.textContent = '▌';
+          item.appendChild(cursor);
+        }
         messagesEl.appendChild(item);
       }
 
-      if (busy) {
+      if (busy && !messages.some((message) => message.status === 'running')) {
         const item = document.createElement('div');
         item.className = 'message assistant';
         item.appendChild(label('assistant'));
@@ -418,6 +443,14 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       el.className = 'role';
       el.textContent = value;
       return el;
+    }
+
+    function messageLabel(message) {
+      if (message.kind === 'tool') {
+        const status = message.status === 'error' ? 'error' : message.status === 'complete' ? 'done' : 'running';
+        return 'tool · ' + (message.toolName || 'tool') + ' · ' + status;
+      }
+      return message.role + (message.status === 'running' ? ' · streaming' : '');
     }
 
     function text(value) {

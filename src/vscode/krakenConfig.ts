@@ -13,6 +13,7 @@ export interface KrakenFileConfig {
   model?: {
     baseUrl?: string;
     name?: string;
+    proxy?: string;
   };
   context?: {
     maxChars?: number;
@@ -36,6 +37,7 @@ export interface KrakenConfig {
   model: {
     baseUrl: string;
     name: string;
+    proxy?: string;
   };
   context: {
     maxChars: number;
@@ -128,6 +130,7 @@ export function getKrakenConfig(): KrakenConfig {
         'https://api.openai.com/v1'
       )),
       name: stringValue(model.name, getVSCodeConfigValue<string>(vscodeConfig, 'model.name'), '').trim(),
+      ...(normalizeOptionalString(model.proxy) ? { proxy: normalizeOptionalString(model.proxy) } : {}),
     },
     context: {
       maxChars: numberValue(context.maxChars, getVSCodeConfigValue<number>(vscodeConfig, 'context.maxChars'), 60000),
@@ -251,9 +254,11 @@ function normalizeParsedConfig(parsed: ParsedToml): KrakenFileConfig {
   if (model) {
     const baseUrl = firstDefined(getString(model, 'baseUrl'), getString(model, 'base_url'));
     const name = firstDefined(getString(model, 'name'), getString(model, 'model'));
+    const proxy = getString(model, 'proxy');
     config.model = {
       ...(baseUrl !== undefined ? { baseUrl } : {}),
       ...(name !== undefined ? { name } : {}),
+      ...(proxy !== undefined ? { proxy } : {}),
     };
   }
 
@@ -608,6 +613,10 @@ function normalizeOptionalPath(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim()
     ? path.resolve(expandHomePath(value.trim()))
     : undefined;
+}
+
+function normalizeOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
 function normalizeDomainList(value: unknown): string | undefined {

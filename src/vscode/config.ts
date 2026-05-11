@@ -7,7 +7,8 @@ export function getModelSettings(): ModelSettings {
   return {
     baseUrl: config.model.baseUrl,
     provider: 'openai-compatible',
-    model: config.model.name
+    model: config.model.name,
+    ...(config.model.proxy ? { proxy: config.model.proxy } : {})
   };
 }
 

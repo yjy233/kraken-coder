@@ -37,6 +37,7 @@ Skill 扫描目录：
 ```toml
 [model]
 baseUrl = "https://api.openai.com/v1"
+proxy = ""
 name = "gpt-4.1"
 
 [context]
@@ -62,4 +63,5 @@ dir = "~/kraken-coder/skill"
 
 - `Kraken: Configure Model` 会写入全局 `~/kraken-coder/config/config.toml`。
 - API key 仍然保存在 VS Code SecretStorage，不写入 TOML。
+- `model.proxy` 为空时不走代理。
 - 目前不考虑额外沙箱；tools 按 VS Code workspace root 执行。
