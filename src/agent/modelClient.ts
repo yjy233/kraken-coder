@@ -76,9 +76,16 @@ export class OpenAICompatibleModelClient {
         });
 
     if (request.onDelta) {
-      return this.readStreamingResponse(response, request.onDelta);
+      if (isEventStream(response)) {
+        return this.readStreamingResponse(response, request.onDelta);
+      }
+      return this.readNonStreamingResponse(response, request.onDelta);
     }
 
+    return this.readNonStreamingResponse(response);
+  }
+
+  private async readNonStreamingResponse(response: Response, onDelta?: (delta: string) => void): Promise<ModelResponse> {
     const body = await response.text();
     let parsed: ChatCompletionsResponse;
     try {
@@ -98,6 +105,10 @@ export class OpenAICompatibleModelClient {
     }
 
     const content = message.content ?? '';
+    if (content && onDelta) {
+      onDelta(content);
+    }
+
     const toolCalls = (message.tool_calls ?? [])
       .filter((toolCall) => toolCall.id && toolCall.function?.name)
       .map((toolCall) => ({
@@ -243,6 +254,11 @@ function parseServerSentEventData(event: string): string[] {
     .filter(Boolean);
 }
 
+function isEventStream(response: Response): boolean {
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+  return contentType.includes('text/event-stream');
+}
+
 function extractErrorMessage(body: string): string | undefined {
   try {
     const parsed = JSON.parse(body) as ChatCompletionsResponse;
@@ -302,7 +318,7 @@ function requestHttpViaProxy(targetUrl: URL, proxyUrl: URL, options: {
     const proxyClient = proxyUrl.protocol === 'https:' ? https : http;
     const request = proxyClient.request({
       host: proxyUrl.hostname,
-      port: Number(proxyUrl.port || 80),
+      port: getUrlPort(proxyUrl),
       method: options.method,
       path: targetUrl.toString(),
       headers: {
@@ -331,7 +347,7 @@ function requestHttpsViaProxy(targetUrl: URL, proxyUrl: URL, options: {
     const proxyClient = proxyUrl.protocol === 'https:' ? https : http;
     const proxyRequest = proxyClient.request({
       host: proxyUrl.hostname,
-      port: Number(proxyUrl.port || 80),
+      port: getUrlPort(proxyUrl),
       method: 'CONNECT',
       path: `${targetUrl.hostname}:${targetUrl.port || 443}`,
       headers: {
@@ -353,11 +369,10 @@ function requestHttpsViaProxy(targetUrl: URL, proxyUrl: URL, options: {
       });
 
       const requestPath = `${targetUrl.pathname}${targetUrl.search}`;
-      const request = http.request({
+      const request = https.request({
         createConnection: () => tlsSocket,
         host: targetUrl.hostname,
         port: Number(targetUrl.port || 443),
-        protocol: 'https:',
         method: options.method,
         path: requestPath,
         headers: {
@@ -408,6 +423,13 @@ function buildProxyAuthorizationHeader(proxyUrl: URL): Record<string, string> {
   return {
     'Proxy-Authorization': `Basic ${Buffer.from(credentials).toString('base64')}`,
   };
+}
+
+function getUrlPort(url: URL): number {
+  if (url.port) {
+    return Number(url.port);
+  }
+  return url.protocol === 'https:' ? 443 : 80;
 }
 
 function attachAbortSignal(request: http.ClientRequest, signal?: AbortSignal): void {
