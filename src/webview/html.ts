@@ -288,19 +288,25 @@ export function getWebviewHtml(webview: vscode.Webview): string {
 
     document.getElementById('composer').addEventListener('submit', (event) => {
       event.preventDefault();
+      sendCurrentMessage();
+    });
+
+    inputEl.addEventListener('keydown', (event) => {
+      const isEnter = event.key === 'Enter' || event.code === 'Enter' || event.code === 'NumpadEnter';
+      if ((event.metaKey || event.ctrlKey) && isEnter) {
+        event.preventDefault();
+        sendCurrentMessage();
+      }
+    });
+
+    function sendCurrentMessage() {
       const text = inputEl.value.trim();
       if (!text || busy) {
         return;
       }
       inputEl.value = '';
       post({ type: 'chat.send', text });
-    });
-
-    inputEl.addEventListener('keydown', (event) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-        document.getElementById('composer').requestSubmit();
-      }
-    });
+    }
 
     window.addEventListener('message', (event) => {
       const message = event.data;
