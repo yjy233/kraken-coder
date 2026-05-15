@@ -45,7 +45,8 @@ AGENT.md
 kraken-coder/
   config/
     config.toml
-  skill/
+.kraken-coder/
+  skills/
     .gitkeep
 ```
 
@@ -414,7 +415,7 @@ Use /init --refresh to propose updates, or /init --force to propose a replacemen
 
 1. 实现 slash parser 和 registry。
 2. 实现 `/init` MVP。
-3. 生成 `AGENT.md`、workspace `config.toml`、`kraken-coder/skill/.gitkeep` 的 change proposal。
+3. 生成 `AGENT.md`、workspace `config.toml`、`.kraken-coder/skills/.gitkeep` 的 change proposal。
 4. 不调用模型。
 
 第二阶段：prompt 优化

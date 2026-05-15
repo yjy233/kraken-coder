@@ -26,7 +26,7 @@ interface PackageSummary {
 
 const agentPath = 'AGENT.md';
 const workspaceConfigPath = 'kraken-coder/config/config.toml';
-const skillKeepPath = 'kraken-coder/skill/.gitkeep';
+const skillKeepPath = '.kraken-coder/skills/.gitkeep';
 
 export const initCommand: SlashCommand = {
   name: 'init',

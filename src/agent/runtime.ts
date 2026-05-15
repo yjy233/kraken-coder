@@ -4,6 +4,7 @@ import type { AgentMessage, EmitFn, ToolDefinition } from './types'
 import { configureModelRequest } from './model'
 import { PromptBuilder } from './prompt-builder'
 import { parseAgentResult } from './resultParser'
+import type { Skill } from '../skills/types'
 
 const baseSystemPrompt = `You are Kraken Coder, a pragmatic coding agent running inside VS Code.
 
@@ -25,6 +26,7 @@ export interface RunAgentOptions {
   apiKey: string
   maxContextChars: number
   tools: ToolDefinition[]
+  availableSkills?: Skill[]
   maxSteps?: number
   onProgress?: (message: string) => void
   signal?: AbortSignal
@@ -38,7 +40,7 @@ export class AgentRuntime {
       signal: options.signal,
     })
 
-    const systemPrompt = new PromptBuilder(baseSystemPrompt, options.tools).build()
+    const systemPrompt = new PromptBuilder(baseSystemPrompt, options.tools, options.availableSkills ?? []).build()
     const agent = new ReActAgent({
       defaultModel: options.settings.model,
       defaultSystemPrompt: systemPrompt,
@@ -123,7 +125,10 @@ function buildEmit(onProgress: RunAgentOptions['onProgress']): EmitFn {
     }
 
     if (event === 'run:step' && isRecord(data)) {
-      onProgress(`Thinking... step ${String(data.step || '')}`)
+      onProgress(JSON.stringify({
+        type: 'run:step',
+        step: Number(data.step || 0),
+      }))
       return
     }
     if (event === 'assistant:delta' && isRecord(data)) {
@@ -139,6 +144,7 @@ function buildEmit(onProgress: RunAgentOptions['onProgress']): EmitFn {
         type: 'tool:requested',
         toolUseId: String(toolUse.id || ''),
         toolName: String(toolUse.name || ''),
+        toolInput: isRecord(toolUse.input) ? toolUse.input : {},
       }))
       return
     }

@@ -59,10 +59,17 @@ export interface KrakenConfig {
     globalRoot: string;
     globalConfigPath: string;
     globalSkillDir: string;
+    legacyGlobalSkillDir: string;
+    builtinSkillDir: string;
     workspaceRoot?: string;
     workspaceConfigPath?: string;
     workspaceSkillDir?: string;
+    legacyWorkspaceSkillDir?: string;
   };
+}
+
+export interface KrakenConfigOptions {
+  extensionRoot?: string;
 }
 
 const krakenDirName = 'kraken-coder';
@@ -76,6 +83,10 @@ export function getGlobalConfigPath(): string {
 }
 
 export function getGlobalSkillDir(): string {
+  return path.join(getGlobalKrakenRoot(), 'skills');
+}
+
+export function getLegacyGlobalSkillDir(): string {
   return path.join(getGlobalKrakenRoot(), 'skill');
 }
 
@@ -90,15 +101,26 @@ export function getWorkspaceConfigPath(): string | undefined {
 }
 
 export function getWorkspaceSkillDir(): string | undefined {
+  const root = getWorkspaceRoot();
+  return root ? path.join(root.fsPath, '.kraken-coder', 'skills') : undefined;
+}
+
+export function getLegacyWorkspaceSkillDir(): string | undefined {
   const workspaceRoot = getWorkspaceKrakenRoot();
   return workspaceRoot ? path.join(workspaceRoot, 'skill') : undefined;
 }
 
-export function getKrakenConfig(): KrakenConfig {
+export function getBuiltinSkillDir(extensionRoot?: string): string {
+  const root = normalizeOptionalPath(extensionRoot) ?? path.resolve(__dirname, '..', '..');
+  return path.join(root, 'resources', 'skills');
+}
+
+export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig {
   const vscodeConfig = vscode.workspace.getConfiguration('kraken');
   const workspaceRoot = getWorkspaceRoot()?.fsPath;
   const workspaceConfigPath = getWorkspaceConfigPath();
   const workspaceSkillDir = getWorkspaceSkillDir();
+  const legacyWorkspaceSkillDir = getLegacyWorkspaceSkillDir();
   const fileConfig = mergeFileConfig(
     readKrakenConfigFile(getGlobalConfigPath()),
     workspaceConfigPath ? readKrakenConfigFile(workspaceConfigPath) : {}
@@ -177,9 +199,12 @@ export function getKrakenConfig(): KrakenConfig {
       globalRoot: getGlobalKrakenRoot(),
       globalConfigPath: getGlobalConfigPath(),
       globalSkillDir: getGlobalSkillDir(),
+      legacyGlobalSkillDir: getLegacyGlobalSkillDir(),
+      builtinSkillDir: getBuiltinSkillDir(options.extensionRoot),
       ...(workspaceRoot ? { workspaceRoot } : {}),
       ...(workspaceConfigPath ? { workspaceConfigPath } : {}),
       ...(workspaceSkillDir ? { workspaceSkillDir } : {}),
+      ...(legacyWorkspaceSkillDir ? { legacyWorkspaceSkillDir } : {}),
     },
   };
 }

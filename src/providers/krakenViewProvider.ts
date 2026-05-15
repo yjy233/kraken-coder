@@ -177,8 +177,12 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     this.postProgress('Thinking...');
 
     try {
-      const maxContextChars = getKrakenConfig().context.maxChars;
-      const tools = createVSCodeToolRegistry((summary, changes) => this.addChangeProposal(summary, changes));
+      const extensionRoot = this.extensionUri.fsPath;
+      const maxContextChars = getKrakenConfig({ extensionRoot }).context.maxChars;
+      const { tools, availableSkills } = createVSCodeToolRegistry(
+        (summary, changes) => this.addChangeProposal(summary, changes),
+        { extensionRoot }
+      );
       this.streamingAssistantMessageId = undefined;
       const result = await this.runtime.run({
         userText,
@@ -188,6 +192,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
         apiKey,
         maxContextChars,
         tools,
+        availableSkills,
         onProgress: (message) => this.handleAgentProgress(message)
       });
 
@@ -385,12 +390,22 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     this.postProgress(message);
 
     const payload = parseProgressPayload(message);
+    if (payload?.type === 'run:step') {
+      this.finishStreamingAssistantMessage();
+      return;
+    }
     if (payload?.type === 'assistant:delta') {
       this.appendAssistantDelta(payload.text ?? '');
       return;
     }
     if (payload?.type === 'tool:requested') {
-      this.upsertToolMessage(payload.toolName ?? 'tool', 'Requested', 'running', payload.toolUseId);
+      this.upsertToolMessage(
+        payload.toolName ?? 'tool',
+        'Requested',
+        'running',
+        payload.toolUseId,
+        payload.toolInput ? { input: payload.toolInput } : undefined
+      );
       return;
     }
     if (payload?.type === 'tool:running') {
@@ -428,7 +443,26 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     this.postSession();
   }
 
-  private upsertToolMessage(toolName: string, content: string, status: ChatMessage['status'], toolUseId?: string): void {
+  private finishStreamingAssistantMessage(): void {
+    if (!this.streamingAssistantMessageId) {
+      return;
+    }
+
+    const message = this.session.messages.find((entry) => entry.id === this.streamingAssistantMessageId);
+    if (message?.status === 'running') {
+      message.status = 'complete';
+      this.postSession();
+    }
+    this.streamingAssistantMessageId = undefined;
+  }
+
+  private upsertToolMessage(
+    toolName: string,
+    content: string,
+    status: ChatMessage['status'],
+    toolUseId?: string,
+    metadata?: Record<string, unknown>
+  ): void {
     const normalizedToolName = toolName || 'tool';
     const existing = toolUseId
       ? this.session.messages.find((message) => message.kind === 'tool' && message.toolUseId === toolUseId)
@@ -438,6 +472,10 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       existing.content = content;
       existing.status = status;
       existing.toolName = normalizedToolName;
+      existing.metadata = {
+        ...(existing.metadata ?? {}),
+        ...(metadata ?? {})
+      };
       this.postSession();
       return;
     }
@@ -449,6 +487,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       status,
       toolName: normalizedToolName,
       toolUseId,
+      ...(metadata ? { metadata } : {}),
       content,
       createdAt: Date.now()
     });
@@ -469,10 +508,11 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
 }
 
 function parseProgressPayload(value: string): {
-  type: 'assistant:delta' | 'tool:requested' | 'tool:running' | 'tool:result';
+  type: 'run:step' | 'assistant:delta' | 'tool:requested' | 'tool:running' | 'tool:result';
   text?: string;
   toolUseId?: string;
   toolName?: string;
+  toolInput?: Record<string, unknown>;
   isError?: boolean;
   outputPreview?: string;
 } | undefined {
@@ -483,7 +523,8 @@ function parseProgressPayload(value: string): {
   try {
     const parsed = JSON.parse(value) as Record<string, unknown>;
     if (
-      parsed.type !== 'assistant:delta'
+      parsed.type !== 'run:step'
+      && parsed.type !== 'assistant:delta'
       && parsed.type !== 'tool:requested'
       && parsed.type !== 'tool:running'
       && parsed.type !== 'tool:result'
@@ -495,10 +536,15 @@ function parseProgressPayload(value: string): {
       text: typeof parsed.text === 'string' ? parsed.text : undefined,
       toolUseId: typeof parsed.toolUseId === 'string' ? parsed.toolUseId : '',
       toolName: typeof parsed.toolName === 'string' && parsed.toolName ? parsed.toolName : 'tool',
+      toolInput: isPlainRecord(parsed.toolInput) ? parsed.toolInput : undefined,
       isError: parsed.isError === true,
       outputPreview: typeof parsed.outputPreview === 'string' ? parsed.outputPreview : undefined,
     };
   } catch {
     return undefined;
   }
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

@@ -192,7 +192,8 @@ const commands = [
 kraken-coder/
   config/
     config.toml
-  skill/
+.kraken-coder/
+  skills/
     .gitkeep
 AGENT.md
 ```
@@ -266,7 +267,7 @@ Initialized Kraken Coder workspace files.
 Created reviewable change proposal change_xxx:
 - kraken-coder/config/config.toml
 - AGENT.md
-- kraken-coder/skill/.gitkeep
+- .kraken-coder/skills/.gitkeep
 ```
 
 失败示例：

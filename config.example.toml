@@ -48,5 +48,5 @@ browserAllowedDomains = []
 
 [skills]
 # Optional skill install/discovery directory.
-# If empty, Kraken Coder falls back to KRAKEN_SKILLS_DIR or ~/kraken-coder/skill.
+# If empty, Kraken Coder falls back to KRAKEN_SKILLS_DIR or ~/kraken-coder/skills.
 dir = ""

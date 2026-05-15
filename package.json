@@ -196,7 +196,7 @@
         "kraken.skills.dir": {
           "type": "string",
           "default": "",
-          "description": "Optional skill install/discovery directory. Used when TOML [skills].dir is unset; falls back to KRAKEN_SKILLS_DIR or ~/kraken-coder/skill."
+          "description": "Optional skill install/discovery directory. Used when TOML [skills].dir is unset; falls back to KRAKEN_SKILLS_DIR or ~/kraken-coder/skills."
         }
       }
     }

@@ -18,6 +18,10 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       --button-bg: var(--vscode-button-background);
       --button-fg: var(--vscode-button-foreground);
       --button-hover: var(--vscode-button-hoverBackground);
+      --chat-bubble-bg: #12372f;
+      --chat-bubble-border: #1f5a4c;
+      --chat-user-bg: #17483d;
+      --chat-tool-bg: var(--vscode-sideBarSectionHeader-background);
     }
 
     * {
@@ -107,30 +111,252 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     }
 
     .message {
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 8px;
-      margin-bottom: 8px;
-      background: var(--vscode-editor-background);
-      white-space: pre-wrap;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      margin-bottom: 10px;
       line-height: 1.45;
       overflow-wrap: anywhere;
     }
 
     .message.user {
-      border-color: var(--vscode-focusBorder);
+      align-items: flex-end;
     }
 
-    .message.tool {
-      border-style: dashed;
+    .message-bubble {
+      width: fit-content;
+      max-width: min(92%, 720px);
+      padding: 9px 10px;
+      border: 1px solid var(--chat-bubble-border);
+      border-radius: 8px;
+      color: var(--vscode-foreground);
+      background: var(--chat-bubble-bg);
+      box-shadow: 0 1px 2px rgb(0 0 0 / 18%);
+    }
+
+    .message.user .message-bubble {
+      background: var(--chat-user-bg);
+    }
+
+    .markdown {
+      white-space: normal;
+    }
+
+    .markdown > :first-child {
+      margin-top: 0;
+    }
+
+    .markdown > :last-child {
+      margin-bottom: 0;
+    }
+
+    .markdown p {
+      margin: 0 0 8px;
+    }
+
+    .markdown h1,
+    .markdown h2,
+    .markdown h3,
+    .markdown h4,
+    .markdown h5,
+    .markdown h6 {
+      margin: 12px 0 6px;
+      line-height: 1.25;
+      font-weight: 600;
+    }
+
+    .markdown h1 {
+      font-size: 1.35em;
+    }
+
+    .markdown h2 {
+      font-size: 1.22em;
+    }
+
+    .markdown h3 {
+      font-size: 1.12em;
+    }
+
+    .markdown h4,
+    .markdown h5,
+    .markdown h6 {
+      font-size: 1em;
+    }
+
+    .markdown ul,
+    .markdown ol {
+      margin: 0 0 8px;
+      padding-left: 20px;
+    }
+
+    .markdown li {
+      margin: 2px 0;
+    }
+
+    .markdown blockquote {
+      margin: 0 0 8px;
+      padding: 2px 0 2px 10px;
+      border-left: 3px solid var(--border);
+      color: var(--muted);
+    }
+
+    .markdown pre {
+      margin: 0 0 8px;
+      padding: 8px;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--vscode-textCodeBlock-background, var(--vscode-editor-inactiveSelectionBackground));
+    }
+
+    .markdown code {
+      font-family: var(--vscode-editor-font-family);
+      font-size: 0.95em;
+      border-radius: 3px;
+      padding: 1px 3px;
+      background: var(--vscode-textCodeBlock-background, var(--vscode-editor-inactiveSelectionBackground));
+    }
+
+    .markdown pre code {
+      display: block;
+      padding: 0;
+      border-radius: 0;
+      background: transparent;
+      white-space: pre;
+    }
+
+    .markdown a {
+      color: var(--vscode-textLink-foreground);
+      text-decoration: none;
+    }
+
+    .markdown a:hover {
+      text-decoration: underline;
+    }
+
+    .markdown img {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      margin: 6px 0;
+      border-radius: 4px;
+    }
+
+    .markdown table {
+      width: 100%;
+      margin: 0 0 8px;
+      border-collapse: collapse;
+      display: block;
+      overflow-x: auto;
+    }
+
+    .markdown th,
+    .markdown td {
+      border: 1px solid var(--border);
+      padding: 4px 6px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .markdown th {
+      font-weight: 600;
       background: var(--vscode-sideBarSectionHeader-background);
     }
 
-    .message.running {
+    .markdown hr {
+      border: 0;
+      border-top: 1px solid var(--border);
+      margin: 10px 0;
+    }
+
+    .message.tool .message-bubble {
+      border-style: dashed;
+      background: var(--chat-tool-bg);
+    }
+
+    .tool-card {
+      width: min(92%, 720px);
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      background: var(--chat-tool-bg);
+      overflow: hidden;
+    }
+
+    .tool-card[open] {
+      border-color: var(--chat-bubble-border);
+    }
+
+    .tool-card.running {
       border-color: var(--vscode-progressBar-background);
     }
 
-    .message.error {
+    .tool-card.error {
+      border-color: var(--vscode-errorForeground);
+    }
+
+    .tool-summary {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 32px;
+      padding: 6px 9px;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .tool-summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .tool-summary::before {
+      content: '›';
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1;
+      transform: translateY(-1px);
+    }
+
+    .tool-card[open] .tool-summary::before {
+      transform: rotate(90deg) translateX(-1px);
+    }
+
+    .tool-name {
+      flex: 0 0 auto;
+      font-family: var(--vscode-editor-font-family);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--vscode-foreground);
+    }
+
+    .tool-params {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--muted);
+      font-family: var(--vscode-editor-font-family);
+      font-size: 12px;
+    }
+
+    .tool-body {
+      border-top: 1px dashed var(--border);
+      padding: 8px 9px;
+    }
+
+    .tool-status {
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+
+    .message.running .message-bubble {
+      border-color: var(--vscode-progressBar-background);
+    }
+
+    .message.error .message-bubble {
       border-color: var(--vscode-errorForeground);
     }
 
@@ -274,6 +500,7 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     let session = undefined;
     let busy = false;
     let progress = 'Thinking...';
+    const openToolMessages = new Set();
 
     const messagesEl = document.getElementById('messages');
     const contextEl = document.getElementById('context');
@@ -352,22 +579,34 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       for (const message of messages) {
         const item = document.createElement('div');
         item.className = ['message', message.role, message.kind || '', message.status || ''].filter(Boolean).join(' ');
-        item.appendChild(label(messageLabel(message)));
-        item.appendChild(text(message.content));
+        if (message.kind === 'tool') {
+          item.appendChild(toolCard(message));
+          messagesEl.appendChild(item);
+          continue;
+        }
+
+        const bubble = document.createElement('div');
+        bubble.className = 'message-bubble';
+        bubble.appendChild(label(messageLabel(message)));
+        bubble.appendChild(markdown(message.content));
         if (message.status === 'running' && message.kind !== 'tool') {
           const cursor = document.createElement('span');
           cursor.className = 'cursor';
           cursor.textContent = '▌';
-          item.appendChild(cursor);
+          bubble.appendChild(cursor);
         }
+        item.appendChild(bubble);
         messagesEl.appendChild(item);
       }
 
       if (busy && !messages.some((message) => message.status === 'running')) {
         const item = document.createElement('div');
         item.className = 'message assistant';
-        item.appendChild(label('assistant'));
-        item.appendChild(text(progress));
+        const bubble = document.createElement('div');
+        bubble.className = 'message-bubble';
+        bubble.appendChild(label('assistant'));
+        bubble.appendChild(markdown(progress));
+        item.appendChild(bubble);
         messagesEl.appendChild(item);
       }
     }
@@ -459,10 +698,313 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       return message.role + (message.status === 'running' ? ' · streaming' : '');
     }
 
-    function text(value) {
+    function toolCard(message) {
+      const card = document.createElement('details');
+      card.className = ['tool-card', message.status || ''].filter(Boolean).join(' ');
+      const stateKey = toolStateKey(message);
+      card.open = openToolMessages.has(stateKey);
+      card.addEventListener('toggle', () => {
+        if (card.open) {
+          openToolMessages.add(stateKey);
+        } else {
+          openToolMessages.delete(stateKey);
+        }
+      });
+
+      const summary = document.createElement('summary');
+      summary.className = 'tool-summary';
+      const name = document.createElement('span');
+      name.className = 'tool-name';
+      name.textContent = message.toolName || 'tool';
+      const params = document.createElement('span');
+      params.className = 'tool-params';
+      params.textContent = formatToolParams(message.metadata?.input);
+      summary.append(name, params);
+
+      const body = document.createElement('div');
+      body.className = 'tool-body';
+      const status = document.createElement('div');
+      status.className = 'tool-status';
+      status.textContent = message.status === 'error' ? 'error' : message.status === 'complete' ? 'complete' : 'running';
+      body.appendChild(status);
+      body.appendChild(markdown(message.content));
+
+      card.append(summary, body);
+      return card;
+    }
+
+    function toolStateKey(message) {
+      return message.toolUseId || message.id || message.toolName || 'tool';
+    }
+
+    function formatToolParams(input) {
+      if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        return '{}';
+      }
+      const entries = Object.entries(input);
+      if (!entries.length) {
+        return '{}';
+      }
+      const text = entries.map(([key, value]) => key + '=' + formatToolValue(value)).join(' ');
+      return text.length > 180 ? text.slice(0, 179) + '…' : text;
+    }
+
+    function formatToolValue(value) {
+      if (typeof value === 'string') {
+        return JSON.stringify(value.length > 60 ? value.slice(0, 59) + '…' : value);
+      }
+      if (typeof value === 'number' || typeof value === 'boolean') {
+        return String(value);
+      }
+      if (value === null) {
+        return 'null';
+      }
+      if (Array.isArray(value)) {
+        return '[' + value.length + ']';
+      }
+      if (typeof value === 'object') {
+        return '{' + Object.keys(value).slice(0, 3).join(',') + '}';
+      }
+      return String(value);
+    }
+
+    function markdown(value) {
       const el = document.createElement('div');
-      el.textContent = value;
+      el.className = 'markdown';
+      renderMarkdownInto(el, String(value || ''));
       return el;
+    }
+
+    function renderMarkdownInto(container, source) {
+      const lines = source.replace(/\\r\\n?/g, '\\n').split('\\n');
+      const codeFence = String.fromCharCode(96, 96, 96);
+      let index = 0;
+
+      while (index < lines.length) {
+        const line = lines[index];
+
+        if (!line.trim()) {
+          index += 1;
+          continue;
+        }
+
+        const trimmedLine = line.trim();
+        if (trimmedLine.startsWith(codeFence)) {
+          const codeLines = [];
+          const language = trimmedLine.slice(codeFence.length).trim();
+          index += 1;
+          while (index < lines.length && !lines[index].trim().startsWith(codeFence)) {
+            codeLines.push(lines[index]);
+            index += 1;
+          }
+          if (index < lines.length) {
+            index += 1;
+          }
+          container.appendChild(codeBlock(codeLines.join('\\n'), language));
+          continue;
+        }
+
+        const heading = line.match(/^(#{1,6})\\s+(.+)$/);
+        if (heading) {
+          const level = heading[1].length;
+          const el = document.createElement('h' + level);
+          appendInlineMarkdown(el, heading[2]);
+          container.appendChild(el);
+          index += 1;
+          continue;
+        }
+
+        if (/^\\s*(?:[-*+]\\s+|\\d+[.)]\\s+)/.test(line)) {
+          const ordered = /^\\s*\\d+[.)]\\s+/.test(line);
+          const list = document.createElement(ordered ? 'ol' : 'ul');
+          while (index < lines.length && /^\\s*(?:[-*+]\\s+|\\d+[.)]\\s+)/.test(lines[index])) {
+            const item = document.createElement('li');
+            appendInlineMarkdown(item, lines[index].replace(/^\\s*(?:[-*+]\\s+|\\d+[.)]\\s+)/, ''));
+            list.appendChild(item);
+            index += 1;
+          }
+          container.appendChild(list);
+          continue;
+        }
+
+        if (/^>\\s?/.test(line)) {
+          const quote = document.createElement('blockquote');
+          const quoteLines = [];
+          while (index < lines.length && /^>\\s?/.test(lines[index])) {
+            quoteLines.push(lines[index].replace(/^>\\s?/, ''));
+            index += 1;
+          }
+          renderMarkdownInto(quote, quoteLines.join('\\n'));
+          container.appendChild(quote);
+          continue;
+        }
+
+        if (/^\\s*---+\\s*$/.test(line)) {
+          container.appendChild(document.createElement('hr'));
+          index += 1;
+          continue;
+        }
+
+        if (isTableStart(lines, index)) {
+          const tableLines = [lines[index], lines[index + 1]];
+          index += 2;
+          while (index < lines.length && /^\\s*\\|.*\\|\\s*$/.test(lines[index])) {
+            tableLines.push(lines[index]);
+            index += 1;
+          }
+          container.appendChild(table(tableLines));
+          continue;
+        }
+
+        const paragraphLines = [line.trim()];
+        index += 1;
+        while (
+          index < lines.length
+          && lines[index].trim()
+          && !lines[index].trim().startsWith(codeFence)
+          && !/^(#{1,6})\\s+/.test(lines[index])
+          && !/^\\s*(?:[-*+]\\s+|\\d+[.)]\\s+)/.test(lines[index])
+          && !/^>\\s?/.test(lines[index])
+          && !/^\\s*---+\\s*$/.test(lines[index])
+          && !isTableStart(lines, index)
+        ) {
+          paragraphLines.push(lines[index].trim());
+          index += 1;
+        }
+
+        const paragraph = document.createElement('p');
+        appendInlineMarkdown(paragraph, paragraphLines.join(' '));
+        container.appendChild(paragraph);
+      }
+    }
+
+    function codeBlock(source, language) {
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
+      if (language.trim()) {
+        code.dataset.language = language.trim();
+      }
+      code.textContent = source;
+      pre.appendChild(code);
+      return pre;
+    }
+
+    function appendInlineMarkdown(parent, source) {
+      const tick = String.fromCharCode(96);
+      const pattern = new RegExp('(!?\\\\[[^\\\\]]*\\\\]\\\\([^\\\\s)]+(?:\\\\s+"[^"]*")?\\\\)|' + tick + '[^' + tick + ']+' + tick + '|\\\\*\\\\*[^*]+\\\\*\\\\*|__[^_]+__|\\\\*[^*]+\\\\*|_[^_]+_)', 'g');
+      let lastIndex = 0;
+      let match;
+      while ((match = pattern.exec(source)) !== null) {
+        if (match.index > lastIndex) {
+          parent.appendChild(document.createTextNode(source.slice(lastIndex, match.index)));
+        }
+        parent.appendChild(inlineNode(match[0]));
+        lastIndex = pattern.lastIndex;
+      }
+      if (lastIndex < source.length) {
+        parent.appendChild(document.createTextNode(source.slice(lastIndex)));
+      }
+    }
+
+    function inlineNode(token) {
+      const tick = String.fromCharCode(96);
+      if (token.startsWith(tick) && token.endsWith(tick)) {
+        const code = document.createElement('code');
+        code.textContent = token.slice(1, -1);
+        return code;
+      }
+
+      const image = token.match(/^!\\[([^\\]]*)\\]\\(([^\\s)]+)(?:\\s+\"[^\"]*\")?\\)$/);
+      if (image) {
+        const src = sanitizeUrl(image[2], true);
+        if (src) {
+          const img = document.createElement('img');
+          img.alt = image[1] || '';
+          img.src = src;
+          return img;
+        }
+      }
+
+      const link = token.match(/^\\[([^\\]]*)\\]\\(([^\\s)]+)(?:\\s+\"[^\"]*\")?\\)$/);
+      if (link) {
+        const href = sanitizeUrl(link[2], false);
+        if (href) {
+          const anchor = document.createElement('a');
+          anchor.href = href;
+          anchor.textContent = link[1] || href;
+          anchor.title = href;
+          return anchor;
+        }
+      }
+
+      if ((token.startsWith('**') && token.endsWith('**')) || (token.startsWith('__') && token.endsWith('__'))) {
+        const strong = document.createElement('strong');
+        strong.textContent = token.slice(2, -2);
+        return strong;
+      }
+
+      if ((token.startsWith('*') && token.endsWith('*')) || (token.startsWith('_') && token.endsWith('_'))) {
+        const emphasis = document.createElement('em');
+        emphasis.textContent = token.slice(1, -1);
+        return emphasis;
+      }
+
+      return document.createTextNode(token);
+    }
+
+    function sanitizeUrl(url, image) {
+      const value = String(url || '').trim();
+      if (!value) {
+        return '';
+      }
+      if (/^(https?:|data:image\\/|vscode-resource:|vscode-webview-resource:)/i.test(value)) {
+        return value;
+      }
+      if (!/^[a-z][a-z0-9+.-]*:/i.test(value) && !value.startsWith('//')) {
+        return value;
+      }
+      return image ? '' : '';
+    }
+
+    function isTableStart(lines, index) {
+      return Boolean(
+        lines[index]
+        && lines[index + 1]
+        && /^\\s*\\|.*\\|\\s*$/.test(lines[index])
+        && /^\\s*\\|?\\s*:?-{3,}:?\\s*(\\|\\s*:?-{3,}:?\\s*)+\\|?\\s*$/.test(lines[index + 1])
+      );
+    }
+
+    function table(lines) {
+      const tableEl = document.createElement('table');
+      const thead = document.createElement('thead');
+      const tbody = document.createElement('tbody');
+      const headers = splitTableRow(lines[0]);
+      const headRow = document.createElement('tr');
+      for (const header of headers) {
+        const th = document.createElement('th');
+        appendInlineMarkdown(th, header);
+        headRow.appendChild(th);
+      }
+      thead.appendChild(headRow);
+
+      for (const line of lines.slice(2)) {
+        const cells = splitTableRow(line);
+        const row = document.createElement('tr');
+        for (let index = 0; index < Math.max(headers.length, cells.length); index += 1) {
+          const td = document.createElement('td');
+          appendInlineMarkdown(td, cells[index] || '');
+          row.appendChild(td);
+        }
+        tbody.appendChild(row);
+      }
+
+      tableEl.append(thead, tbody);
+      return tableEl;
+    }
+
+    function splitTableRow(line) {
+      return line.trim().replace(/^\\|/, '').replace(/\\|$/, '').split('|').map((cell) => cell.trim());
     }
 
     function button(value, className) {

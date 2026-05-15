@@ -6,18 +6,30 @@ import { createProposeChangesTool, type ProposeChangesHandler } from '../tools/p
 import { getWorkspaceRoot } from './workspace'
 import { getKrakenConfig } from './krakenConfig'
 import { configureSkillPaths } from '../skills/paths'
+import type { Skill } from '../skills/types'
 
-export function createVSCodeToolRegistry(proposeChanges: ProposeChangesHandler): ToolDefinition[] {
+export interface VSCodeToolRegistry {
+  tools: ToolDefinition[]
+  availableSkills: Skill[]
+}
+
+export function createVSCodeToolRegistry(
+  proposeChanges: ProposeChangesHandler,
+  options: { extensionRoot?: string } = {}
+): VSCodeToolRegistry {
   const root = getWorkspaceRoot()
   if (!root) {
     throw new Error('Open a workspace folder before using tools.')
   }
 
-  const config = getKrakenConfig()
+  const config = getKrakenConfig({ extensionRoot: options.extensionRoot })
   configureSkillPaths({
     globalSkillDir: config.paths.globalSkillDir,
+    legacyGlobalSkillDir: config.paths.legacyGlobalSkillDir,
     workspaceSkillDir: config.paths.workspaceSkillDir,
+    legacyWorkspaceSkillDir: config.paths.legacyWorkspaceSkillDir,
     installRoot: config.skills.dir,
+    builtinSkillDir: config.paths.builtinSkillDir,
   })
   const availableSkills = refreshSkills()
   const tools = createToolRegistry({
@@ -47,7 +59,7 @@ export function createVSCodeToolRegistry(proposeChanges: ProposeChangesHandler):
     execute: (input: Record<string, unknown>) => proposeChangesTool.execute(input, {} as never),
   })
 
-  return tools
+  return { tools, availableSkills }
 }
 
 function extensionRootFallback(workspaceRoot: string): string {
