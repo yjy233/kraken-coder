@@ -82,7 +82,6 @@ export type WebviewToExtensionMessage =
   | { type: 'change.reject'; changeSetId: string }
   | { type: 'context.remove'; contextId: string }
   | { type: 'config.open' }
-  | { type: 'secret.setApiKey' }
   | { type: 'session.clear' }
   | { type: 'session.new' }
   | { type: 'session.switch'; sessionId: string }
@@ -97,6 +96,7 @@ export interface ModelSettings {
   baseUrl: string;
   provider: 'openai-compatible';
   model: string;
+  apiKey: string;
   proxy?: string;
 }
 

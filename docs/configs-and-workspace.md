@@ -44,6 +44,7 @@ Skill 扫描目录：
 baseUrl = "https://api.openai.com/v1"
 proxy = ""
 name = "gpt-4.1"
+apiKey = "sk-..."
 
 [context]
 maxChars = 60000
@@ -56,6 +57,7 @@ allowBrowserTool = false
 browserBin = "agent-browser"
 browserMaxOutput = 50000
 browserDefaultTimeout = 25000
+maxSteps = 8
 browserAllowedDomains = ["example.com", "docs.example.com"]
 
 [skills]
@@ -84,7 +86,7 @@ enabled = true
 ## Notes
 
 - `Kraken: Configure Model` 会打开配置页面，保存后写入全局 `~/kraken-coder/config/config.toml`。
-- API key 仍然保存在 VS Code SecretStorage，不写入 TOML。
+- API key 保存在全局 `~/kraken-coder/config/config.toml` 的 `[model].apiKey`。
 - `model.proxy` 为空时不走代理。
 - 新 skill 目录使用复数 `skills`；单数 `skill` 目录仅作为 legacy 兼容扫描。
 - 目前不考虑额外沙箱；tools 按 VS Code workspace root 执行。

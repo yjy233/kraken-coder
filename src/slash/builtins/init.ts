@@ -177,7 +177,7 @@ function buildAgentMd(snapshot: WorkspaceSnapshot, options: { force: boolean; re
     '## Tool And Permission Notes',
     '',
     '- This project is used from VS Code.',
-    '- API keys are stored in VS Code SecretStorage, not in TOML or Markdown files.',
+    '- API keys are stored in `~/kraken-coder/config/config.toml` under `[model].apiKey`.',
     '- Workspace TOML config overrides global TOML config.',
     '- Do not assume browser, shell, or direct file-write tools are enabled.',
     '',

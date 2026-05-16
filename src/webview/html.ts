@@ -565,7 +565,6 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     <div class="toolbar">
       <div class="title">Kraken Coder</div>
       <button class="secondary" id="configure" title="Configure model">Config</button>
-      <button class="secondary" id="setKey" title="Set API key">Key</button>
       <button class="secondary" id="clear" title="Clear session">Clear</button>
     </div>
     <main class="main">
@@ -607,7 +606,6 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     const errorEl = document.getElementById('error');
 
     document.getElementById('configure').addEventListener('click', () => post({ type: 'config.open' }));
-    document.getElementById('setKey').addEventListener('click', () => post({ type: 'secret.setApiKey' }));
     document.getElementById('clear').addEventListener('click', () => post({ type: 'session.clear' }));
     document.getElementById('newSession').addEventListener('click', () => post({ type: 'session.new' }));
 

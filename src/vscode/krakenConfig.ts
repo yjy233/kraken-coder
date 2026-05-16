@@ -14,6 +14,7 @@ export interface KrakenFileConfig {
     baseUrl?: string;
     name?: string;
     proxy?: string;
+    apiKey?: string;
   };
   context?: {
     maxChars?: number;
@@ -26,6 +27,7 @@ export interface KrakenFileConfig {
     browserBin?: string;
     browserMaxOutput?: number;
     browserDefaultTimeout?: number;
+    maxSteps?: number;
     browserAllowedDomains?: string | string[];
   };
   skills?: {
@@ -55,6 +57,7 @@ export interface KrakenConfig {
     baseUrl: string;
     name: string;
     proxy?: string;
+    apiKey: string;
   };
   context: {
     maxChars: number;
@@ -67,6 +70,7 @@ export interface KrakenConfig {
     browserBin: string;
     browserMaxOutput: number;
     browserDefaultTimeout: number;
+    maxSteps: number;
     browserAllowedDomains?: string;
   };
   skills: {
@@ -189,6 +193,7 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
         'https://api.openai.com/v1'
       )),
       name: stringValue(model.name, getVSCodeConfigValue<string>(vscodeConfig, 'model.name'), '').trim(),
+      apiKey: stringValue(model.apiKey, ''),
       ...(normalizeOptionalString(model.proxy) ? { proxy: normalizeOptionalString(model.proxy) } : {}),
     },
     context: {
@@ -226,6 +231,14 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
         agent.browserDefaultTimeout,
         getVSCodeConfigValue<number>(vscodeConfig, 'agent.browserDefaultTimeout'),
         parseInteger(process.env.AGENT_BROWSER_DEFAULT_TIMEOUT, 25000)
+      ),
+      maxSteps: Math.max(
+        1,
+        Math.floor(numberValue(
+          agent.maxSteps,
+          getVSCodeConfigValue<number>(vscodeConfig, 'agent.maxSteps'),
+          8
+        ))
       ),
       ...(browserAllowedDomains ? { browserAllowedDomains } : {}),
     },
@@ -345,10 +358,12 @@ function normalizeParsedConfig(parsed: ParsedToml): KrakenFileConfig {
     const baseUrl = firstDefined(getString(model, 'baseUrl'), getString(model, 'base_url'));
     const name = firstDefined(getString(model, 'name'), getString(model, 'model'));
     const proxy = getString(model, 'proxy');
+    const apiKey = firstDefined(getString(model, 'apiKey'), getString(model, 'api_key'));
     config.model = {
       ...(baseUrl !== undefined ? { baseUrl } : {}),
       ...(name !== undefined ? { name } : {}),
       ...(proxy !== undefined ? { proxy } : {}),
+      ...(apiKey !== undefined ? { apiKey } : {}),
     };
   }
 
@@ -373,6 +388,7 @@ function normalizeParsedConfig(parsed: ParsedToml): KrakenFileConfig {
       getNumber(agent, 'browserDefaultTimeout'),
       getNumber(agent, 'browser_default_timeout')
     );
+    const maxSteps = firstDefined(getNumber(agent, 'maxSteps'), getNumber(agent, 'max_steps'));
     const browserAllowedDomains = firstDefined(
       getStringOrStringArray(agent, 'browserAllowedDomains'),
       getStringOrStringArray(agent, 'browser_allowed_domains')
@@ -386,6 +402,7 @@ function normalizeParsedConfig(parsed: ParsedToml): KrakenFileConfig {
       ...(browserBin !== undefined ? { browserBin } : {}),
       ...(browserMaxOutput !== undefined ? { browserMaxOutput } : {}),
       ...(browserDefaultTimeout !== undefined ? { browserDefaultTimeout } : {}),
+      ...(maxSteps !== undefined ? { maxSteps } : {}),
       ...(browserAllowedDomains !== undefined ? { browserAllowedDomains } : {}),
     };
   }

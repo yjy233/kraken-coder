@@ -3,11 +3,9 @@ import { KrakenCodeActionProvider } from './providers/codeActionProvider';
 import { KrakenViewProvider } from './providers/krakenViewProvider';
 import { configureModel } from './vscode/config';
 import { ChangeDocumentProvider } from './vscode/edits';
-import { SecretStore } from './vscode/secrets';
 
 export function activate(context: vscode.ExtensionContext): void {
-  const secretStore = new SecretStore(context.secrets);
-  const krakenViewProvider = new KrakenViewProvider(context.extensionUri, secretStore);
+  const krakenViewProvider = new KrakenViewProvider(context.extensionUri);
   const changeDocumentProvider = new ChangeDocumentProvider();
 
   context.subscriptions.push(
@@ -20,7 +18,6 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.commands.registerCommand('kraken.openChat', () => krakenViewProvider.reveal()),
     vscode.commands.registerCommand('kraken.configureModel', () => configureModel()),
-    vscode.commands.registerCommand('kraken.setApiKey', () => secretStore.setApiKey()),
     vscode.commands.registerCommand('kraken.clearSession', () => krakenViewProvider.clearSession()),
     vscode.commands.registerCommand('kraken.explainSelection', (uri?: vscode.Uri, range?: vscode.Range) => {
       return krakenViewProvider.runSelectionTask('explain', uri, range);

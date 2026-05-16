@@ -13,7 +13,6 @@ import {
 import { createVSCodeToolRegistry } from '../vscode/agentTools';
 import { ensureModelConfigured } from '../vscode/config';
 import { applyChangeSet, buildChangeSet, openChangeDiff } from '../vscode/edits';
-import { SecretStore } from '../vscode/secrets';
 import {
   getActiveSelectionContext,
   getDiagnosticsContext,
@@ -47,10 +46,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
   private session: ChatSession = createEmptyChatSession();
   private sessionSummaries: ChatSessionSummary[] = [];
 
-  constructor(
-    private readonly extensionUri: vscode.Uri,
-    private readonly secretStore: SecretStore
-  ) {}
+  constructor(private readonly extensionUri: vscode.Uri) {}
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.webviewView = webviewView;
@@ -143,9 +139,6 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       case 'config.open':
         await vscode.commands.executeCommand('kraken.configureModel');
         break;
-      case 'secret.setApiKey':
-        await vscode.commands.executeCommand('kraken.setApiKey');
-        break;
       case 'session.clear':
         await this.clearSession();
         break;
@@ -178,7 +171,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    const apiKey = await this.secretStore.ensureApiKey();
+    const apiKey = settings.apiKey.trim();
     if (!apiKey) {
       return;
     }
@@ -224,6 +217,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
         settings,
         apiKey,
         maxContextChars: config.context.maxChars,
+        maxSteps: config.agent.maxSteps,
         tools,
         availableSkills,
         memoryPromptBlock: memory?.promptBlock,

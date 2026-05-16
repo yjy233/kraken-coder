@@ -80,7 +80,7 @@ Describe what this project does, the main runtime, and important entry points.
 ## Tool And Permission Notes
 
 - This project is VS Code-only.
-- API keys are stored in VS Code SecretStorage.
+- API keys are stored in `~/kraken-coder/config/config.toml` under `[model].apiKey`.
 - Workspace TOML config overrides global TOML config.
 
 ## Known Constraints

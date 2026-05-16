@@ -15,7 +15,6 @@
     "onView:krakenCoder.chatView",
     "onCommand:kraken.openChat",
     "onCommand:kraken.configureModel",
-    "onCommand:kraken.setApiKey",
     "onCommand:kraken.clearSession",
     "onCommand:kraken.explainSelection",
     "onCommand:kraken.fixSelection",
@@ -56,11 +55,6 @@
       {
         "command": "kraken.configureModel",
         "title": "Kraken: Configure Model",
-        "category": "Kraken"
-      },
-      {
-        "command": "kraken.setApiKey",
-        "title": "Kraken: Set API Key",
         "category": "Kraken"
       },
       {
@@ -187,6 +181,12 @@
           "default": 25000,
           "minimum": 1000,
           "description": "Default timeout in milliseconds for agent_browser actions."
+        },
+        "kraken.agent.maxSteps": {
+          "type": "number",
+          "default": 8,
+          "minimum": 1,
+          "description": "Maximum ReAct steps before the agent stops."
         },
         "kraken.agent.browserAllowedDomains": {
           "type": "string",

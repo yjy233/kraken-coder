@@ -8,37 +8,63 @@ export function getModelSettings(): ModelSettings {
     baseUrl: config.model.baseUrl,
     provider: 'openai-compatible',
     model: config.model.name,
+    apiKey: config.model.apiKey,
     ...(config.model.proxy ? { proxy: config.model.proxy } : {})
   };
 }
 
 export async function ensureModelConfigured(): Promise<ModelSettings | undefined> {
-  const current = getModelSettings();
-  if (current.model) {
-    return current;
-  }
+  let current = getModelSettings();
+  if (!current.model) {
+    const model = await vscode.window.showInputBox({
+      title: 'Kraken model name',
+      prompt: 'Enter the OpenAI-compatible model name to use.',
+      ignoreFocusOut: true,
+      placeHolder: 'gpt-4.1'
+    });
 
-  const model = await vscode.window.showInputBox({
-    title: 'Kraken model name',
-    prompt: 'Enter the OpenAI-compatible model name to use.',
-    ignoreFocusOut: true,
-    placeHolder: 'gpt-4.1'
-  });
-
-  if (!model?.trim()) {
-    return undefined;
-  }
-
-  await updateGlobalKrakenConfig({
-    model: {
-      name: model.trim()
+    if (!model?.trim()) {
+      return undefined;
     }
-  });
 
-  return {
-    ...current,
-    model: model.trim()
-  };
+    await updateGlobalKrakenConfig({
+      model: {
+        name: model.trim()
+      }
+    });
+
+    current = {
+      ...current,
+      model: model.trim()
+    };
+  }
+
+  if (!current.apiKey) {
+    const apiKey = await vscode.window.showInputBox({
+      title: 'Kraken API key',
+      prompt: 'Enter the API key for your configured OpenAI-compatible provider.',
+      password: true,
+      ignoreFocusOut: true,
+      placeHolder: 'sk-...'
+    });
+
+    if (!apiKey?.trim()) {
+      return undefined;
+    }
+
+    await updateGlobalKrakenConfig({
+      model: {
+        apiKey: apiKey.trim()
+      }
+    });
+
+    current = {
+      ...current,
+      apiKey: apiKey.trim()
+    };
+  }
+
+  return current;
 }
 
 export async function configureModel(): Promise<void> {
@@ -105,6 +131,7 @@ class ConfigPanel {
 interface ConfigFormValues {
   modelBaseUrl: string;
   modelName: string;
+  modelApiKey: string;
   modelProxy: string;
   contextMaxChars: number;
   agentAutoApply: boolean;
@@ -114,6 +141,7 @@ interface ConfigFormValues {
   agentBrowserBin: string;
   agentBrowserMaxOutput: number;
   agentBrowserDefaultTimeout: number;
+  agentMaxSteps: number;
   agentBrowserAllowedDomains: string;
   skillsDir: string;
   memoryEnabled: boolean;
@@ -133,6 +161,7 @@ function configToForm(config: ReturnType<typeof getKrakenConfig>): ConfigFormVal
   return {
     modelBaseUrl: config.model.baseUrl,
     modelName: config.model.name,
+    modelApiKey: config.model.apiKey,
     modelProxy: config.model.proxy ?? '',
     contextMaxChars: config.context.maxChars,
     agentAutoApply: config.agent.autoApply,
@@ -142,6 +171,7 @@ function configToForm(config: ReturnType<typeof getKrakenConfig>): ConfigFormVal
     agentBrowserBin: config.agent.browserBin,
     agentBrowserMaxOutput: config.agent.browserMaxOutput,
     agentBrowserDefaultTimeout: config.agent.browserDefaultTimeout,
+    agentMaxSteps: config.agent.maxSteps,
     agentBrowserAllowedDomains: config.agent.browserAllowedDomains ?? '',
     skillsDir: config.skills.dir ?? '',
     memoryEnabled: config.memory.enabled,
@@ -163,6 +193,7 @@ function formToConfig(values: Record<string, unknown>): KrakenFileConfig {
     model: {
       baseUrl: normalizeBaseUrl(stringValue(values.modelBaseUrl, 'https://api.openai.com/v1')),
       name: stringValue(values.modelName, ''),
+      apiKey: stringValue(values.modelApiKey, ''),
       proxy: stringValue(values.modelProxy, ''),
     },
     context: {
@@ -176,6 +207,7 @@ function formToConfig(values: Record<string, unknown>): KrakenFileConfig {
       browserBin: stringValue(values.agentBrowserBin, 'agent-browser'),
       browserMaxOutput: numberValue(values.agentBrowserMaxOutput, 50000),
       browserDefaultTimeout: numberValue(values.agentBrowserDefaultTimeout, 25000),
+      maxSteps: numberValue(values.agentMaxSteps, 8),
       browserAllowedDomains: parseDomainList(values.agentBrowserAllowedDomains),
     },
     skills: {
@@ -261,6 +293,7 @@ function getConfigHtml(webview: vscode.Webview, values: ConfigFormValues): strin
       font-size: 12px;
     }
     input[type="text"],
+    input[type="password"],
     input[type="number"] {
       width: 100%;
       min-height: 30px;
@@ -312,6 +345,7 @@ function getConfigHtml(webview: vscode.Webview, values: ConfigFormValues): strin
       ${section('Model', [
         text('modelBaseUrl', 'Base URL'),
         text('modelName', 'Model name'),
+        password('modelApiKey', 'API key'),
         text('modelProxy', 'HTTP proxy'),
       ])}
       ${section('Context', [
@@ -325,6 +359,7 @@ function getConfigHtml(webview: vscode.Webview, values: ConfigFormValues): strin
         text('agentBrowserBin', 'Browser tool executable'),
         number('agentBrowserMaxOutput', 'Browser max output chars'),
         number('agentBrowserDefaultTimeout', 'Browser timeout ms'),
+        number('agentMaxSteps', 'Max agent steps'),
         text('agentBrowserAllowedDomains', 'Browser allowed domains'),
       ])}
       ${section('Skills', [
@@ -395,6 +430,10 @@ function section(title: string, controls: string[]): string {
 
 function text(name: keyof ConfigFormValues, label: string): string {
   return `<label><span class="label">${escapeHtml(label)}</span><input type="text" name="${name}"></label>`;
+}
+
+function password(name: keyof ConfigFormValues, label: string): string {
+  return `<label><span class="label">${escapeHtml(label)}</span><input type="password" name="${name}"></label>`;
 }
 
 function number(name: keyof ConfigFormValues, label: string): string {
