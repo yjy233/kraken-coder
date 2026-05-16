@@ -21,6 +21,7 @@ export class ReActAgent {
     tools?: ToolDefinition[] | undefined
     skillState?: SkillRuntimeState | undefined
     emit?: EmitFn | undefined
+    signal?: AbortSignal | undefined
   }): Promise<RunAgentRequestResult & { finalMessages: AgentMessage[] }> {
     const model = params.model || this.config.defaultModel
     const baseSystemPrompt = params.systemPrompt || this.config.defaultSystemPrompt
@@ -46,6 +47,7 @@ export class ReActAgent {
 
     // ReAct 主循环
     for (let stepIndex = 0; stepIndex < this.config.maxSteps; stepIndex += 1) {
+      throwIfAborted(params.signal)
       emit?.('run:step', { runId: run.id, step: stepIndex + 1, phase: 'model_request' })
 
       // 委托单轮查询
@@ -57,6 +59,7 @@ export class ReActAgent {
         maxOutputTokens: this.config.maxTokens,
         step: stepIndex + 1,
         emit,
+        signal: params.signal,
       }
       if (this.config.timeout !== undefined) {
         loopParams.timeout = this.config.timeout
@@ -91,5 +94,11 @@ export class ReActAgent {
     const loadedSkills = Array.from(params.skillState?.loadedSkillNames || [])
     currentMessages.push({ role: 'assistant', content: exhaustedMessage })
     return { reply: exhaustedMessage, run, finalMessages: currentMessages, loadedSkills }
+  }
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new Error('Agent run interrupted.')
   }
 }

@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { expandHomePath, parseBoolean, parseInteger } from '../utils/helpers';
 import { getWorkspaceRoot } from './workspace';
+import type { LspLanguage } from '../lsp/types';
 
 type TomlPrimitive = string | number | boolean;
 type TomlValue = TomlPrimitive | TomlPrimitive[];
@@ -32,6 +33,14 @@ export interface KrakenFileConfig {
   };
   skills?: {
     dir?: string;
+  };
+  lsp?: {
+    enabled?: boolean;
+    adapter?: string;
+    languages?: string[];
+    maxResults?: number;
+    hoverMaxChars?: number;
+    timeoutMs?: number;
   };
   memory?: {
     enabled?: boolean;
@@ -75,6 +84,14 @@ export interface KrakenConfig {
   };
   skills: {
     dir?: string;
+  };
+  lsp: {
+    enabled: boolean;
+    adapter: 'auto' | 'vscode' | 'process';
+    languages: LspLanguage[];
+    maxResults: number;
+    hoverMaxChars: number;
+    timeoutMs: number;
   };
   memory: {
     enabled: boolean;
@@ -168,6 +185,7 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
   const context = fileConfig.context ?? {};
   const model = fileConfig.model ?? {};
   const skills = fileConfig.skills ?? {};
+  const lsp = fileConfig.lsp ?? {};
   const memory = fileConfig.memory ?? {};
   const episodes = fileConfig.episodes ?? {};
   const sessions = fileConfig.sessions ?? {};
@@ -244,6 +262,30 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
     },
     skills: {
       ...(skillsDir ? { dir: skillsDir } : {}),
+    },
+    lsp: {
+      enabled: booleanValue(lsp.enabled, getVSCodeConfigValue<boolean>(vscodeConfig, 'lsp.enabled'), true),
+      adapter: normalizeLspAdapter(stringValue(
+        lsp.adapter,
+        getVSCodeConfigValue<string>(vscodeConfig, 'lsp.adapter'),
+        'auto'
+      )),
+      languages: normalizeLspLanguages(firstNonEmptyStringArray(
+        lsp.languages,
+        getVSCodeConfigValue<string[]>(vscodeConfig, 'lsp.languages')
+      )),
+      maxResults: Math.max(
+        1,
+        Math.floor(numberValue(lsp.maxResults, getVSCodeConfigValue<number>(vscodeConfig, 'lsp.maxResults'), 50))
+      ),
+      hoverMaxChars: Math.max(
+        0,
+        Math.floor(numberValue(lsp.hoverMaxChars, getVSCodeConfigValue<number>(vscodeConfig, 'lsp.hoverMaxChars'), 4000))
+      ),
+      timeoutMs: Math.max(
+        1000,
+        Math.floor(numberValue(lsp.timeoutMs, getVSCodeConfigValue<number>(vscodeConfig, 'lsp.timeoutMs'), 8000))
+      ),
     },
     memory: {
       enabled: booleanValue(memory.enabled, getVSCodeConfigValue<boolean>(vscodeConfig, 'memory.enabled'), true),
@@ -349,6 +391,7 @@ function normalizeParsedConfig(parsed: ParsedToml): KrakenFileConfig {
   const context = asRecord(parsed.context);
   const agent = asRecord(parsed.agent);
   const skills = asRecord(parsed.skills);
+  const lsp = asRecord(parsed.lsp);
   const memory = asRecord(parsed.memory);
   const episodes = asRecord(parsed.episodes);
   const sessions = asRecord(parsed.sessions);
@@ -414,6 +457,23 @@ function normalizeParsedConfig(parsed: ParsedToml): KrakenFileConfig {
     };
   }
 
+  if (lsp) {
+    const enabled = getBoolean(lsp, 'enabled');
+    const adapter = getString(lsp, 'adapter');
+    const languages = getStringArray(lsp, 'languages');
+    const maxResults = firstDefined(getNumber(lsp, 'maxResults'), getNumber(lsp, 'max_results'));
+    const hoverMaxChars = firstDefined(getNumber(lsp, 'hoverMaxChars'), getNumber(lsp, 'hover_max_chars'));
+    const timeoutMs = firstDefined(getNumber(lsp, 'timeoutMs'), getNumber(lsp, 'timeout_ms'));
+    config.lsp = {
+      ...(enabled !== undefined ? { enabled } : {}),
+      ...(adapter !== undefined ? { adapter } : {}),
+      ...(languages !== undefined ? { languages } : {}),
+      ...(maxResults !== undefined ? { maxResults } : {}),
+      ...(hoverMaxChars !== undefined ? { hoverMaxChars } : {}),
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    };
+  }
+
   if (memory) {
     const enabled = getBoolean(memory, 'enabled');
     const autoRead = firstDefined(getBoolean(memory, 'autoRead'), getBoolean(memory, 'auto_read'));
@@ -460,6 +520,7 @@ function mergeFileConfig(base: KrakenFileConfig, override: KrakenFileConfig): Kr
     ...(mergeSection(base.context, override.context) ? { context: mergeSection(base.context, override.context) } : {}),
     ...(mergeSection(base.agent, override.agent) ? { agent: mergeSection(base.agent, override.agent) } : {}),
     ...(mergeSection(base.skills, override.skills) ? { skills: mergeSection(base.skills, override.skills) } : {}),
+    ...(mergeSection(base.lsp, override.lsp) ? { lsp: mergeSection(base.lsp, override.lsp) } : {}),
     ...(mergeSection(base.memory, override.memory) ? { memory: mergeSection(base.memory, override.memory) } : {}),
     ...(mergeSection(base.episodes, override.episodes) ? { episodes: mergeSection(base.episodes, override.episodes) } : {}),
     ...(mergeSection(base.sessions, override.sessions) ? { sessions: mergeSection(base.sessions, override.sessions) } : {}),
@@ -480,6 +541,7 @@ function serializeKrakenToml(config: KrakenFileConfig): string {
   pushSection(sections, 'context', config.context);
   pushSection(sections, 'agent', config.agent);
   pushSection(sections, 'skills', config.skills);
+  pushSection(sections, 'lsp', config.lsp);
   pushSection(sections, 'memory', config.memory);
   pushSection(sections, 'episodes', config.episodes);
   pushSection(sections, 'sessions', config.sessions);
@@ -698,6 +760,11 @@ function getStringOrStringArray(record: Record<string, unknown>, key: string): s
   return undefined;
 }
 
+function getStringArray(record: Record<string, unknown>, key: string): string[] | undefined {
+  const value = record[key];
+  return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : undefined;
+}
+
 function getNumber(record: Record<string, unknown>, key: string): number | undefined {
   const value = record[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
@@ -725,6 +792,10 @@ function firstNonEmptyStringOrArray(
     }
     return typeof value === 'string' && value.trim();
   });
+}
+
+function firstNonEmptyStringArray(...values: Array<string[] | undefined>): string[] | undefined {
+  return values.find((value) => Array.isArray(value) && value.some((item) => item.trim()));
 }
 
 function getVSCodeConfigValue<T>(config: vscode.WorkspaceConfiguration, key: string): T | undefined {
@@ -757,6 +828,22 @@ function booleanValue(...values: Array<boolean | undefined>): boolean {
     }
   }
   return false;
+}
+
+function normalizeLspAdapter(value: string): KrakenConfig['lsp']['adapter'] {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'vscode' || normalized === 'process') {
+    return normalized;
+  }
+  return 'auto';
+}
+
+function normalizeLspLanguages(value: string[] | undefined): LspLanguage[] {
+  const allowed = new Set<LspLanguage>(['typescript', 'go', 'python']);
+  const languages = (value ?? ['typescript', 'go', 'python'])
+    .map((item) => item.trim().toLowerCase())
+    .filter((item): item is LspLanguage => allowed.has(item as LspLanguage));
+  return languages.length ? Array.from(new Set(languages)) : ['typescript', 'go', 'python'];
 }
 
 function normalizeOptionalPath(value: unknown): string | undefined {

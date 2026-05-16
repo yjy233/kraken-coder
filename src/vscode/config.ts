@@ -144,6 +144,12 @@ interface ConfigFormValues {
   agentMaxSteps: number;
   agentBrowserAllowedDomains: string;
   skillsDir: string;
+  lspEnabled: boolean;
+  lspAdapter: string;
+  lspLanguages: string;
+  lspMaxResults: number;
+  lspHoverMaxChars: number;
+  lspTimeoutMs: number;
   memoryEnabled: boolean;
   memoryAutoRead: boolean;
   memoryMaxChars: number;
@@ -174,6 +180,12 @@ function configToForm(config: ReturnType<typeof getKrakenConfig>): ConfigFormVal
     agentMaxSteps: config.agent.maxSteps,
     agentBrowserAllowedDomains: config.agent.browserAllowedDomains ?? '',
     skillsDir: config.skills.dir ?? '',
+    lspEnabled: config.lsp.enabled,
+    lspAdapter: config.lsp.adapter,
+    lspLanguages: config.lsp.languages.join(', '),
+    lspMaxResults: config.lsp.maxResults,
+    lspHoverMaxChars: config.lsp.hoverMaxChars,
+    lspTimeoutMs: config.lsp.timeoutMs,
     memoryEnabled: config.memory.enabled,
     memoryAutoRead: config.memory.autoRead,
     memoryMaxChars: config.memory.maxChars,
@@ -212,6 +224,14 @@ function formToConfig(values: Record<string, unknown>): KrakenFileConfig {
     },
     skills: {
       dir: stringValue(values.skillsDir, ''),
+    },
+    lsp: {
+      enabled: booleanValue(values.lspEnabled),
+      adapter: stringValue(values.lspAdapter, 'auto'),
+      languages: parseCommaList(values.lspLanguages),
+      maxResults: numberValue(values.lspMaxResults, 50),
+      hoverMaxChars: numberValue(values.lspHoverMaxChars, 4000),
+      timeoutMs: numberValue(values.lspTimeoutMs, 8000),
     },
     memory: {
       enabled: booleanValue(values.memoryEnabled),
@@ -365,6 +385,14 @@ function getConfigHtml(webview: vscode.Webview, values: ConfigFormValues): strin
       ${section('Skills', [
         text('skillsDir', 'Custom skills directory'),
       ])}
+      ${section('LSP Tools', [
+        checkbox('lspEnabled', 'Enable LSP tools'),
+        text('lspAdapter', 'Adapter (auto, vscode, process)'),
+        text('lspLanguages', 'Languages'),
+        number('lspMaxResults', 'Max LSP results'),
+        number('lspHoverMaxChars', 'Hover max chars'),
+        number('lspTimeoutMs', 'LSP timeout ms'),
+      ])}
       ${section('Memory', [
         checkbox('memoryEnabled', 'Enable memory'),
         checkbox('memoryAutoRead', 'Auto read memory'),
@@ -458,6 +486,10 @@ function booleanValue(value: unknown): boolean {
 }
 
 function parseDomainList(value: unknown): string[] {
+  return parseCommaList(value);
+}
+
+function parseCommaList(value: unknown): string[] {
   return stringValue(value, '').split(',').map((item) => item.trim()).filter(Boolean);
 }
 

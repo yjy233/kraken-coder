@@ -7,6 +7,9 @@ import { getWorkspaceRoot } from './workspace'
 import { getKrakenConfig } from './krakenConfig'
 import { configureSkillPaths } from '../skills/paths'
 import type { Skill } from '../skills/types'
+import { createLspTools } from '../lsp/tools'
+import { VSCodeLspAdapter } from './lsp/adapter'
+import { ProcessLspAdapter } from '../lsp/adapters/process'
 
 export interface VSCodeToolRegistry {
   tools: ToolDefinition[]
@@ -52,6 +55,13 @@ export function createVSCodeToolRegistry(
   })
 
   const proposeChangesTool = createProposeChangesTool(proposeChanges)
+  tools.push(...createLspTools({
+    workspaceRoot: root.fsPath,
+    adapter: config.lsp.adapter === 'process'
+      ? new ProcessLspAdapter({ idleTimeoutMs: config.lsp.timeoutMs * 4 })
+      : new VSCodeLspAdapter(),
+    config: config.lsp,
+  }))
   tools.push({
     name: proposeChangesTool.name,
     description: proposeChangesTool.description,

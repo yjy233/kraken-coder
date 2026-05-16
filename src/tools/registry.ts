@@ -6,6 +6,7 @@
 
 import type { Tool, ToolContext } from './types.js'
 import type { ToolDefinition } from '../agent/types.js'
+import type { EmitFn } from '../agent/types.js'
 import { listDirectoryTool } from './list-directory.js'
 import { readFileTool } from './read-file.js'
 import { grepTool } from './grep.js'
@@ -110,6 +111,6 @@ export function createToolRegistry(options: CreateRegistryOptions, request?: {
     name: tool.name,
     description: tool.description,
     input_schema: tool.inputSchema,
-    execute: (input: Record<string, unknown>) => tool.execute(input, ctx),
+    execute: (input: Record<string, unknown>, signal?: AbortSignal, emit?: EmitFn) => tool.execute(input, { ...ctx, signal, emit }),
   }))
 }

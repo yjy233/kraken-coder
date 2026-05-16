@@ -198,6 +198,56 @@
           "default": "",
           "description": "Optional skill install/discovery directory. Used when TOML [skills].dir is unset; falls back to KRAKEN_SKILLS_DIR or ~/kraken-coder/skills."
         },
+        "kraken.lsp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable read-only LSP tools for TypeScript, Go, and Python."
+        },
+        "kraken.lsp.adapter": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "vscode",
+            "process"
+          ],
+          "description": "LSP adapter selection. VS Code currently uses vscode when auto."
+        },
+        "kraken.lsp.languages": {
+          "type": "array",
+          "default": [
+            "typescript",
+            "go",
+            "python"
+          ],
+          "items": {
+            "type": "string",
+            "enum": [
+              "typescript",
+              "go",
+              "python"
+            ]
+          },
+          "description": "Languages enabled for LSP tools."
+        },
+        "kraken.lsp.maxResults": {
+          "type": "number",
+          "default": 50,
+          "minimum": 1,
+          "description": "Default maximum LSP results returned to the model."
+        },
+        "kraken.lsp.hoverMaxChars": {
+          "type": "number",
+          "default": 4000,
+          "minimum": 0,
+          "description": "Maximum hover characters returned by LSP tools."
+        },
+        "kraken.lsp.timeoutMs": {
+          "type": "number",
+          "default": 8000,
+          "minimum": 1000,
+          "description": "Timeout in milliseconds for one LSP request."
+        },
         "kraken.memory.enabled": {
           "type": "boolean",
           "default": true,

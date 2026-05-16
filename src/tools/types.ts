@@ -3,6 +3,7 @@
  */
 
 import type { Skill, SkillRuntimeState } from '../skills/types.js'
+import type { EmitFn } from '../agent/types.js'
 
 export interface SessionSandboxConfig {
   workspaceRoot?: string
@@ -42,6 +43,8 @@ export interface ToolContext {
   skillState: SkillRuntimeState
   refreshSkills: () => Skill[]
   setAvailableSkills: (skills: Skill[]) => void
+  signal?: AbortSignal | undefined
+  emit?: EmitFn | undefined
 }
 
 export interface ToolResult {

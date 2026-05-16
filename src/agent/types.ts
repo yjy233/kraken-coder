@@ -44,7 +44,7 @@ export interface ToolDefinition {
   name: string
   description: string
   input_schema: JsonRecord
-  execute: (input: ToolInput) => Promise<ToolExecutionResult>
+  execute: (input: ToolInput, signal?: AbortSignal, emit?: EmitFn) => Promise<ToolExecutionResult>
 }
 
 /** 模型返回的 tool_use 请求 */
@@ -131,6 +131,7 @@ export interface InvokeModelParams {
   messages: AgentMessage[]
   tools: ToolDefinition[]
   onDelta?: (delta: string) => void
+  signal?: AbortSignal
 }
 
 /** Agent 运行返回给调用方的结果 */

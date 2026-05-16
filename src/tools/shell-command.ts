@@ -66,22 +66,52 @@ async function runShellCommand(
       child.kill('SIGTERM')
       reject(new Error(`Command timed out after ${timeoutMs}ms`))
     }, timeoutMs)
+    const abort = () => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      ctx.signal?.removeEventListener('abort', abort)
+      child.kill('SIGINT')
+      setTimeout(() => {
+        if (child.exitCode === null) {
+          child.kill('SIGTERM')
+        }
+      }, 1000).unref()
+      reject(new Error('Command interrupted.'))
+    }
+    if (ctx.signal?.aborted) {
+      abort()
+      return
+    }
+    ctx.signal?.addEventListener('abort', abort, { once: true })
     child.stdout?.on('data', (chunk) => {
-      stdout += String(chunk)
+      const text = String(chunk)
+      stdout += text
+      ctx.emit?.('tool:running', {
+        toolName: 'shell_command',
+        outputPreview: truncateOutput(text),
+      })
     })
     child.stderr?.on('data', (chunk) => {
-      stderr += String(chunk)
+      const text = String(chunk)
+      stderr += text
+      ctx.emit?.('tool:running', {
+        toolName: 'shell_command',
+        outputPreview: truncateOutput(text),
+      })
     })
     child.on('error', (error) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      ctx.signal?.removeEventListener('abort', abort)
       reject(error)
     })
     child.on('close', (exitCode) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      ctx.signal?.removeEventListener('abort', abort)
       resolve({
         stdout: stdout.trim(),
         stderr: stderr.trim(),
@@ -89,6 +119,11 @@ async function runShellCommand(
       })
     })
   })
+}
+
+function truncateOutput(value: string): string {
+  const normalized = value.replace(/\s+/g, ' ').trim()
+  return normalized.length > 240 ? `${normalized.slice(0, 239)}…` : normalized
 }
 
 async function spawnSandboxedCommand(

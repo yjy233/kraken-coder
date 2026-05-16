@@ -63,6 +63,7 @@ export class AgentRuntime {
       systemPrompt,
       tools: options.tools,
       emit: buildEmit(options.onProgress),
+      signal: options.signal,
     })
 
     return parseAgentResult(result.reply)
@@ -161,6 +162,7 @@ function buildEmit(onProgress: RunAgentOptions['onProgress']): EmitFn {
         type: 'tool:running',
         toolUseId: String(data.toolUseId || ''),
         toolName: String(data.toolName || ''),
+        outputPreview: String(data.outputPreview || ''),
       }))
       return
     }

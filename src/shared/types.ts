@@ -1,7 +1,7 @@
 export type ChatRole = 'user' | 'assistant' | 'system';
 
 export type ChatMessageKind = 'text' | 'tool';
-export type ChatMessageStatus = 'running' | 'complete' | 'error';
+export type ChatMessageStatus = 'queued' | 'running' | 'complete' | 'interrupted' | 'error';
 
 export interface ChatMessage {
   id: string;
@@ -35,6 +35,19 @@ export interface FileChange {
 export interface CommandSuggestion {
   command: string;
   rationale?: string;
+}
+
+export type SlashCompletionKind = 'command' | 'skill';
+
+export interface SlashCompletionItem {
+  id: string;
+  kind: SlashCompletionKind;
+  label: string;
+  insertText: string;
+  detail?: string;
+  description?: string;
+  replaceStart?: number;
+  replaceEnd?: number;
 }
 
 export interface AgentResult {
@@ -77,6 +90,8 @@ export interface ChatSessionSummary {
 
 export type WebviewToExtensionMessage =
   | { type: 'chat.send'; text: string }
+  | { type: 'agent.stop'; runId?: string }
+  | { type: 'slash.completions'; requestId: string; text: string; cursor: number }
   | { type: 'change.apply'; changeSetId: string }
   | { type: 'change.openDiff'; changeSetId: string; filePath: string }
   | { type: 'change.reject'; changeSetId: string }
@@ -89,6 +104,9 @@ export type WebviewToExtensionMessage =
 
 export type ExtensionToWebviewMessage =
   | { type: 'session.updated'; session: ChatSession; sessions?: ChatSessionSummary[] }
+  | { type: 'agent.runStarted'; runId: string }
+  | { type: 'agent.runStopped'; runId: string; reason: 'user' | 'system' }
+  | { type: 'slash.completions'; requestId: string; items: SlashCompletionItem[] }
   | { type: 'agent.progress'; message: string }
   | { type: 'error'; message: string; recoverable: boolean };
 

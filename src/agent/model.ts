@@ -34,6 +34,7 @@ export async function invokeModel(params: InvokeModelParams & {
     messages: convertMessages(params.systemPrompt, params.messages),
     tools: convertTools(params.tools),
     onDelta: params.onDelta,
+    signal: params.signal,
   })
 
   return {

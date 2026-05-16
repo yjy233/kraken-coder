@@ -74,6 +74,11 @@ export class PromptBuilder {
       sections.push('', replaceSection)
     }
 
+    const lspSection = this.buildLspGuidelines()
+    if (lspSection) {
+      sections.push('', lspSection)
+    }
+
     return sections.join('\n')
   }
 
@@ -158,6 +163,21 @@ export class PromptBuilder {
       '## Replace Tool Guidelines',
       '- Use `replace` for precise text substitutions in existing files.',
       '- For large rewrites, use `write_file` instead.',
+    ].join('\n')
+  }
+
+  private buildLspGuidelines(): string | null {
+    if (!this.hasTool('lsp_hover') && !this.hasTool('lsp_definition') && !this.hasTool('lsp_references')) {
+      return null
+    }
+
+    return [
+      '## LSP Tool Guidelines',
+      '- Use LSP tools for semantic questions about TypeScript, Go, and Python code, such as definitions, references, hover types, implementations, and document symbols.',
+      '- Prefer `lsp_definition` or `lsp_references` over broad text search when the user asks about a specific symbol.',
+      '- Use `lsp_document_symbols` before reading a large TypeScript, Go, or Python file when you only need its structure.',
+      '- After LSP returns locations, use `read_file` for the exact line ranges you need before proposing edits.',
+      '- LSP results can be incomplete when the language server is not configured; fall back to `grep`, `glob`, and `read_file` when an LSP tool returns no result.',
     ].join('\n')
   }
 

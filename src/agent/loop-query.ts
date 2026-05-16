@@ -31,18 +31,22 @@ export async function loopQuery(params: {
   timeout?: number
   step: number
   emit?: EmitFn | undefined
+  signal?: AbortSignal | undefined
 }): Promise<LoopQueryResult> {
-  const { messages, model, systemPrompt, tools, maxOutputTokens, timeout, step, emit } = params
+  const { messages, model, systemPrompt, tools, maxOutputTokens, timeout, step, emit, signal } = params
+  throwIfAborted(signal)
 
   // 1. 调用模型
   const modelOptions: Parameters<typeof invokeModel>[0] = { model, systemPrompt, messages, tools, maxOutputTokens }
   modelOptions.onDelta = (delta: string) => {
     emit?.('assistant:delta', { step, text: delta })
   }
+  modelOptions.signal = signal
   if (timeout !== undefined) {
     modelOptions.timeout = timeout
   }
   const modelResponse = await invokeModel(modelOptions)
+  throwIfAborted(signal)
 
   // 2. 组装本轮 assistant 内容块
   const assistantContent: AgentContentBlock[] = []
@@ -78,8 +82,9 @@ export async function loopQuery(params: {
   const toolResults: AgentContentBlock[] = []
 
   for (const toolUse of modelResponse.toolUses) {
+    throwIfAborted(signal)
     emit?.('tool:running', { step, toolUseId: toolUse.id, toolName: toolUse.name })
-    const toolResult = await executeTool(toolUse, tools)
+    const toolResult = await executeTool(toolUse, tools, signal, emit)
     toolExecutions.push(toolResult)
     toolResults.push({
       type: 'tool_result',
@@ -114,7 +119,12 @@ export async function loopQuery(params: {
 /**
  * 根据 ToolUse 在注册表中查找并执行对应工具。
  */
-async function executeTool(toolUse: ToolUse, tools: ToolDefinition[]): Promise<ToolExecution> {
+async function executeTool(
+  toolUse: ToolUse,
+  tools: ToolDefinition[],
+  signal?: AbortSignal,
+  emit?: EmitFn
+): Promise<ToolExecution> {
   const tool = tools.find((entry) => entry.name === toolUse.name)
   if (!tool) {
     return {
@@ -125,7 +135,8 @@ async function executeTool(toolUse: ToolUse, tools: ToolDefinition[]): Promise<T
     }
   }
   try {
-    const result = await tool.execute(toolUse.input || {})
+    throwIfAborted(signal)
+    const result = await tool.execute(toolUse.input || {}, signal, buildToolEmit(emit, toolUse))
     return {
       toolUseId: toolUse.id,
       toolName: toolUse.name,
@@ -140,4 +151,31 @@ async function executeTool(toolUse: ToolUse, tools: ToolDefinition[]): Promise<T
       output: error instanceof Error ? error.message : 'Unknown tool error',
     }
   }
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new Error('Agent run interrupted.')
+  }
+}
+
+function buildToolEmit(emit: EmitFn | undefined, toolUse: ToolUse): EmitFn | undefined {
+  if (!emit) {
+    return undefined
+  }
+  return (event, data) => {
+    if (event.startsWith('tool:') && isRecord(data)) {
+      emit(event, {
+        ...data,
+        toolUseId: typeof data.toolUseId === 'string' && data.toolUseId ? data.toolUseId : toolUse.id,
+        toolName: typeof data.toolName === 'string' && data.toolName ? data.toolName : toolUse.name,
+      })
+      return
+    }
+    emit(event, data)
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
 }

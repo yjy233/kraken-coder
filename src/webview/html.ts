@@ -519,6 +519,74 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       background: var(--vscode-sideBar-background);
     }
 
+    .input-wrap {
+      position: relative;
+    }
+
+    .slash-menu {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: calc(100% + 6px);
+      max-height: 260px;
+      overflow: auto;
+      border: 1px solid var(--vscode-quickInputList-focusForeground, var(--border));
+      border-radius: 6px;
+      background: var(--vscode-quickInput-background, var(--vscode-editorWidget-background));
+      box-shadow: 0 4px 14px rgb(0 0 0 / 28%);
+      padding: 4px;
+      z-index: 10;
+    }
+
+    .slash-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      width: 100%;
+      min-height: 42px;
+      padding: 6px 8px;
+      border-radius: 4px;
+      color: var(--vscode-quickInput-foreground, var(--vscode-foreground));
+      background: transparent;
+      text-align: left;
+    }
+
+    .slash-item:hover,
+    .slash-item.active {
+      color: var(--vscode-quickInputList-focusForeground, var(--vscode-list-activeSelectionForeground));
+      background: var(--vscode-quickInputList-focusBackground, var(--vscode-list-activeSelectionBackground));
+    }
+
+    .slash-main {
+      min-width: 0;
+      display: grid;
+      gap: 2px;
+    }
+
+    .slash-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: var(--vscode-editor-font-family);
+      font-weight: 600;
+    }
+
+    .slash-description {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .slash-kind {
+      align-self: start;
+      color: var(--muted);
+      font-size: 10px;
+      text-transform: uppercase;
+      line-height: 1.4;
+    }
+
     textarea {
       width: 100%;
       min-height: 82px;
@@ -583,8 +651,12 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       </section>
     </main>
     <form class="composer" id="composer">
+      <div class="input-wrap">
+        <div class="slash-menu" id="slashMenu" hidden></div>
       <textarea id="input" placeholder="Ask Kraken to explain, fix, or write code..."></textarea>
+      </div>
       <div class="composer-actions">
+        <button type="button" class="secondary" id="stop" hidden>Stop</button>
         <button type="submit" id="send">Send</button>
       </div>
     </form>
@@ -595,6 +667,9 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     let sessions = [];
     let busy = false;
     let progress = 'Thinking...';
+    let slashCompletionRequestId = 0;
+    let slashCompletionItems = [];
+    let slashCompletionActiveIndex = 0;
     const openToolMessages = new Set();
 
     const messagesEl = document.getElementById('messages');
@@ -603,11 +678,18 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     const changesEl = document.getElementById('changes');
     const inputEl = document.getElementById('input');
     const sendEl = document.getElementById('send');
+    const stopEl = document.getElementById('stop');
     const errorEl = document.getElementById('error');
+    const slashMenuEl = document.getElementById('slashMenu');
 
     document.getElementById('configure').addEventListener('click', () => post({ type: 'config.open' }));
     document.getElementById('clear').addEventListener('click', () => post({ type: 'session.clear' }));
     document.getElementById('newSession').addEventListener('click', () => post({ type: 'session.new' }));
+    stopEl.addEventListener('click', () => {
+      stopEl.disabled = true;
+      stopEl.textContent = 'Stopping...';
+      post({ type: 'agent.stop' });
+    });
 
     document.getElementById('composer').addEventListener('submit', (event) => {
       event.preventDefault();
@@ -615,6 +697,9 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     });
 
     inputEl.addEventListener('keydown', (event) => {
+      if (handleSlashKeydown(event)) {
+        return;
+      }
       const isEnter = event.key === 'Enter' || event.code === 'Enter' || event.code === 'NumpadEnter';
       if ((event.metaKey || event.ctrlKey) && isEnter) {
         event.preventDefault();
@@ -622,12 +707,25 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       }
     });
 
+    inputEl.addEventListener('input', () => {
+      requestSlashCompletions();
+    });
+
+    inputEl.addEventListener('click', () => {
+      requestSlashCompletions();
+    });
+
+    inputEl.addEventListener('blur', () => {
+      window.setTimeout(() => hideSlashCompletions(), 120);
+    });
+
     function sendCurrentMessage() {
       const text = inputEl.value.trim();
-      if (!text || busy) {
+      if (!text) {
         return;
       }
       inputEl.value = '';
+      hideSlashCompletions();
       post({ type: 'chat.send', text });
     }
 
@@ -642,10 +740,26 @@ export function getWebviewHtml(webview: vscode.Webview): string {
         }
         render();
       }
+      if (message.type === 'agent.runStarted') {
+        stopEl.disabled = false;
+        stopEl.textContent = 'Stop';
+      }
+      if (message.type === 'agent.runStopped') {
+        stopEl.disabled = false;
+        stopEl.textContent = 'Stop';
+      }
       if (message.type === 'agent.progress') {
         progress = message.message || 'Thinking...';
         errorEl.hidden = true;
         renderMessages();
+      }
+      if (message.type === 'slash.completions') {
+        const requestNumber = Number(String(message.requestId || '').replace(/^slash-/, ''));
+        if (requestNumber === slashCompletionRequestId) {
+          slashCompletionItems = Array.isArray(message.items) ? message.items : [];
+          slashCompletionActiveIndex = 0;
+          renderSlashCompletions();
+        }
       }
       if (message.type === 'error') {
         errorEl.textContent = message.message;
@@ -658,12 +772,130 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     }
 
     function render() {
-      sendEl.disabled = busy;
-      inputEl.disabled = busy;
+      sendEl.disabled = false;
+      sendEl.textContent = busy ? 'Queue' : 'Send';
+      inputEl.disabled = false;
+      stopEl.hidden = !busy;
+      stopEl.disabled = !busy;
+      if (!busy) {
+        stopEl.textContent = 'Stop';
+      }
       renderMessages();
       renderSessions();
       renderChanges();
       renderContext();
+    }
+
+    function requestSlashCompletions() {
+      const cursor = inputEl.selectionStart || 0;
+      const text = inputEl.value || '';
+      const beforeCursor = text.slice(0, cursor);
+      if (!beforeCursor.startsWith('/') || beforeCursor.includes('\\n')) {
+        hideSlashCompletions();
+        return;
+      }
+
+      slashCompletionRequestId += 1;
+      post({
+        type: 'slash.completions',
+        requestId: 'slash-' + slashCompletionRequestId,
+        text,
+        cursor
+      });
+    }
+
+    function renderSlashCompletions() {
+      slashMenuEl.innerHTML = '';
+      if (!slashCompletionItems.length || busy) {
+        slashMenuEl.hidden = true;
+        return;
+      }
+
+      slashCompletionItems.forEach((item, index) => {
+        const option = document.createElement('button');
+        option.type = 'button';
+        option.className = 'slash-item' + (index === slashCompletionActiveIndex ? ' active' : '');
+        option.addEventListener('mousedown', (event) => {
+          event.preventDefault();
+          applySlashCompletion(index);
+        });
+
+        const main = document.createElement('div');
+        main.className = 'slash-main';
+        const labelEl = document.createElement('div');
+        labelEl.className = 'slash-label';
+        labelEl.textContent = item.label || item.insertText || '';
+        const descriptionEl = document.createElement('div');
+        descriptionEl.className = 'slash-description';
+        descriptionEl.textContent = item.description || item.detail || '';
+        main.append(labelEl, descriptionEl);
+
+        const kindEl = document.createElement('div');
+        kindEl.className = 'slash-kind';
+        kindEl.textContent = item.kind || 'item';
+        option.append(main, kindEl);
+        slashMenuEl.appendChild(option);
+      });
+      slashMenuEl.hidden = false;
+    }
+
+    function hideSlashCompletions() {
+      slashCompletionItems = [];
+      slashCompletionActiveIndex = 0;
+      slashMenuEl.hidden = true;
+      slashMenuEl.innerHTML = '';
+    }
+
+    function handleSlashKeydown(event) {
+      if (slashMenuEl.hidden || !slashCompletionItems.length) {
+        return false;
+      }
+
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        slashCompletionActiveIndex = (slashCompletionActiveIndex + 1) % slashCompletionItems.length;
+        renderSlashCompletions();
+        return true;
+      }
+
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        slashCompletionActiveIndex = (slashCompletionActiveIndex - 1 + slashCompletionItems.length) % slashCompletionItems.length;
+        renderSlashCompletions();
+        return true;
+      }
+
+      if (event.key === 'Tab' || event.key === 'Enter') {
+        event.preventDefault();
+        applySlashCompletion(slashCompletionActiveIndex);
+        return true;
+      }
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        hideSlashCompletions();
+        return true;
+      }
+
+      return false;
+    }
+
+    function applySlashCompletion(index) {
+      const item = slashCompletionItems[index];
+      if (!item) {
+        return;
+      }
+      const text = inputEl.value || '';
+      const cursor = inputEl.selectionStart || 0;
+      const replaceStart = Number.isInteger(item.replaceStart) ? item.replaceStart : 0;
+      const replaceEnd = Number.isInteger(item.replaceEnd) ? item.replaceEnd : cursor;
+      const nextValue = text.slice(0, replaceStart) + item.insertText + text.slice(replaceEnd);
+      const nextCursor = replaceStart + String(item.insertText || '').length;
+      inputEl.value = nextValue;
+      inputEl.focus();
+      inputEl.setSelectionRange(nextCursor, nextCursor);
+      hideSlashCompletions();
+      requestSlashCompletions();
     }
 
     function renderSessions() {
@@ -854,10 +1086,27 @@ export function getWebviewHtml(webview: vscode.Webview): string {
 
     function messageLabel(message) {
       if (message.kind === 'tool') {
-        const status = message.status === 'error' ? 'error' : message.status === 'complete' ? 'done' : 'running';
+        const status = message.status === 'error'
+          ? 'error'
+          : message.status === 'complete'
+            ? 'done'
+            : message.status === 'interrupted'
+              ? 'interrupted'
+              : message.status === 'queued'
+                ? 'queued'
+                : 'running';
         return 'tool · ' + (message.toolName || 'tool') + ' · ' + status;
       }
-      return message.role + (message.status === 'running' ? ' · streaming' : '');
+      if (message.status === 'running') {
+        return message.role + ' · streaming';
+      }
+      if (message.status === 'queued') {
+        return message.role + ' · queued';
+      }
+      if (message.status === 'interrupted') {
+        return message.role + ' · interrupted';
+      }
+      return message.role;
     }
 
     function toolCard(message) {
@@ -887,7 +1136,15 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       body.className = 'tool-body';
       const status = document.createElement('div');
       status.className = 'tool-status';
-      status.textContent = message.status === 'error' ? 'error' : message.status === 'complete' ? 'complete' : 'running';
+      status.textContent = message.status === 'error'
+        ? 'error'
+        : message.status === 'complete'
+          ? 'complete'
+          : message.status === 'interrupted'
+            ? 'interrupted'
+            : message.status === 'queued'
+              ? 'queued'
+              : 'running';
       body.appendChild(status);
       body.appendChild(markdown(message.content));
 
