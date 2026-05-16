@@ -45,6 +45,9 @@ export interface KrakenFileConfig {
     maxChars?: number;
     storeTranscript?: boolean;
   };
+  sessions?: {
+    enabled?: boolean;
+  };
 }
 
 export interface KrakenConfig {
@@ -82,6 +85,9 @@ export interface KrakenConfig {
     maxRecalled: number;
     maxChars: number;
     storeTranscript: boolean;
+  };
+  sessions: {
+    enabled: boolean;
   };
   paths: {
     globalRoot: string;
@@ -160,6 +166,7 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
   const skills = fileConfig.skills ?? {};
   const memory = fileConfig.memory ?? {};
   const episodes = fileConfig.episodes ?? {};
+  const sessions = fileConfig.sessions ?? {};
 
   const skillsDirValue = firstNonEmptyString(
     skills.dir,
@@ -247,6 +254,9 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
         true
       ),
     },
+    sessions: {
+      enabled: booleanValue(sessions.enabled, getVSCodeConfigValue<boolean>(vscodeConfig, 'sessions.enabled'), true),
+    },
     paths: {
       globalRoot: getGlobalKrakenRoot(),
       globalConfigPath: getGlobalConfigPath(),
@@ -328,6 +338,7 @@ function normalizeParsedConfig(parsed: ParsedToml): KrakenFileConfig {
   const skills = asRecord(parsed.skills);
   const memory = asRecord(parsed.memory);
   const episodes = asRecord(parsed.episodes);
+  const sessions = asRecord(parsed.sessions);
   const config: KrakenFileConfig = {};
 
   if (model) {
@@ -416,6 +427,13 @@ function normalizeParsedConfig(parsed: ParsedToml): KrakenFileConfig {
     };
   }
 
+  if (sessions) {
+    const enabled = getBoolean(sessions, 'enabled');
+    config.sessions = {
+      ...(enabled !== undefined ? { enabled } : {}),
+    };
+  }
+
   return config;
 }
 
@@ -427,6 +445,7 @@ function mergeFileConfig(base: KrakenFileConfig, override: KrakenFileConfig): Kr
     ...(mergeSection(base.skills, override.skills) ? { skills: mergeSection(base.skills, override.skills) } : {}),
     ...(mergeSection(base.memory, override.memory) ? { memory: mergeSection(base.memory, override.memory) } : {}),
     ...(mergeSection(base.episodes, override.episodes) ? { episodes: mergeSection(base.episodes, override.episodes) } : {}),
+    ...(mergeSection(base.sessions, override.sessions) ? { sessions: mergeSection(base.sessions, override.sessions) } : {}),
   };
 }
 
@@ -446,6 +465,7 @@ function serializeKrakenToml(config: KrakenFileConfig): string {
   pushSection(sections, 'skills', config.skills);
   pushSection(sections, 'memory', config.memory);
   pushSection(sections, 'episodes', config.episodes);
+  pushSection(sections, 'sessions', config.sessions);
   return sections.join('\n\n').trimEnd() + '\n';
 }
 

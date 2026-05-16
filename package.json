@@ -250,6 +250,11 @@
           "type": "boolean",
           "default": true,
           "description": "Store full episode conversation transcripts as JSONL."
+        },
+        "kraken.sessions.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable workspace chat session switcher storage."
         }
       }
     }

@@ -10,6 +10,7 @@ Kraken Coder 只面向 VS Code。配置文件使用 TOML，分全局配置和当
 - Workspace root: `<workspace>/kraken-coder`
 - Workspace config: `<workspace>/kraken-coder/config/config.toml`
 - Workspace skills: `<workspace>/.kraken-coder/skills`
+- Workspace sessions: `<workspace>/.kraken-coder/sessions`
 - Built-in skills: `<extension>/resources/skills`
 
 `<workspace>` 是 VS Code 当前打开的第一个 workspace folder。
@@ -59,13 +60,30 @@ browserAllowedDomains = ["example.com", "docs.example.com"]
 
 [skills]
 dir = "~/kraken-coder/skills"
+
+[memory]
+enabled = true
+autoRead = true
+maxChars = 8000
+allowWrite = false
+
+[episodes]
+enabled = true
+autoCapture = true
+autoRecall = true
+maxRecalled = 3
+maxChars = 12000
+storeTranscript = true
+
+[sessions]
+enabled = true
 ```
 
 字段也支持 snake_case，例如 `base_url`、`max_chars`、`auto_apply`。
 
 ## Notes
 
-- `Kraken: Configure Model` 会写入全局 `~/kraken-coder/config/config.toml`。
+- `Kraken: Configure Model` 会打开配置页面，保存后写入全局 `~/kraken-coder/config/config.toml`。
 - API key 仍然保存在 VS Code SecretStorage，不写入 TOML。
 - `model.proxy` 为空时不走代理。
 - 新 skill 目录使用复数 `skills`；单数 `skill` 目录仅作为 legacy 兼容扫描。
