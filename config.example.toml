@@ -92,3 +92,9 @@ maxChars = 12000
 # Store full conversation transcript as JSONL.
 # If false, only summary and change notes should be stored.
 storeTranscript = true
+
+[sessions]
+# Chat session switcher state.
+# Workspace path: <workspace>/.kraken-coder/sessions/*.json
+# Sessions store chat messages, context, and pending change proposals.
+enabled = true

@@ -5,6 +5,7 @@ import {
   AgentResult,
   ChangeSet,
   ChatMessage,
+  ChatSessionSummary,
   ChatSession,
   ContextItem,
   WebviewToExtensionMessage
@@ -28,6 +29,14 @@ import { loadMemory } from '../memory/reader';
 import { getGitBranch } from '../episodes/git';
 import { recallEpisodes } from '../episodes/recall';
 import { recordEpisode } from '../episodes/recorder';
+import {
+  createEmptyChatSession,
+  deleteSession,
+  listStoredSessions,
+  loadLatestSession,
+  loadSession,
+  saveSession
+} from '../sessions/store';
 
 export class KrakenViewProvider implements vscode.WebviewViewProvider {
   static readonly viewType = 'krakenCoder.chatView';
@@ -35,13 +44,8 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
   private webviewView?: vscode.WebviewView;
   private streamingAssistantMessageId?: string;
   private readonly runtime = new AgentRuntime();
-  private readonly session: ChatSession = {
-    id: createId('session'),
-    messages: [],
-    context: [],
-    changeSets: [],
-    busy: false
-  };
+  private session: ChatSession = createEmptyChatSession();
+  private sessionSummaries: ChatSessionSummary[] = [];
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -62,12 +66,12 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       });
     });
 
-    this.postSession();
+    this.loadInitialSession().catch((error: unknown) => this.showError(error));
   }
 
   async reveal(): Promise<void> {
     await vscode.commands.executeCommand(`${KrakenViewProvider.viewType}.focus`);
-    this.postSession();
+    await this.postSession();
   }
 
   async clearSession(): Promise<void> {
@@ -76,7 +80,8 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     this.session.changeSets = [];
     this.session.busy = false;
     this.streamingAssistantMessageId = undefined;
-    this.postSession();
+    await this.persistSession();
+    await this.postSession();
   }
 
   async addSelectionToContext(): Promise<void> {
@@ -87,7 +92,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     }
 
     this.upsertContext(context);
-    this.postSession();
+    await this.postSession();
     await this.reveal();
   }
 
@@ -127,11 +132,13 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
         break;
       case 'change.reject':
         this.session.changeSets = this.session.changeSets.filter((changeSet) => changeSet.id !== message.changeSetId);
-        this.postSession();
+        await this.persistSession();
+        await this.postSession();
         break;
       case 'context.remove':
         this.session.context = this.session.context.filter((item) => item.id !== message.contextId);
-        this.postSession();
+        await this.persistSession();
+        await this.postSession();
         break;
       case 'config.open':
         await vscode.commands.executeCommand('kraken.configureModel');
@@ -141,6 +148,15 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
         break;
       case 'session.clear':
         await this.clearSession();
+        break;
+      case 'session.new':
+        await this.newSession();
+        break;
+      case 'session.switch':
+        await this.switchSession(message.sessionId);
+        break;
+      case 'session.delete':
+        await this.deleteStoredSession(message.sessionId);
         break;
     }
   }
@@ -178,7 +194,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
 
     this.session.messages.push(userMessage);
     this.session.busy = true;
-    this.postSession();
+    await this.postSession();
     this.postProgress('Thinking...');
 
     try {
@@ -225,10 +241,11 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
         branch,
         config: config.episodes,
       });
+      await this.persistSession();
     } finally {
       this.streamingAssistantMessageId = undefined;
       this.session.busy = false;
-      this.postSession();
+      await this.postSession();
     }
   }
 
@@ -248,12 +265,13 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
         '',
         buildSlashHelp(),
       ].join('\n'));
-      this.postSession();
+      await this.persistSession();
+      await this.postSession();
       return;
     }
 
     this.session.busy = true;
-    this.postSession();
+    await this.postSession();
 
     try {
       await command.execute(invocation, {
@@ -270,7 +288,8 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       });
     } finally {
       this.session.busy = false;
-      this.postSession();
+      await this.persistSession();
+      await this.postSession();
     }
   }
 
@@ -316,6 +335,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
         vscode.window.showInformationMessage(`Applied Kraken changes: ${changeSet.title}`);
       }
     }
+    await this.persistSession();
   }
 
   private async addChangeProposal(summary: string, changes: AgentResult['changes']): Promise<string> {
@@ -325,7 +345,8 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
 
     const changeSet = await buildChangeSet(summary || 'Kraken proposed changes', summary, changes);
     this.session.changeSets.unshift(changeSet);
-    this.postSession();
+    await this.persistSession();
+    await this.postSession();
 
     const autoApply = getKrakenConfig().agent.autoApply;
     if (autoApply) {
@@ -344,7 +365,8 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
 
     const changeSet = await buildChangeSet(summary || 'Kraken proposed changes', summary, changes);
     this.session.changeSets.unshift(changeSet);
-    this.postSession();
+    await this.persistSession();
+    await this.postSession();
     return `Created reviewable change proposal ${changeSet.id} (${changeSet.files.length} file(s)). The user can inspect the diff and apply it from the Kraken panel.`;
   }
 
@@ -378,7 +400,8 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     const changeSet = this.findChangeSet(changeSetId);
     await applyChangeSet(changeSet);
     this.session.changeSets = this.session.changeSets.filter((item) => item.id !== changeSetId);
-    this.postSession();
+    await this.persistSession();
+    await this.postSession();
     vscode.window.showInformationMessage(`Applied Kraken changes: ${changeSet.title}`);
   }
 
@@ -395,10 +418,62 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     return changeSet;
   }
 
-  private postSession(): void {
+  private async loadInitialSession(): Promise<void> {
+    this.session = await loadLatestSession(getWorkspaceRoot()?.fsPath);
+    this.session.busy = false;
+    this.streamingAssistantMessageId = undefined;
+    await this.postSession();
+  }
+
+  private async newSession(): Promise<void> {
+    if (this.session.busy) {
+      return;
+    }
+    await this.persistSession();
+    this.session = createEmptyChatSession();
+    this.streamingAssistantMessageId = undefined;
+    await this.persistSession();
+    await this.postSession();
+  }
+
+  private async switchSession(sessionId: string): Promise<void> {
+    if (this.session.busy || sessionId === this.session.id) {
+      return;
+    }
+    await this.persistSession();
+    const loaded = await loadSession(getWorkspaceRoot()?.fsPath, sessionId);
+    if (!loaded) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+    this.session = loaded;
+    this.session.busy = false;
+    this.streamingAssistantMessageId = undefined;
+    await this.postSession();
+  }
+
+  private async deleteStoredSession(sessionId: string): Promise<void> {
+    if (this.session.busy) {
+      return;
+    }
+    await deleteSession(getWorkspaceRoot()?.fsPath, sessionId);
+    if (sessionId === this.session.id) {
+      this.session = await loadLatestSession(getWorkspaceRoot()?.fsPath);
+      this.session.busy = false;
+      this.streamingAssistantMessageId = undefined;
+    }
+    await this.postSession();
+  }
+
+  private async persistSession(): Promise<void> {
+    await saveSession(getWorkspaceRoot()?.fsPath, this.session);
+  }
+
+  private async postSession(): Promise<void> {
+    this.sessionSummaries = await listStoredSessions(getWorkspaceRoot()?.fsPath);
     this.webviewView?.webview.postMessage({
       type: 'session.updated',
-      session: this.session
+      session: this.session,
+      sessions: this.sessionSummaries
     });
   }
 

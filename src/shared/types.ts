@@ -61,10 +61,18 @@ export interface ChangeSet {
 
 export interface ChatSession {
   id: string;
+  title?: string;
   messages: ChatMessage[];
   context: ContextItem[];
   changeSets: ChangeSet[];
   busy: boolean;
+}
+
+export interface ChatSessionSummary {
+  id: string;
+  title: string;
+  updatedAt: number;
+  messageCount: number;
 }
 
 export type WebviewToExtensionMessage =
@@ -75,10 +83,13 @@ export type WebviewToExtensionMessage =
   | { type: 'context.remove'; contextId: string }
   | { type: 'config.open' }
   | { type: 'secret.setApiKey' }
-  | { type: 'session.clear' };
+  | { type: 'session.clear' }
+  | { type: 'session.new' }
+  | { type: 'session.switch'; sessionId: string }
+  | { type: 'session.delete'; sessionId: string };
 
 export type ExtensionToWebviewMessage =
-  | { type: 'session.updated'; session: ChatSession }
+  | { type: 'session.updated'; session: ChatSession; sessions?: ChatSessionSummary[] }
   | { type: 'agent.progress'; message: string }
   | { type: 'error'; message: string; recoverable: boolean };
 

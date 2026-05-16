@@ -43,6 +43,94 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       grid-template-rows: auto 1fr auto;
     }
 
+    .session-panel {
+      border-bottom: 1px solid var(--border);
+      background: var(--vscode-sideBar-background);
+      padding: 10px 10px 8px;
+    }
+
+    .session-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .session-heading {
+      flex: 1;
+      min-width: 0;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .icon-button {
+      width: 26px;
+      height: 26px;
+      min-height: 26px;
+      padding: 0;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 4px;
+      color: var(--vscode-icon-foreground, var(--vscode-foreground));
+      background: transparent;
+    }
+
+    .icon-button:hover {
+      background: var(--vscode-toolbar-hoverBackground, var(--vscode-button-secondaryHoverBackground));
+    }
+
+    .session-list {
+      display: grid;
+      gap: 2px;
+    }
+
+    .session-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 6px;
+      min-height: 34px;
+      padding: 4px 6px;
+      border-radius: 5px;
+      color: var(--vscode-foreground);
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .session-item:hover {
+      background: var(--vscode-list-hoverBackground);
+    }
+
+    .session-item.active {
+      background: var(--vscode-list-activeSelectionBackground);
+      color: var(--vscode-list-activeSelectionForeground);
+    }
+
+    .session-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 600;
+      line-height: 1.35;
+    }
+
+    .session-meta {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.25;
+    }
+
+    .session-delete {
+      opacity: 0;
+    }
+
+    .session-item:hover .session-delete,
+    .session-item.active .session-delete {
+      opacity: 1;
+    }
+
     .toolbar {
       display: flex;
       gap: 6px;
@@ -467,6 +555,13 @@ export function getWebviewHtml(webview: vscode.Webview): string {
 </head>
 <body>
   <div class="app">
+    <section class="session-panel">
+      <div class="session-header">
+        <div class="session-heading">Sessions</div>
+        <button class="icon-button" id="newSession" title="New session" aria-label="New session">✎</button>
+      </div>
+      <div class="session-list" id="sessions"></div>
+    </section>
     <div class="toolbar">
       <div class="title">Kraken Coder</div>
       <button class="secondary" id="configure" title="Configure model">Config</button>
@@ -498,11 +593,13 @@ export function getWebviewHtml(webview: vscode.Webview): string {
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     let session = undefined;
+    let sessions = [];
     let busy = false;
     let progress = 'Thinking...';
     const openToolMessages = new Set();
 
     const messagesEl = document.getElementById('messages');
+    const sessionsEl = document.getElementById('sessions');
     const contextEl = document.getElementById('context');
     const changesEl = document.getElementById('changes');
     const inputEl = document.getElementById('input');
@@ -512,6 +609,7 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     document.getElementById('configure').addEventListener('click', () => post({ type: 'config.open' }));
     document.getElementById('setKey').addEventListener('click', () => post({ type: 'secret.setApiKey' }));
     document.getElementById('clear').addEventListener('click', () => post({ type: 'session.clear' }));
+    document.getElementById('newSession').addEventListener('click', () => post({ type: 'session.new' }));
 
     document.getElementById('composer').addEventListener('submit', (event) => {
       event.preventDefault();
@@ -539,6 +637,7 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       const message = event.data;
       if (message.type === 'session.updated') {
         session = message.session;
+        sessions = Array.isArray(message.sessions) ? message.sessions : [];
         busy = Boolean(session.busy);
         if (!busy) {
           progress = 'Thinking...';
@@ -564,8 +663,52 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       sendEl.disabled = busy;
       inputEl.disabled = busy;
       renderMessages();
+      renderSessions();
       renderChanges();
       renderContext();
+    }
+
+    function renderSessions() {
+      const items = sessions.length ? sessions : (session ? [{
+        id: session.id,
+        title: session.title || 'New session',
+        updatedAt: Date.now(),
+        messageCount: session.messages?.length || 0
+      }] : []);
+
+      sessionsEl.innerHTML = '';
+      for (const item of items.slice(0, 6)) {
+        const row = document.createElement('div');
+        row.className = 'session-item' + (session && item.id === session.id ? ' active' : '');
+        row.title = item.title;
+        row.addEventListener('click', () => {
+          if (!busy && (!session || item.id !== session.id)) {
+            post({ type: 'session.switch', sessionId: item.id });
+          }
+        });
+
+        const text = document.createElement('div');
+        text.className = 'session-text';
+        const title = document.createElement('div');
+        title.className = 'session-title';
+        title.textContent = item.title || 'New session';
+        const meta = document.createElement('div');
+        meta.className = 'session-meta';
+        meta.textContent = formatSessionMeta(item);
+        text.append(title, meta);
+
+        const remove = button('×', 'icon-button session-delete');
+        remove.title = 'Delete session';
+        remove.addEventListener('click', (event) => {
+          event.stopPropagation();
+          if (!busy) {
+            post({ type: 'session.delete', sessionId: item.id });
+          }
+        });
+
+        row.append(text, remove);
+        sessionsEl.appendChild(row);
+      }
     }
 
     function renderMessages() {
@@ -609,6 +752,27 @@ export function getWebviewHtml(webview: vscode.Webview): string {
         item.appendChild(bubble);
         messagesEl.appendChild(item);
       }
+    }
+
+    function formatSessionMeta(item) {
+      const count = Number(item.messageCount || 0);
+      const updatedAt = Number(item.updatedAt || 0);
+      const parts = [count + ' msg' + (count === 1 ? '' : 's')];
+      if (updatedAt) {
+        parts.push(relativeTime(updatedAt));
+      }
+      return parts.join(' · ');
+    }
+
+    function relativeTime(value) {
+      const diff = Math.max(0, Date.now() - value);
+      const minute = 60 * 1000;
+      const hour = 60 * minute;
+      const day = 24 * hour;
+      if (diff < minute) return 'now';
+      if (diff < hour) return Math.floor(diff / minute) + 'm';
+      if (diff < day) return Math.floor(diff / hour) + 'h';
+      return Math.floor(diff / day) + 'd';
     }
 
     function renderContext() {
