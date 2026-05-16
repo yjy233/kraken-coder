@@ -27,6 +27,8 @@ export interface RunAgentOptions {
   maxContextChars: number
   tools: ToolDefinition[]
   availableSkills?: Skill[]
+  memoryPromptBlock?: string
+  episodesPromptBlock?: string
   maxSteps?: number
   onProgress?: (message: string) => void
   signal?: AbortSignal
@@ -40,7 +42,13 @@ export class AgentRuntime {
       signal: options.signal,
     })
 
-    const systemPrompt = new PromptBuilder(baseSystemPrompt, options.tools, options.availableSkills ?? []).build()
+    const systemPrompt = new PromptBuilder(
+      baseSystemPrompt,
+      options.tools,
+      options.availableSkills ?? [],
+      options.memoryPromptBlock,
+      options.episodesPromptBlock
+    ).build()
     const agent = new ReActAgent({
       defaultModel: options.settings.model,
       defaultSystemPrompt: systemPrompt,

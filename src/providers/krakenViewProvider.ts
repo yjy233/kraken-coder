@@ -23,6 +23,11 @@ import { getWebviewHtml } from '../webview/html';
 import { getKrakenConfig } from '../vscode/krakenConfig';
 import { parseSlashCommand } from '../slash/parser';
 import { buildSlashHelp, findSlashCommand } from '../slash/registry';
+import { buildMemoryPaths } from '../memory/paths';
+import { loadMemory } from '../memory/reader';
+import { getGitBranch } from '../episodes/git';
+import { recallEpisodes } from '../episodes/recall';
+import { recordEpisode } from '../episodes/recorder';
 
 export class KrakenViewProvider implements vscode.WebviewViewProvider {
   static readonly viewType = 'krakenCoder.chatView';
@@ -178,7 +183,19 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
 
     try {
       const extensionRoot = this.extensionUri.fsPath;
-      const maxContextChars = getKrakenConfig({ extensionRoot }).context.maxChars;
+      const config = getKrakenConfig({ extensionRoot });
+      const workspaceRoot = getWorkspaceRoot()?.fsPath;
+      const branch = await getGitBranch(workspaceRoot);
+      const memory = await loadMemory(buildMemoryPaths({
+        globalRoot: config.paths.globalRoot,
+        workspaceRoot,
+      }), config.memory);
+      const recalledEpisodes = await recallEpisodes({
+        workspaceRoot,
+        branch,
+        query: userText,
+        config: config.episodes,
+      });
       const { tools, availableSkills } = createVSCodeToolRegistry(
         (summary, changes) => this.addChangeProposal(summary, changes),
         { extensionRoot }
@@ -190,13 +207,24 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
         context: this.session.context,
         settings,
         apiKey,
-        maxContextChars,
+        maxContextChars: config.context.maxChars,
         tools,
         availableSkills,
+        memoryPromptBlock: memory?.promptBlock,
+        episodesPromptBlock: recalledEpisodes?.promptBlock,
         onProgress: (message) => this.handleAgentProgress(message)
       });
 
       await this.handleAgentResult(result);
+      await recordEpisode({
+        workspaceRoot,
+        userText,
+        result,
+        messages: this.session.messages,
+        toolMessages: this.session.messages.filter((message) => message.kind === 'tool'),
+        branch,
+        config: config.episodes,
+      });
     } finally {
       this.streamingAssistantMessageId = undefined;
       this.session.busy = false;
@@ -230,10 +258,15 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     try {
       await command.execute(invocation, {
         workspaceRoot: getWorkspaceRoot()?.fsPath,
+        globalRoot: getKrakenConfig({ extensionRoot: this.extensionUri.fsPath }).paths.globalRoot,
         postAssistantMessage: (content) => this.postAssistantMessage(content),
         postProgress: (message) => this.postProgress(message),
         clearSession: () => this.clearSession(),
         addReviewableChangeProposal: (summary, changes) => this.addReviewableChangeProposal(summary, changes),
+        openFile: async (filePath) => {
+          const document = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+          await vscode.window.showTextDocument(document, { preview: false });
+        },
       });
     } finally {
       this.session.busy = false;

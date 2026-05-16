@@ -197,6 +197,59 @@
           "type": "string",
           "default": "",
           "description": "Optional skill install/discovery directory. Used when TOML [skills].dir is unset; falls back to KRAKEN_SKILLS_DIR or ~/kraken-coder/skills."
+        },
+        "kraken.memory.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable persistent Kraken memory."
+        },
+        "kraken.memory.autoRead": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically read memory and inject it into the agent prompt."
+        },
+        "kraken.memory.maxChars": {
+          "type": "number",
+          "default": 8000,
+          "minimum": 0,
+          "description": "Maximum memory characters injected into one agent request."
+        },
+        "kraken.memory.allowWrite": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow future memory tools to write memory."
+        },
+        "kraken.episodes.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable per-task episode storage and recall."
+        },
+        "kraken.episodes.autoCapture": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically capture completed agent runs as episodes."
+        },
+        "kraken.episodes.autoRecall": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically recall recent relevant episode summaries."
+        },
+        "kraken.episodes.maxRecalled": {
+          "type": "number",
+          "default": 3,
+          "minimum": 0,
+          "description": "Maximum number of episode summaries recalled into one agent request."
+        },
+        "kraken.episodes.maxChars": {
+          "type": "number",
+          "default": 12000,
+          "minimum": 0,
+          "description": "Maximum episode recall characters injected into one agent request."
+        },
+        "kraken.episodes.storeTranscript": {
+          "type": "boolean",
+          "default": true,
+          "description": "Store full episode conversation transcripts as JSONL."
         }
       }
     }

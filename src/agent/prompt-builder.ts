@@ -22,7 +22,9 @@ export class PromptBuilder {
   constructor(
     private basePrompt: string,
     private tools: ToolDefinition[],
-    private skills: Skill[] = []
+    private skills: Skill[] = [],
+    private memoryPromptBlock?: string,
+    private episodesPromptBlock?: string
   ) {}
 
   /** 构建完整的 System Prompt */
@@ -40,6 +42,14 @@ export class PromptBuilder {
     const skillsMetaSection = this.buildAvailableSkills()
     if (skillsMetaSection) {
       sections.push('', skillsMetaSection)
+    }
+
+    if (this.memoryPromptBlock?.trim()) {
+      sections.push('', this.memoryPromptBlock.trim())
+    }
+
+    if (this.episodesPromptBlock?.trim()) {
+      sections.push('', this.episodesPromptBlock.trim())
     }
 
     sections.push('', this.buildMarkdownMediaGuidelines())

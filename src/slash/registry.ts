@@ -1,11 +1,15 @@
 import { clearCommand } from './builtins/clear';
+import { episodesCommand } from './builtins/episodes';
 import { helpCommand } from './builtins/help';
 import { initCommand } from './builtins/init';
+import { memoryCommand } from './builtins/memory';
 import type { SlashCommand } from './types';
 
 const builtins: SlashCommand[] = [
   helpCommand,
   initCommand,
+  memoryCommand,
+  episodesCommand,
   clearCommand,
 ];
 

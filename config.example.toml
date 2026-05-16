@@ -50,3 +50,45 @@ browserAllowedDomains = []
 # Optional skill install/discovery directory.
 # If empty, Kraken Coder falls back to KRAKEN_SKILLS_DIR or ~/kraken-coder/skills.
 dir = ""
+
+[memory]
+# Persistent stable memory for user preferences and project facts.
+# Global memory path: ~/kraken-coder/memory/user.md
+# Workspace memory paths:
+# - <workspace>/.kraken-coder/memory/project.md
+# - <workspace>/.kraken-coder/memory/decisions.md
+# - <workspace>/.kraken-coder/memory/preferences.md
+enabled = true
+
+# Automatically read memory and inject it into the agent prompt.
+autoRead = true
+
+# Maximum memory characters injected into one agent request.
+maxChars = 8000
+
+# Allow the future memory tool to write memory.
+# Slash commands such as /memory add are still explicit user actions.
+allowWrite = false
+
+[episodes]
+# Per-task or per-conversation storage units for later recall.
+# Suggested workspace path:
+# <workspace>/.kraken-coder/episodes/<episode-id>/
+# Each episode may contain meta.toml, summary.md, transcript.jsonl, changes.md, and artifacts/.
+enabled = true
+
+# Capture conversation summaries, tool activity, changed files, and verification notes.
+autoCapture = true
+
+# Automatically recall recent relevant episodes for the current Git branch.
+autoRecall = true
+
+# Maximum number of episode summaries recalled into one agent request.
+maxRecalled = 3
+
+# Maximum episode recall characters injected into one agent request.
+maxChars = 12000
+
+# Store full conversation transcript as JSONL.
+# If false, only summary and change notes should be stored.
+storeTranscript = true

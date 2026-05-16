@@ -31,6 +31,20 @@ export interface KrakenFileConfig {
   skills?: {
     dir?: string;
   };
+  memory?: {
+    enabled?: boolean;
+    autoRead?: boolean;
+    maxChars?: number;
+    allowWrite?: boolean;
+  };
+  episodes?: {
+    enabled?: boolean;
+    autoCapture?: boolean;
+    autoRecall?: boolean;
+    maxRecalled?: number;
+    maxChars?: number;
+    storeTranscript?: boolean;
+  };
 }
 
 export interface KrakenConfig {
@@ -54,6 +68,20 @@ export interface KrakenConfig {
   };
   skills: {
     dir?: string;
+  };
+  memory: {
+    enabled: boolean;
+    autoRead: boolean;
+    maxChars: number;
+    allowWrite: boolean;
+  };
+  episodes: {
+    enabled: boolean;
+    autoCapture: boolean;
+    autoRecall: boolean;
+    maxRecalled: number;
+    maxChars: number;
+    storeTranscript: boolean;
   };
   paths: {
     globalRoot: string;
@@ -130,6 +158,8 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
   const context = fileConfig.context ?? {};
   const model = fileConfig.model ?? {};
   const skills = fileConfig.skills ?? {};
+  const memory = fileConfig.memory ?? {};
+  const episodes = fileConfig.episodes ?? {};
 
   const skillsDirValue = firstNonEmptyString(
     skills.dir,
@@ -194,6 +224,28 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
     },
     skills: {
       ...(skillsDir ? { dir: skillsDir } : {}),
+    },
+    memory: {
+      enabled: booleanValue(memory.enabled, getVSCodeConfigValue<boolean>(vscodeConfig, 'memory.enabled'), true),
+      autoRead: booleanValue(memory.autoRead, getVSCodeConfigValue<boolean>(vscodeConfig, 'memory.autoRead'), true),
+      maxChars: numberValue(memory.maxChars, getVSCodeConfigValue<number>(vscodeConfig, 'memory.maxChars'), 8000),
+      allowWrite: booleanValue(memory.allowWrite, getVSCodeConfigValue<boolean>(vscodeConfig, 'memory.allowWrite'), false),
+    },
+    episodes: {
+      enabled: booleanValue(episodes.enabled, getVSCodeConfigValue<boolean>(vscodeConfig, 'episodes.enabled'), true),
+      autoCapture: booleanValue(
+        episodes.autoCapture,
+        getVSCodeConfigValue<boolean>(vscodeConfig, 'episodes.autoCapture'),
+        true
+      ),
+      autoRecall: booleanValue(episodes.autoRecall, getVSCodeConfigValue<boolean>(vscodeConfig, 'episodes.autoRecall'), true),
+      maxRecalled: numberValue(episodes.maxRecalled, getVSCodeConfigValue<number>(vscodeConfig, 'episodes.maxRecalled'), 3),
+      maxChars: numberValue(episodes.maxChars, getVSCodeConfigValue<number>(vscodeConfig, 'episodes.maxChars'), 12000),
+      storeTranscript: booleanValue(
+        episodes.storeTranscript,
+        getVSCodeConfigValue<boolean>(vscodeConfig, 'episodes.storeTranscript'),
+        true
+      ),
     },
     paths: {
       globalRoot: getGlobalKrakenRoot(),
@@ -274,6 +326,8 @@ function normalizeParsedConfig(parsed: ParsedToml): KrakenFileConfig {
   const context = asRecord(parsed.context);
   const agent = asRecord(parsed.agent);
   const skills = asRecord(parsed.skills);
+  const memory = asRecord(parsed.memory);
+  const episodes = asRecord(parsed.episodes);
   const config: KrakenFileConfig = {};
 
   if (model) {
@@ -332,6 +386,36 @@ function normalizeParsedConfig(parsed: ParsedToml): KrakenFileConfig {
     };
   }
 
+  if (memory) {
+    const enabled = getBoolean(memory, 'enabled');
+    const autoRead = firstDefined(getBoolean(memory, 'autoRead'), getBoolean(memory, 'auto_read'));
+    const maxChars = firstDefined(getNumber(memory, 'maxChars'), getNumber(memory, 'max_chars'));
+    const allowWrite = firstDefined(getBoolean(memory, 'allowWrite'), getBoolean(memory, 'allow_write'));
+    config.memory = {
+      ...(enabled !== undefined ? { enabled } : {}),
+      ...(autoRead !== undefined ? { autoRead } : {}),
+      ...(maxChars !== undefined ? { maxChars } : {}),
+      ...(allowWrite !== undefined ? { allowWrite } : {}),
+    };
+  }
+
+  if (episodes) {
+    const enabled = getBoolean(episodes, 'enabled');
+    const autoCapture = firstDefined(getBoolean(episodes, 'autoCapture'), getBoolean(episodes, 'auto_capture'));
+    const autoRecall = firstDefined(getBoolean(episodes, 'autoRecall'), getBoolean(episodes, 'auto_recall'));
+    const maxRecalled = firstDefined(getNumber(episodes, 'maxRecalled'), getNumber(episodes, 'max_recalled'));
+    const maxChars = firstDefined(getNumber(episodes, 'maxChars'), getNumber(episodes, 'max_chars'));
+    const storeTranscript = firstDefined(getBoolean(episodes, 'storeTranscript'), getBoolean(episodes, 'store_transcript'));
+    config.episodes = {
+      ...(enabled !== undefined ? { enabled } : {}),
+      ...(autoCapture !== undefined ? { autoCapture } : {}),
+      ...(autoRecall !== undefined ? { autoRecall } : {}),
+      ...(maxRecalled !== undefined ? { maxRecalled } : {}),
+      ...(maxChars !== undefined ? { maxChars } : {}),
+      ...(storeTranscript !== undefined ? { storeTranscript } : {}),
+    };
+  }
+
   return config;
 }
 
@@ -341,6 +425,8 @@ function mergeFileConfig(base: KrakenFileConfig, override: KrakenFileConfig): Kr
     ...(mergeSection(base.context, override.context) ? { context: mergeSection(base.context, override.context) } : {}),
     ...(mergeSection(base.agent, override.agent) ? { agent: mergeSection(base.agent, override.agent) } : {}),
     ...(mergeSection(base.skills, override.skills) ? { skills: mergeSection(base.skills, override.skills) } : {}),
+    ...(mergeSection(base.memory, override.memory) ? { memory: mergeSection(base.memory, override.memory) } : {}),
+    ...(mergeSection(base.episodes, override.episodes) ? { episodes: mergeSection(base.episodes, override.episodes) } : {}),
   };
 }
 
@@ -358,6 +444,8 @@ function serializeKrakenToml(config: KrakenFileConfig): string {
   pushSection(sections, 'context', config.context);
   pushSection(sections, 'agent', config.agent);
   pushSection(sections, 'skills', config.skills);
+  pushSection(sections, 'memory', config.memory);
+  pushSection(sections, 'episodes', config.episodes);
   return sections.join('\n\n').trimEnd() + '\n';
 }
 
