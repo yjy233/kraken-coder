@@ -1515,6 +1515,25 @@ function parseToolArguments(raw: string | undefined): ParsedToolArguments {
     return { value: {} };
   }
 
+  const direct = tryParseToolArguments(raw);
+  if (!direct.error) {
+    return direct;
+  }
+
+  // Some providers decode nested JSON string escapes while streaming tool arguments.
+  // That turns `\\n` inside string values into literal newlines, which breaks a second JSON.parse.
+  const normalized = normalizeJsonObjectString(raw);
+  if (normalized !== raw) {
+    const repaired = tryParseToolArguments(normalized);
+    if (!repaired.error) {
+      return repaired;
+    }
+  }
+
+  return direct;
+}
+
+function tryParseToolArguments(raw: string): ParsedToolArguments {
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!isRecord(parsed)) {
@@ -1530,6 +1549,65 @@ function parseToolArguments(raw: string | undefined): ParsedToolArguments {
       error: 'Tool arguments were not valid JSON.'
     };
   }
+}
+
+function normalizeJsonObjectString(raw: string): string {
+  let normalized = '';
+  let inString = false;
+  let escaping = false;
+
+  for (const char of raw) {
+    if (escaping) {
+      normalized += char;
+      escaping = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      normalized += char;
+      escaping = true;
+      continue;
+    }
+
+    if (char === '"') {
+      normalized += char;
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      if (char === '\n') {
+        normalized += '\\n';
+        continue;
+      }
+      if (char === '\r') {
+        normalized += '\\r';
+        continue;
+      }
+      if (char === '\t') {
+        normalized += '\\t';
+        continue;
+      }
+      if (char === '\b') {
+        normalized += '\\b';
+        continue;
+      }
+      if (char === '\f') {
+        normalized += '\\f';
+        continue;
+      }
+
+      const code = char.charCodeAt(0);
+      if (code < 0x20) {
+        normalized += `\\u${code.toString(16).padStart(4, '0')}`;
+        continue;
+      }
+    }
+
+    normalized += char;
+  }
+
+  return normalized;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
