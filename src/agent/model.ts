@@ -7,6 +7,7 @@ import type {
   ToolUse
 } from './types.js'
 import type {
+  ChatAttachment,
   ModelAssistantToolCall,
   ModelMessage,
   ModelRequest,
@@ -77,7 +78,9 @@ function convertMessages(systemPrompt: string, messages: AgentMessage[]): ModelM
     if (typeof message.content === 'string') {
       result.push({
         role: message.role,
-        content: message.content,
+        content: message.role === 'user'
+          ? convertUserContent(message.content, extractAttachments(message))
+          : message.content,
       })
       continue
     }
@@ -120,4 +123,44 @@ function convertMessages(systemPrompt: string, messages: AgentMessage[]): ModelM
   }
 
   return result
+}
+
+function extractAttachments(message: AgentMessage): ChatAttachment[] {
+  const candidate = (message as unknown as { attachments?: ChatAttachment[] }).attachments
+  return Array.isArray(candidate) ? candidate : []
+}
+
+function convertUserContent(text: string, attachments: ChatAttachment[]): ModelMessage['content'] {
+  if (!attachments.length) {
+    return text
+  }
+
+  const blocks: Exclude<Extract<ModelMessage, { role: 'user' }>['content'], string> = []
+  if (text.trim()) {
+    blocks.push({ type: 'text', text })
+  }
+
+  for (const attachment of attachments) {
+    if (attachment.mimeType.startsWith('image/') && attachment.dataUrl) {
+      blocks.push({
+        type: 'image',
+        mimeType: attachment.mimeType,
+        dataUrl: attachment.dataUrl,
+        ...(attachment.name ? { name: attachment.name } : {}),
+      })
+      continue
+    }
+
+    const preview = attachment.textPreview?.trim()
+      ? attachment.textPreview
+      : `[file attachment] ${attachment.name} (${attachment.mimeType}, ${attachment.size} bytes)`
+    blocks.push({
+      type: 'file',
+      mimeType: attachment.mimeType,
+      name: attachment.name,
+      textPreview: preview,
+    })
+  }
+
+  return blocks.length ? blocks : text
 }

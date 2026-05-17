@@ -94,6 +94,15 @@ export type AgentContentBlock = TextBlock | ToolUseBlock | ToolResultBlock
 export interface AgentMessage {
   role: SessionRole
   content: string | AgentContentBlock[]
+  attachments?: Array<{
+    id: string
+    name: string
+    mimeType: string
+    size: number
+    path?: string
+    dataUrl?: string
+    textPreview?: string
+  }>
 }
 
 /** 单步运行记录 */

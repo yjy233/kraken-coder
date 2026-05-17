@@ -3,11 +3,22 @@ export type ChatRole = 'user' | 'assistant' | 'system';
 export type ChatMessageKind = 'text' | 'tool' | 'thinking';
 export type ChatMessageStatus = 'queued' | 'running' | 'complete' | 'interrupted' | 'error';
 
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  path?: string;
+  dataUrl?: string;
+  textPreview?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: ChatRole;
   content: string;
   createdAt: number;
+  attachments?: ChatAttachment[];
   kind?: ChatMessageKind;
   status?: ChatMessageStatus;
   toolName?: string;
@@ -162,7 +173,7 @@ export interface ModelStatusInfo {
 }
 
 export type WebviewToExtensionMessage =
-  | { type: 'chat.send'; text: string }
+  | { type: 'chat.send'; text: string; attachments?: ChatAttachment[] }
   | { type: 'agent.stop'; runId?: string }
   | { type: 'slash.completions'; requestId: string; text: string; cursor: number }
   | { type: 'change.apply'; changeSetId: string }
@@ -254,8 +265,16 @@ export interface ModelAssistantToolCall {
 
 export type ModelMessage =
   | {
-      role: 'system' | 'user';
+      role: 'system';
       content: string;
+    }
+  | {
+      role: 'user';
+      content: string | Array<
+        | { type: 'text'; text: string }
+        | { type: 'image'; mimeType: string; dataUrl: string; name?: string }
+        | { type: 'file'; mimeType: string; name: string; textPreview: string }
+      >;
     }
   | {
       role: 'assistant';

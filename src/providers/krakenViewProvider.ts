@@ -5,6 +5,7 @@ import { createId } from '../shared/id';
 import {
   AgentResult,
   ChatSessionUsage,
+  ChatAttachment,
   ChangeSet,
   ChatMessageStatus,
   ChatMessage,
@@ -52,6 +53,7 @@ interface PendingInput {
   id: string;
   messageId: string;
   text: string;
+  attachments?: ChatAttachment[];
 }
 
 interface CurrentRun {
@@ -161,7 +163,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
   private async handleMessage(message: WebviewToExtensionMessage): Promise<void> {
     switch (message.type) {
       case 'chat.send':
-        await this.sendChat(message.text);
+        await this.sendChat(message.text, message.attachments ?? []);
         break;
       case 'agent.stop':
         await this.stopCurrentRun('user');
@@ -203,9 +205,9 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async sendChat(text: string): Promise<void> {
+  private async sendChat(text: string, attachments: ChatAttachment[] = []): Promise<void> {
     const userText = text.trim();
-    if (!userText) {
+    if (!userText && attachments.length === 0) {
       return;
     }
 
@@ -215,28 +217,29 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
         role: 'user',
         content: userText,
         createdAt: Date.now(),
+        ...(attachments.length ? { attachments } : {}),
         status: 'queued'
       };
       this.session.messages.push(userMessage);
-      this.pendingInputs.push({ id: createId('run'), messageId: userMessage.id, text: userText });
+      this.pendingInputs.push({ id: createId('run'), messageId: userMessage.id, text: userText, attachments });
       this.syncRuntimeState();
       await this.persistSession();
       await this.postSession();
       return;
     }
 
-    const slashInvocation = parseSlashCommand(userText);
+    const slashInvocation = attachments.length === 0 ? parseSlashCommand(userText) : null;
     if (slashInvocation) {
       await this.runSlashCommand(userText, slashInvocation);
       return;
     }
 
-    await this.runAgentForUserText(userText, { addUserMessage: true, displayText: userText });
+    await this.runAgentForUserText(userText, { addUserMessage: true, displayText: userText, attachments });
   }
 
   private async runAgentForUserText(
     userText: string,
-    options: { addUserMessage: boolean; displayText?: string; userMessageId?: string }
+    options: { addUserMessage: boolean; displayText?: string; userMessageId?: string; attachments?: ChatAttachment[] }
   ): Promise<void> {
     const settings = await ensureModelConfigured();
     if (!settings) {
@@ -271,6 +274,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
         role: 'user',
         content: options.displayText ?? userText,
         createdAt: Date.now(),
+        ...(options.attachments?.length ? { attachments: options.attachments } : {}),
         status: 'running'
       };
       this.session.messages.push(userMessage);
@@ -459,7 +463,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
 
   private async runQueuedInput(input: PendingInput): Promise<void> {
     const slashInvocation = parseSlashCommand(input.text);
-    if (slashInvocation) {
+    if (slashInvocation && (!input.attachments || input.attachments.length === 0)) {
       await this.executeSlashCommand(input.text, slashInvocation, {
         messageId: input.messageId,
         markMessageComplete: true,
@@ -467,7 +471,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       await this.drainPendingInputs();
       return;
     }
-    await this.runAgentForUserText(input.text, { addUserMessage: false, userMessageId: input.messageId });
+    await this.runAgentForUserText(input.text, { addUserMessage: false, userMessageId: input.messageId, attachments: input.attachments });
   }
 
   private markMessageStatus(messageId: string, status: ChatMessageStatus): void {
