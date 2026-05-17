@@ -469,6 +469,22 @@ interface ChatSession {
 
 ## 9. Implementation Plan
 
+Current implementation status:
+
+- Model API request/response tracing is enabled in the request layer.
+- Each actual HTTP call writes one JSON trace file containing:
+  - request URL, method, provider, model, api
+  - sanitized request headers
+  - full request body
+  - response status and headers
+  - full response body text
+  - parsed response JSON when applicable
+  - stream raw SSE body for streaming requests
+  - error message when the request fails
+- Trace file locations:
+  - workspace mode: `<workspace>/.kraken-coder/debug/model-api/*.json`
+  - no-workspace fallback: `~/kraken-coder/debug/model-api/*.json`
+
 ### Phase 0: Provider Probe
 
 - 手动或临时脚本请求 OpenAI Responses、OpenAI Chat、Anthropic Messages、Qwen OpenAI-compatible。
@@ -522,4 +538,3 @@ interface ChatSession {
 - 是否把 token 统计写入全局历史？建议第一版只写 session。
 - 是否做发送前 token preflight？建议只对 OpenAI Responses 和 Anthropic Messages 做可选项，Qwen 暂不默认。
 - 是否显示价格？建议等 usage 稳定后再做。
-

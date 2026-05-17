@@ -649,6 +649,7 @@ function getConfigHtml(webview: vscode.Webview, values: ConfigFormValues): strin
     const vscode = acquireVsCodeApi();
     const initialValues = ${data};
     const modelProfiles = ${JSON.stringify(supportedModelOptions).replace(/</g, '\\u003c')};
+    const providerOptions = ${JSON.stringify(providerOptions).replace(/</g, '\\u003c')};
     const statusEl = document.getElementById('status');
     let lastSelectedModelId = '';
     for (const [key, value] of Object.entries(initialValues)) {

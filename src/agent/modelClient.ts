@@ -1,5 +1,7 @@
+import * as fs from 'node:fs/promises';
 import * as http from 'node:http';
 import * as https from 'node:https';
+import * as path from 'node:path';
 import * as tls from 'node:tls';
 import type {
   JsonRecord,
@@ -105,6 +107,40 @@ interface ToolCallPart {
   arguments: string;
 }
 
+interface HttpTrace {
+  id: string;
+  provider: string;
+  api: string;
+  model: string;
+  url: string;
+  method: string;
+  streamed: boolean;
+  sessionId?: string;
+  runId?: string;
+  startedAt: string;
+  completedAt?: string;
+  durationMs?: number;
+  request: {
+    headers: Record<string, string>;
+    body: unknown;
+  };
+  response?: {
+    status: number;
+    statusText: string;
+    headers: Record<string, string>;
+    bodyText: string;
+    bodyJson?: unknown;
+  };
+  error?: {
+    message: string;
+  };
+}
+
+interface PostedResponse {
+  response: Response;
+  trace: HttpTrace;
+}
+
 export class OpenAICompatibleModelClient {
   async complete(request: ModelRequest): Promise<ModelResponse> {
     if (request.settings.provider === 'anthropic') {
@@ -119,37 +155,39 @@ export class OpenAICompatibleModelClient {
   }
 
   private async completeChatCompletions(request: ModelRequest): Promise<ModelResponse> {
-    const response = await postJson(
+    const posted = await postJson(
       request,
       '/chat/completions',
       buildBearerHeaders(request.apiKey),
       buildChatCompletionsBody(request)
     );
+    const { response, trace } = posted;
 
     if (request.onDelta && isEventStream(response)) {
-      return this.readChatCompletionsStreamingResponse(response, request.onDelta, request.onThinkingDelta);
+      return this.readChatCompletionsStreamingResponse(response, request.onDelta, request.onThinkingDelta, trace, request);
     }
 
-    return this.readChatCompletionsNonStreamingResponse(response, request.onDelta, request.onThinkingDelta);
+    return this.readChatCompletionsNonStreamingResponse(response, request.onDelta, request.onThinkingDelta, trace, request);
   }
 
   private async completeOpenAIResponses(request: ModelRequest): Promise<ModelResponse> {
-    const response = await postJson(
+    const posted = await postJson(
       request,
       '/responses',
       buildBearerHeaders(request.apiKey),
       buildOpenAIResponsesBody(request)
     );
+    const { response, trace } = posted;
 
     if (request.onDelta && isEventStream(response)) {
-      return this.readOpenAIResponsesStreamingResponse(response, request.onDelta, request.onThinkingDelta);
+      return this.readOpenAIResponsesStreamingResponse(response, request.onDelta, request.onThinkingDelta, trace, request);
     }
 
-    return this.readOpenAIResponsesNonStreamingResponse(response, request.onDelta, request.onThinkingDelta);
+    return this.readOpenAIResponsesNonStreamingResponse(response, request.onDelta, request.onThinkingDelta, trace, request);
   }
 
   private async completeAnthropicMessages(request: ModelRequest): Promise<ModelResponse> {
-    const response = await postJson(
+    const posted = await postJson(
       request,
       '/messages',
       {
@@ -159,20 +197,23 @@ export class OpenAICompatibleModelClient {
       },
       buildAnthropicMessagesBody(request)
     );
+    const { response, trace } = posted;
 
     if (request.onDelta && isEventStream(response)) {
-      return this.readAnthropicStreamingResponse(response, request.onDelta, request.onThinkingDelta);
+      return this.readAnthropicStreamingResponse(response, request.onDelta, request.onThinkingDelta, trace, request);
     }
 
-    return this.readAnthropicNonStreamingResponse(response, request.onDelta, request.onThinkingDelta);
+    return this.readAnthropicNonStreamingResponse(response, request.onDelta, request.onThinkingDelta, trace, request);
   }
 
   private async readChatCompletionsNonStreamingResponse(
     response: Response,
     onDelta?: (delta: string) => void,
-    onThinkingDelta?: (delta: string) => void
+    onThinkingDelta?: (delta: string) => void,
+    trace?: HttpTrace,
+    request?: ModelRequest
   ): Promise<ModelResponse> {
-    const parsed = await parseJsonResponse<ChatCompletionsResponse>(response);
+    const parsed = await parseJsonResponse<ChatCompletionsResponse>(response, trace, request);
     if (!response.ok) {
       throw new Error(parsed.error?.message ?? `Model request failed with HTTP ${response.status}.`);
     }
@@ -214,84 +255,97 @@ export class OpenAICompatibleModelClient {
   private async readChatCompletionsStreamingResponse(
     response: Response,
     onDelta: (delta: string) => void,
-    onThinkingDelta?: (delta: string) => void
+    onThinkingDelta?: (delta: string) => void,
+    trace?: HttpTrace,
+    request?: ModelRequest
   ): Promise<ModelResponse> {
-    await assertOkStreamResponse(response);
+    try {
+      await assertOkStreamResponse(response, trace, request);
 
-    const body = response.body;
-    if (!body) {
-      throw new Error('Model provider returned an empty streaming response.');
+      const body = response.body;
+      if (!body) {
+        throw new Error('Model provider returned an empty streaming response.');
+      }
+      const reader = body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let content = '';
+      let thinking = '';
+      let finishReason: string | undefined;
+      const toolCallParts = new Map<number, ToolCallPart>();
+
+      const handleData = (data: string) => {
+        if (data === '[DONE]') {
+          return;
+        }
+
+        let parsed: ChatCompletionsStreamChunk;
+        try {
+          parsed = JSON.parse(data) as ChatCompletionsStreamChunk;
+        } catch {
+          return;
+        }
+
+        if (parsed.error?.message) {
+          throw new Error(parsed.error.message);
+        }
+
+        const choice = parsed.choices?.[0];
+        if (!choice) {
+          return;
+        }
+
+        if (choice.finish_reason) {
+          finishReason = choice.finish_reason;
+        }
+
+        const deltaText = choice.delta?.content ?? '';
+        if (deltaText) {
+          content += deltaText;
+          onDelta(deltaText);
+        }
+
+        const thinkingDelta = choice.delta?.reasoning_content ?? '';
+        if (thinkingDelta) {
+          thinking += thinkingDelta;
+          onThinkingDelta?.(thinkingDelta);
+        }
+
+        collectStreamingToolCalls(toolCallParts, choice.delta?.tool_calls ?? []);
+      };
+
+      buffer = await readServerSentEventStream(reader, decoder, buffer, handleData, trace, request);
+      for (const data of parseServerSentEventData(buffer.trim())) {
+        handleData(data);
+      }
+
+      const toolCalls = toolCallPartsToModelToolCalls(toolCallParts);
+      assertHasModelOutput(content, toolCalls.length);
+
+      return {
+        content,
+        thinking,
+        toolCalls,
+        finishReason
+      };
+    } catch (error) {
+      if (trace && request) {
+        await finalizeTrace(trace, request, {
+          message: error instanceof Error ? error.message : String(error)
+        });
+      }
+      throw error;
     }
-    const reader = body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let content = '';
-    let thinking = '';
-    let finishReason: string | undefined;
-    const toolCallParts = new Map<number, ToolCallPart>();
-
-    const handleData = (data: string) => {
-      if (data === '[DONE]') {
-        return;
-      }
-
-      let parsed: ChatCompletionsStreamChunk;
-      try {
-        parsed = JSON.parse(data) as ChatCompletionsStreamChunk;
-      } catch {
-        return;
-      }
-
-      if (parsed.error?.message) {
-        throw new Error(parsed.error.message);
-      }
-
-      const choice = parsed.choices?.[0];
-      if (!choice) {
-        return;
-      }
-
-      if (choice.finish_reason) {
-        finishReason = choice.finish_reason;
-      }
-
-      const deltaText = choice.delta?.content ?? '';
-      if (deltaText) {
-        content += deltaText;
-        onDelta(deltaText);
-      }
-
-      const thinkingDelta = choice.delta?.reasoning_content ?? '';
-      if (thinkingDelta) {
-        thinking += thinkingDelta;
-        onThinkingDelta?.(thinkingDelta);
-      }
-
-      collectStreamingToolCalls(toolCallParts, choice.delta?.tool_calls ?? []);
-    };
-
-    buffer = await readServerSentEventStream(reader, decoder, buffer, handleData);
-    for (const data of parseServerSentEventData(buffer.trim())) {
-      handleData(data);
-    }
-
-    const toolCalls = toolCallPartsToModelToolCalls(toolCallParts);
-    assertHasModelOutput(content, toolCalls.length);
-
-    return {
-      content,
-      thinking,
-      toolCalls,
-      finishReason
-    };
   }
 
   private async readOpenAIResponsesNonStreamingResponse(
     response: Response,
     onDelta?: (delta: string) => void,
-    onThinkingDelta?: (delta: string) => void
+    onThinkingDelta?: (delta: string) => void,
+    trace?: HttpTrace,
+    request?: ModelRequest
   ): Promise<ModelResponse> {
-    const parsed = await parseJsonResponse<ResponsesResponse>(response);
+    const parsed = await parseJsonResponse<ResponsesResponse>(response, trace, request);
     if (!response.ok) {
       throw new Error(parsed.error?.message ?? `Model request failed with HTTP ${response.status}.`);
     }
@@ -309,116 +363,129 @@ export class OpenAICompatibleModelClient {
   private async readOpenAIResponsesStreamingResponse(
     response: Response,
     onDelta: (delta: string) => void,
-    onThinkingDelta?: (delta: string) => void
+    onThinkingDelta?: (delta: string) => void,
+    trace?: HttpTrace,
+    request?: ModelRequest
   ): Promise<ModelResponse> {
-    await assertOkStreamResponse(response);
+    try {
+      await assertOkStreamResponse(response, trace, request);
 
-    const body = response.body;
-    if (!body) {
-      throw new Error('Model provider returned an empty streaming response.');
-    }
-    const reader = body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let content = '';
-    let thinking = '';
-    let finalResponse: ResponsesResponse | undefined;
-    const toolCallParts = new Map<number, ToolCallPart>();
-
-    const handleData = (data: string) => {
-      if (data === '[DONE]') {
-        return;
+      const body = response.body;
+      if (!body) {
+        throw new Error('Model provider returned an empty streaming response.');
       }
+      const reader = body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let content = '';
+      let thinking = '';
+      let finalResponse: ResponsesResponse | undefined;
+      const toolCallParts = new Map<number, ToolCallPart>();
 
-      let event: JsonRecord;
-      try {
-        event = JSON.parse(data) as JsonRecord;
-      } catch {
-        return;
-      }
-
-      const error = asRecord(event.error);
-      if (typeof error?.message === 'string') {
-        throw new Error(error.message);
-      }
-
-      const type = typeof event.type === 'string' ? event.type : '';
-      if (type === 'response.output_text.delta' && typeof event.delta === 'string') {
-        content += event.delta;
-        onDelta(event.delta);
-        return;
-      }
-
-      if (isOpenAIThinkingDeltaEvent(type) && typeof event.delta === 'string') {
-        thinking += event.delta;
-        onThinkingDelta?.(event.delta);
-        return;
-      }
-
-      if (type === 'response.function_call_arguments.delta') {
-        const index = numberFromUnknown(event.output_index) ?? 0;
-        const existing = toolCallParts.get(index) ?? { arguments: '' };
-        if (typeof event.delta === 'string') {
-          existing.arguments += event.delta;
+      const handleData = (data: string) => {
+        if (data === '[DONE]') {
+          return;
         }
-        toolCallParts.set(index, existing);
-        return;
-      }
 
-      if (type === 'response.output_item.added' || type === 'response.output_item.done') {
-        const item = asRecord(event.item);
-        if (item?.type === 'function_call') {
-          const index = numberFromUnknown(event.output_index) ?? toolCallParts.size;
+        let event: JsonRecord;
+        try {
+          event = JSON.parse(data) as JsonRecord;
+        } catch {
+          return;
+        }
+
+        const error = asRecord(event.error);
+        if (typeof error?.message === 'string') {
+          throw new Error(error.message);
+        }
+
+        const type = typeof event.type === 'string' ? event.type : '';
+        if (type === 'response.output_text.delta' && typeof event.delta === 'string') {
+          content += event.delta;
+          onDelta(event.delta);
+          return;
+        }
+
+        if (isOpenAIThinkingDeltaEvent(type) && typeof event.delta === 'string') {
+          thinking += event.delta;
+          onThinkingDelta?.(event.delta);
+          return;
+        }
+
+        if (type === 'response.function_call_arguments.delta') {
+          const index = numberFromUnknown(event.output_index) ?? 0;
           const existing = toolCallParts.get(index) ?? { arguments: '' };
-          if (typeof item.call_id === 'string') {
-            existing.id = item.call_id;
-          } else if (typeof item.id === 'string') {
-            existing.id = item.id;
-          }
-          if (typeof item.name === 'string') {
-            existing.name = item.name;
-          }
-          if (typeof item.arguments === 'string') {
-            existing.arguments = item.arguments;
+          if (typeof event.delta === 'string') {
+            existing.arguments += event.delta;
           }
           toolCallParts.set(index, existing);
+          return;
         }
-        return;
+
+        if (type === 'response.output_item.added' || type === 'response.output_item.done') {
+          const item = asRecord(event.item);
+          if (item?.type === 'function_call') {
+            const index = numberFromUnknown(event.output_index) ?? toolCallParts.size;
+            const existing = toolCallParts.get(index) ?? { arguments: '' };
+            if (typeof item.call_id === 'string') {
+              existing.id = item.call_id;
+            } else if (typeof item.id === 'string') {
+              existing.id = item.id;
+            }
+            if (typeof item.name === 'string') {
+              existing.name = item.name;
+            }
+            if (typeof item.arguments === 'string') {
+              existing.arguments = item.arguments;
+            }
+            toolCallParts.set(index, existing);
+          }
+          return;
+        }
+
+        if (type === 'response.completed') {
+          const responseValue = asRecord(event.response);
+          if (responseValue) {
+            finalResponse = responseValue as ResponsesResponse;
+          }
+        }
+      };
+
+      buffer = await readServerSentEventStream(reader, decoder, buffer, handleData, trace, request);
+      for (const data of parseServerSentEventData(buffer.trim())) {
+        handleData(data);
       }
 
-      if (type === 'response.completed') {
-        const responseValue = asRecord(event.response);
-        if (responseValue) {
-          finalResponse = responseValue as ResponsesResponse;
-        }
-      }
-    };
+      const parsedFinal = finalResponse ? parseOpenAIResponsesResponse(finalResponse) : undefined;
+      const toolCalls = parsedFinal?.toolCalls.length ? parsedFinal.toolCalls : toolCallPartsToModelToolCalls(toolCallParts);
+      const responseContent = parsedFinal?.content || content;
+      const responseThinking = parsedFinal?.thinking || thinking;
+      assertHasModelOutput(responseContent, toolCalls.length);
 
-    buffer = await readServerSentEventStream(reader, decoder, buffer, handleData);
-    for (const data of parseServerSentEventData(buffer.trim())) {
-      handleData(data);
+      return {
+        content: responseContent,
+        thinking: responseThinking,
+        toolCalls,
+        finishReason: parsedFinal?.finishReason ?? finalResponse?.status
+      };
+    } catch (error) {
+      if (trace && request) {
+        await finalizeTrace(trace, request, {
+          message: error instanceof Error ? error.message : String(error)
+        });
+      }
+      throw error;
     }
-
-    const parsedFinal = finalResponse ? parseOpenAIResponsesResponse(finalResponse) : undefined;
-    const toolCalls = parsedFinal?.toolCalls.length ? parsedFinal.toolCalls : toolCallPartsToModelToolCalls(toolCallParts);
-    const responseContent = parsedFinal?.content || content;
-    const responseThinking = parsedFinal?.thinking || thinking;
-    assertHasModelOutput(responseContent, toolCalls.length);
-
-    return {
-      content: responseContent,
-      thinking: responseThinking,
-      toolCalls,
-      finishReason: parsedFinal?.finishReason ?? finalResponse?.status
-    };
   }
 
   private async readAnthropicNonStreamingResponse(
     response: Response,
     onDelta?: (delta: string) => void,
-    onThinkingDelta?: (delta: string) => void
+    onThinkingDelta?: (delta: string) => void,
+    trace?: HttpTrace,
+    request?: ModelRequest
   ): Promise<ModelResponse> {
-    const parsed = await parseJsonResponse<AnthropicMessageResponse>(response);
+    const parsed = await parseJsonResponse<AnthropicMessageResponse>(response, trace, request);
     if (!response.ok) {
       throw new Error(parsed.error?.message ?? `Model request failed with HTTP ${response.status}.`);
     }
@@ -436,92 +503,103 @@ export class OpenAICompatibleModelClient {
   private async readAnthropicStreamingResponse(
     response: Response,
     onDelta: (delta: string) => void,
-    onThinkingDelta?: (delta: string) => void
+    onThinkingDelta?: (delta: string) => void,
+    trace?: HttpTrace,
+    request?: ModelRequest
   ): Promise<ModelResponse> {
-    await assertOkStreamResponse(response);
+    try {
+      await assertOkStreamResponse(response, trace, request);
 
-    const body = response.body;
-    if (!body) {
-      throw new Error('Model provider returned an empty streaming response.');
-    }
-    const reader = body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let content = '';
-    let thinking = '';
-    let finishReason: string | undefined;
-    const toolCallParts = new Map<number, ToolCallPart>();
-
-    const handleData = (data: string) => {
-      let event: JsonRecord;
-      try {
-        event = JSON.parse(data) as JsonRecord;
-      } catch {
-        return;
+      const body = response.body;
+      if (!body) {
+        throw new Error('Model provider returned an empty streaming response.');
       }
+      const reader = body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let content = '';
+      let thinking = '';
+      let finishReason: string | undefined;
+      const toolCallParts = new Map<number, ToolCallPart>();
 
-      const error = asRecord(event.error);
-      if (typeof error?.message === 'string') {
-        throw new Error(error.message);
-      }
-
-      const type = typeof event.type === 'string' ? event.type : '';
-      if (type === 'content_block_start') {
-        const index = numberFromUnknown(event.index) ?? 0;
-        const block = asRecord(event.content_block);
-        if (block?.type === 'tool_use') {
-          toolCallParts.set(index, {
-            id: typeof block.id === 'string' ? block.id : undefined,
-            name: typeof block.name === 'string' ? block.name : undefined,
-            arguments: ''
-          });
-        }
-        return;
-      }
-
-      if (type === 'content_block_delta') {
-        const delta = asRecord(event.delta);
-        if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
-          content += delta.text;
-          onDelta(delta.text);
+      const handleData = (data: string) => {
+        let event: JsonRecord;
+        try {
+          event = JSON.parse(data) as JsonRecord;
+        } catch {
           return;
         }
-        if (delta?.type === 'thinking_delta' && typeof delta.thinking === 'string') {
-          thinking += delta.thinking;
-          onThinkingDelta?.(delta.thinking);
-          return;
+
+        const error = asRecord(event.error);
+        if (typeof error?.message === 'string') {
+          throw new Error(error.message);
         }
-        if (delta?.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
+
+        const type = typeof event.type === 'string' ? event.type : '';
+        if (type === 'content_block_start') {
           const index = numberFromUnknown(event.index) ?? 0;
-          const existing = toolCallParts.get(index) ?? { arguments: '' };
-          existing.arguments += delta.partial_json;
-          toolCallParts.set(index, existing);
+          const block = asRecord(event.content_block);
+          if (block?.type === 'tool_use') {
+            toolCallParts.set(index, {
+              id: typeof block.id === 'string' ? block.id : undefined,
+              name: typeof block.name === 'string' ? block.name : undefined,
+              arguments: ''
+            });
+          }
+          return;
         }
-        return;
+
+        if (type === 'content_block_delta') {
+          const delta = asRecord(event.delta);
+          if (delta?.type === 'text_delta' && typeof delta.text === 'string') {
+            content += delta.text;
+            onDelta(delta.text);
+            return;
+          }
+          if (delta?.type === 'thinking_delta' && typeof delta.thinking === 'string') {
+            thinking += delta.thinking;
+            onThinkingDelta?.(delta.thinking);
+            return;
+          }
+          if (delta?.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
+            const index = numberFromUnknown(event.index) ?? 0;
+            const existing = toolCallParts.get(index) ?? { arguments: '' };
+            existing.arguments += delta.partial_json;
+            toolCallParts.set(index, existing);
+          }
+          return;
+        }
+
+        if (type === 'message_delta') {
+          const delta = asRecord(event.delta);
+          if (typeof delta?.stop_reason === 'string') {
+            finishReason = delta.stop_reason;
+          }
+        }
+      };
+
+      buffer = await readServerSentEventStream(reader, decoder, buffer, handleData, trace, request);
+      for (const data of parseServerSentEventData(buffer.trim())) {
+        handleData(data);
       }
 
-      if (type === 'message_delta') {
-        const delta = asRecord(event.delta);
-        if (typeof delta?.stop_reason === 'string') {
-          finishReason = delta.stop_reason;
-        }
-      }
-    };
+      const toolCalls = toolCallPartsToModelToolCalls(toolCallParts);
+      assertHasModelOutput(content, toolCalls.length);
 
-    buffer = await readServerSentEventStream(reader, decoder, buffer, handleData);
-    for (const data of parseServerSentEventData(buffer.trim())) {
-      handleData(data);
+      return {
+        content,
+        thinking,
+        toolCalls,
+        finishReason
+      };
+    } catch (error) {
+      if (trace && request) {
+        await finalizeTrace(trace, request, {
+          message: error instanceof Error ? error.message : String(error)
+        });
+      }
+      throw error;
     }
-
-    const toolCalls = toolCallPartsToModelToolCalls(toolCallParts);
-    assertHasModelOutput(content, toolCalls.length);
-
-    return {
-      content,
-      thinking,
-      toolCalls,
-      finishReason
-    };
   }
 }
 
@@ -1024,44 +1102,164 @@ async function postJson(
   path: string,
   headers: Record<string, string>,
   body: JsonRecord
-): Promise<Response> {
+): Promise<PostedResponse> {
   const url = joinUrl(request.settings.baseUrl, path);
   const requestBody = JSON.stringify(body);
-  return request.settings.proxy
-    ? requestViaProxy(url, {
-        method: 'POST',
-        headers,
-        body: requestBody,
-        signal: request.signal,
-        proxy: request.settings.proxy
-      })
-    : fetch(url, {
-        method: 'POST',
-        headers,
-        body: requestBody,
-        signal: request.signal
-      });
+  const trace = createHttpTrace(request, url, 'POST', headers, body);
+  try {
+    const response = request.settings.proxy
+      ? await requestViaProxy(url, {
+          method: 'POST',
+          headers,
+          body: requestBody,
+          signal: request.signal,
+          proxy: request.settings.proxy
+        })
+      : await fetch(url, {
+          method: 'POST',
+          headers,
+          body: requestBody,
+          signal: request.signal
+        });
+    populateResponseMetadata(trace, response);
+    return { response, trace };
+  } catch (error) {
+    await finalizeTrace(trace, request, {
+      message: error instanceof Error ? error.message : String(error)
+    });
+    throw error;
+  }
 }
 
 function joinUrl(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
 }
 
-async function parseJsonResponse<T>(response: Response): Promise<T> {
-  const body = await response.text();
-  try {
-    return JSON.parse(body) as T;
-  } catch {
-    throw new Error(`Model provider returned non-JSON response (${response.status}).`);
-  }
+function createHttpTrace(
+  request: ModelRequest,
+  url: string,
+  method: string,
+  headers: Record<string, string>,
+  body: JsonRecord
+): HttpTrace {
+  const startedAt = new Date();
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    provider: request.settings.provider,
+    api: request.settings.api,
+    model: request.settings.model,
+    url,
+    method,
+    streamed: Boolean(request.onDelta),
+    sessionId: request.debug?.sessionId,
+    runId: request.debug?.runId,
+    startedAt: startedAt.toISOString(),
+    request: {
+      headers: sanitizeHeaders(headers),
+      body,
+    },
+  };
 }
 
-async function assertOkStreamResponse(response: Response): Promise<void> {
+function populateResponseMetadata(trace: HttpTrace, response: Response): void {
+  trace.response = {
+    status: response.status,
+    statusText: response.statusText,
+    headers: headersToObject(response.headers),
+    bodyText: '',
+  };
+}
+
+async function finalizeTrace(
+  trace: HttpTrace,
+  request: ModelRequest,
+  error?: { message: string },
+  bodyText?: string,
+  bodyJson?: unknown
+): Promise<void> {
+  trace.completedAt = new Date().toISOString();
+  trace.durationMs = new Date(trace.completedAt).getTime() - new Date(trace.startedAt).getTime();
+  if (trace.response) {
+    trace.response.bodyText = bodyText ?? trace.response.bodyText;
+    if (bodyJson !== undefined) {
+      trace.response.bodyJson = bodyJson;
+    }
+  }
+  if (error) {
+    trace.error = error;
+  }
+  await writeHttpTrace(request, trace);
+}
+
+async function writeHttpTrace(request: ModelRequest, trace: HttpTrace): Promise<void> {
+  const dir = request.debug?.logDir;
+  if (!dir) {
+    return;
+  }
+  await fs.mkdir(dir, { recursive: true });
+  const fileName = `${trace.id}.json`;
+  await fs.writeFile(path.join(dir, fileName), JSON.stringify(trace, null, 2), 'utf8');
+}
+
+function sanitizeHeaders(headers: Record<string, string>): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    result[key] = /authorization|x-api-key/i.test(key) ? redactSecret(value) : value;
+  }
+  return result;
+}
+
+function headersToObject(headers: Headers): Record<string, string> {
+  const result: Record<string, string> = {};
+  headers.forEach((value, key) => {
+    result[key] = value;
+  });
+  return result;
+}
+
+function redactSecret(value: string): string {
+  if (!value) {
+    return value;
+  }
+  if (value.startsWith('Bearer ')) {
+    return 'Bearer ***REDACTED***';
+  }
+  return '***REDACTED***';
+}
+
+async function parseJsonResponse<T>(response: Response, trace?: HttpTrace, request?: ModelRequest): Promise<T> {
+  const body = await response.text();
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(body) as T;
+  } catch {
+    if (trace && request) {
+      await finalizeTrace(trace, request, undefined, body);
+    }
+    throw new Error(`Model provider returned non-JSON response (${response.status}).`);
+  }
+  if (trace && request) {
+    await finalizeTrace(trace, request, undefined, body, parsedJson);
+  }
+  return parsedJson as T;
+}
+
+async function assertOkStreamResponse(response: Response, trace?: HttpTrace, request?: ModelRequest): Promise<void> {
   if (!response.ok) {
     const body = await response.text();
+    if (trace && request) {
+      await finalizeTrace(trace, request, {
+        message: extractErrorMessage(body) ?? `Model request failed with HTTP ${response.status}.`
+      }, body);
+    }
     throw new Error(extractErrorMessage(body) ?? `Model request failed with HTTP ${response.status}.`);
   }
   if (!response.body) {
+    if (trace && request) {
+      await finalizeTrace(trace, request, {
+        message: 'Model provider returned an empty streaming response.'
+      });
+    }
     throw new Error('Model provider returned an empty streaming response.');
   }
 }
@@ -1070,16 +1268,21 @@ async function readServerSentEventStream(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   decoder: TextDecoder,
   buffer: string,
-  onData: (data: string) => void
+  onData: (data: string) => void,
+  trace?: HttpTrace,
+  request?: ModelRequest
 ): Promise<string> {
   let currentBuffer = buffer;
+  let rawBody = '';
   while (true) {
     const { value, done } = await reader.read();
     if (done) {
       break;
     }
 
-    currentBuffer += decoder.decode(value, { stream: true });
+    const chunk = decoder.decode(value, { stream: true });
+    rawBody += chunk;
+    currentBuffer += chunk;
     const events = currentBuffer.split(/\r?\n\r?\n/);
     currentBuffer = events.pop() ?? '';
 
@@ -1088,6 +1291,13 @@ async function readServerSentEventStream(
         onData(data);
       }
     }
+  }
+  rawBody += decoder.decode();
+  if (currentBuffer) {
+    rawBody += currentBuffer;
+  }
+  if (trace && request) {
+    await finalizeTrace(trace, request, undefined, rawBody);
   }
   return currentBuffer;
 }

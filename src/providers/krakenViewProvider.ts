@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { AgentRuntime } from '../agent/runtime';
 import { createId } from '../shared/id';
@@ -304,10 +305,15 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       this.streamingThinkingMessageId = undefined;
       const result = await this.runtime.run({
         userText,
+        sessionId: this.session.id,
+        runId,
         history: this.buildRunHistory(options),
         context: this.session.context,
         settings,
         apiKey,
+        debugLogDir: workspaceRoot
+          ? path.join(workspaceRoot, '.kraken-coder', 'debug', 'model-api')
+          : path.join(config.paths.globalRoot, 'debug', 'model-api'),
         maxContextChars: config.context.maxChars,
         maxSteps: config.agent.maxSteps,
         tools,

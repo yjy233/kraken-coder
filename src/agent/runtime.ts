@@ -31,6 +31,9 @@ export interface RunAgentOptions {
   episodesPromptBlock?: string
   maxSteps?: number
   onProgress?: (message: string) => void
+  debugLogDir?: string
+  sessionId?: string
+  runId?: string
   signal?: AbortSignal
 }
 
@@ -39,6 +42,13 @@ export class AgentRuntime {
     configureModelRequest({
       settings: options.settings,
       apiKey: options.apiKey,
+      ...(options.debugLogDir ? {
+        debug: {
+          logDir: options.debugLogDir,
+          sessionId: options.sessionId,
+          runId: options.runId,
+        },
+      } : {}),
       signal: options.signal,
     })
 

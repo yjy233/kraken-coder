@@ -243,5 +243,10 @@ export interface ModelRequest {
   maxOutputTokens?: number;
   onDelta?: (delta: string) => void;
   onThinkingDelta?: (delta: string) => void;
+  debug?: {
+    logDir: string;
+    sessionId?: string;
+    runId?: string;
+  };
   signal?: AbortSignal;
 }

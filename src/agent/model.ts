@@ -14,9 +14,9 @@ import type {
 } from '../shared/types'
 import { OpenAICompatibleModelClient } from './modelClient'
 
-let currentModelRequest: Pick<ModelRequest, 'settings' | 'apiKey' | 'signal'> | null = null
+let currentModelRequest: Pick<ModelRequest, 'settings' | 'apiKey' | 'signal' | 'debug'> | null = null
 
-export function configureModelRequest(request: Pick<ModelRequest, 'settings' | 'apiKey' | 'signal'>): void {
+export function configureModelRequest(request: Pick<ModelRequest, 'settings' | 'apiKey' | 'signal' | 'debug'>): void {
   currentModelRequest = request
 }
 
