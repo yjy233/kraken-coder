@@ -33,12 +33,15 @@ export async function invokeModel(params: InvokeModelParams & {
     ...currentModelRequest,
     messages: convertMessages(params.systemPrompt, params.messages),
     tools: convertTools(params.tools),
+    maxOutputTokens: params.maxOutputTokens,
     onDelta: params.onDelta,
+    onThinkingDelta: params.onThinkingDelta,
     signal: params.signal,
   })
 
   return {
     text: response.content,
+    thinking: response.thinking,
     toolUses: response.toolCalls.map((toolCall): ToolUse => ({
       id: toolCall.id,
       name: toolCall.name,

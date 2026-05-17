@@ -131,7 +131,7 @@ function normalizeMessage(message: ChatMessage): ChatMessage {
 }
 
 function inferSessionTitle(messages: ChatMessage[]): string {
-  const firstUser = messages.find((message) => message.role === 'user' && message.kind !== 'tool');
+  const firstUser = messages.find((message) => message.role === 'user' && message.kind !== 'tool' && message.kind !== 'thinking');
   const content = firstUser?.content.trim().replace(/\s+/g, ' ');
   if (!content) {
     return 'New session';

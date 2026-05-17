@@ -7,14 +7,60 @@
 # API keys are stored in VS Code SecretStorage, not in this file.
 
 [model]
-# OpenAI-compatible API base URL.
-baseUrl = "https://api.openai.com/v1"
+# Provider adapter: qwen, openai, or anthropic.
+provider = "qwen"
+
+# API mode: chat-completions, responses, or messages.
+api = "chat-completions"
+
+# Model API base URL.
+baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
 # Optional HTTP proxy for model requests. Leave empty to disable proxying.
 proxy = ""
 
-# Model name. Leave empty to be prompted by the extension.
-name = ""
+# Supported model names:
+# qwen3.6-plus, gpt-5.4, gpt-5.5,
+# claude-opus-4.7-fast, claude-sonnet-4.6
+name = "qwen3.6-plus"
+
+[model.reasoning]
+# Provider-neutral effort/thinking controls used when supported.
+enabled = true
+effort = "medium" # none, minimal, low, medium, high, xhigh, max
+display = "hidden" # hidden, summary, visible
+budgetTokens = 0
+preserve = false
+maxStoredTokens = 4096
+
+[model.cache]
+# Provider cache optimization. Kraken maps this to each provider:
+# OpenAI prompt cache, Claude block cache, Qwen context cache.
+enabled = true
+strategy = "auto"
+retention = "in_memory"
+
+[providers.openai]
+api = "responses"
+effort = "medium"
+promptCacheKey = "workspace"
+promptCacheRetention = "in_memory"
+
+[providers.anthropic]
+api = "messages"
+thinking = "adaptive" # auto, adaptive, enabled, disabled
+effort = "medium"
+thinkingBudgetTokens = 16000
+maxTokens = 32000
+preserveThinking = true
+cacheTtl = "5m" # 5m or 1h
+
+[providers.qwen]
+api = "chat-completions"
+enableThinking = true
+thinkingBudget = 8192
+preserveThinking = false
+cacheMode = "auto"
 
 [context]
 # Maximum approximate context characters sent to the model.

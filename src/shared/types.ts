@@ -1,6 +1,6 @@
 export type ChatRole = 'user' | 'assistant' | 'system';
 
-export type ChatMessageKind = 'text' | 'tool';
+export type ChatMessageKind = 'text' | 'tool' | 'thinking';
 export type ChatMessageStatus = 'queued' | 'running' | 'complete' | 'interrupted' | 'error';
 
 export interface ChatMessage {
@@ -90,6 +90,21 @@ export interface ChatSessionSummary {
   messageCount: number;
 }
 
+export interface ModelStatusInfo {
+  provider: ModelProvider;
+  api: ModelApiMode;
+  model: string;
+  effort: ModelReasoningEffort;
+  reasoningEnabled: boolean;
+  cacheEnabled: boolean;
+  cacheStrategy: ModelCacheStrategy;
+  thinking?: string;
+  cacheMode?: string;
+  contextUsedChars: number;
+  contextMaxChars: number;
+  contextUsagePercent: number;
+}
+
 export type WebviewToExtensionMessage =
   | { type: 'chat.send'; text: string }
   | { type: 'agent.stop'; runId?: string }
@@ -105,19 +120,69 @@ export type WebviewToExtensionMessage =
   | { type: 'session.delete'; sessionId: string };
 
 export type ExtensionToWebviewMessage =
-  | { type: 'session.updated'; session: ChatSession; sessions?: ChatSessionSummary[] }
+  | { type: 'session.updated'; session: ChatSession; sessions?: ChatSessionSummary[]; modelInfo?: ModelStatusInfo }
   | { type: 'agent.runStarted'; runId: string }
   | { type: 'agent.runStopped'; runId: string; reason: 'user' | 'system' }
   | { type: 'slash.completions'; requestId: string; items: SlashCompletionItem[] }
   | { type: 'agent.progress'; message: string }
   | { type: 'error'; message: string; recoverable: boolean };
 
+export type ModelProvider = 'openai' | 'anthropic' | 'qwen' | 'openai-compatible';
+export type ModelApiMode = 'responses' | 'chat-completions' | 'messages';
+export type ModelReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export type ModelReasoningDisplay = 'hidden' | 'summary' | 'visible';
+export type ModelCacheStrategy = 'auto' | 'auto-prefix' | 'explicit' | 'explicit-blocks' | 'implicit' | 'disabled';
+
+export interface ModelReasoningSettings {
+  enabled: boolean;
+  effort: ModelReasoningEffort;
+  display: ModelReasoningDisplay;
+  budgetTokens: number;
+  preserve: boolean;
+  maxStoredTokens: number;
+}
+
+export interface ModelCacheSettings {
+  enabled: boolean;
+  strategy: ModelCacheStrategy;
+  retention: string;
+}
+
+export interface ModelProviderSettings {
+  openai: {
+    api: 'responses' | 'chat-completions';
+    effort: ModelReasoningEffort;
+    promptCacheKey: string;
+    promptCacheRetention: string;
+  };
+  anthropic: {
+    api: 'messages';
+    thinking: 'auto' | 'adaptive' | 'enabled' | 'disabled';
+    effort: ModelReasoningEffort;
+    thinkingBudgetTokens: number;
+    maxTokens: number;
+    preserveThinking: boolean;
+    cacheTtl: string;
+  };
+  qwen: {
+    api: 'chat-completions';
+    enableThinking: boolean;
+    thinkingBudget: number;
+    preserveThinking: boolean;
+    cacheMode: 'auto' | 'explicit' | 'implicit' | 'disabled';
+  };
+}
+
 export interface ModelSettings {
   baseUrl: string;
-  provider: 'openai-compatible';
+  provider: ModelProvider;
+  api: ModelApiMode;
   model: string;
   apiKey: string;
   proxy?: string;
+  reasoning: ModelReasoningSettings;
+  cache: ModelCacheSettings;
+  providers: ModelProviderSettings;
 }
 
 export type JsonRecord = Record<string, unknown>;
@@ -165,6 +230,7 @@ export interface ModelToolCall {
 
 export interface ModelResponse {
   content: string;
+  thinking?: string;
   toolCalls: ModelToolCall[];
   finishReason?: string;
 }
@@ -174,6 +240,8 @@ export interface ModelRequest {
   apiKey: string;
   messages: ModelMessage[];
   tools?: ModelToolDefinition[];
+  maxOutputTokens?: number;
   onDelta?: (delta: string) => void;
+  onThinkingDelta?: (delta: string) => void;
   signal?: AbortSignal;
 }

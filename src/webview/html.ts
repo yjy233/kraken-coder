@@ -357,12 +357,14 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       margin: 10px 0;
     }
 
-    .message.tool .message-bubble {
+    .message.tool .message-bubble,
+    .message.thinking .message-bubble {
       border-style: dashed;
       background: var(--chat-tool-bg);
     }
 
-    .tool-card {
+    .tool-card,
+    .thinking-card {
       width: min(92%, 720px);
       border: 1px dashed var(--border);
       border-radius: 8px;
@@ -370,19 +372,23 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       overflow: hidden;
     }
 
-    .tool-card[open] {
+    .tool-card[open],
+    .thinking-card[open] {
       border-color: var(--chat-bubble-border);
     }
 
-    .tool-card.running {
+    .tool-card.running,
+    .thinking-card.running {
       border-color: var(--vscode-progressBar-background);
     }
 
-    .tool-card.error {
+    .tool-card.error,
+    .thinking-card.error {
       border-color: var(--vscode-errorForeground);
     }
 
-    .tool-summary {
+    .tool-summary,
+    .thinking-summary {
       display: flex;
       align-items: center;
       gap: 8px;
@@ -392,11 +398,13 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       list-style: none;
     }
 
-    .tool-summary::-webkit-details-marker {
+    .tool-summary::-webkit-details-marker,
+    .thinking-summary::-webkit-details-marker {
       display: none;
     }
 
-    .tool-summary::before {
+    .tool-summary::before,
+    .thinking-summary::before {
       content: '›';
       flex: 0 0 auto;
       color: var(--muted);
@@ -405,11 +413,13 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       transform: translateY(-1px);
     }
 
-    .tool-card[open] .tool-summary::before {
+    .tool-card[open] .tool-summary::before,
+    .thinking-card[open] .thinking-summary::before {
       transform: rotate(90deg) translateX(-1px);
     }
 
-    .tool-name {
+    .tool-name,
+    .thinking-name {
       flex: 0 0 auto;
       font-family: var(--vscode-editor-font-family);
       font-size: 12px;
@@ -417,7 +427,8 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       color: var(--vscode-foreground);
     }
 
-    .tool-params {
+    .tool-params,
+    .thinking-params {
       flex: 1;
       min-width: 0;
       overflow: hidden;
@@ -428,16 +439,58 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       font-size: 12px;
     }
 
-    .tool-body {
+    .tool-body,
+    .thinking-body {
       border-top: 1px dashed var(--border);
       padding: 8px 9px;
     }
 
-    .tool-status {
+    .tool-status,
+    .thinking-status {
       margin-bottom: 6px;
       color: var(--muted);
       font-size: 11px;
       text-transform: uppercase;
+    }
+
+    .tool-section,
+    .thinking-section {
+      display: grid;
+      gap: 5px;
+      margin-top: 8px;
+    }
+
+    .tool-section:first-child,
+    .thinking-section:first-child {
+      margin-top: 0;
+    }
+
+    .tool-section-title,
+    .thinking-section-title {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .tool-json,
+    .thinking-text {
+      margin: 0;
+      padding: 8px;
+      max-height: 320px;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--vscode-textCodeBlock-background, var(--vscode-editor-inactiveSelectionBackground));
+      color: var(--vscode-editor-foreground, var(--vscode-foreground));
+      font-family: var(--vscode-editor-font-family);
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre;
+    }
+
+    .thinking-text {
+      white-space: pre-wrap;
     }
 
     .message.running .message-bubble {
@@ -605,7 +658,35 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       margin-top: 8px;
       display: flex;
       gap: 6px;
+      align-items: center;
       justify-content: flex-end;
+    }
+
+    .model-pill {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .model-pill button {
+      max-width: 100%;
+      min-height: 28px;
+      padding: 4px 8px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--vscode-descriptionForeground);
+      background: var(--vscode-button-secondaryBackground);
+      font-size: 11px;
+      line-height: 1.3;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .model-pill button:hover {
+      color: var(--vscode-button-secondaryForeground);
+      background: var(--vscode-button-secondaryHoverBackground);
     }
 
     .send-button {
@@ -683,6 +764,7 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       <textarea id="input" placeholder="Ask Kraken to explain, fix, or write code..."></textarea>
       </div>
       <div class="composer-actions">
+        <div class="model-pill"><button type="button" id="modelInfo" title="Configure model">Model</button></div>
         <button class="send-button" type="submit" id="send" title="Send message" aria-label="Send message">↑</button>
       </div>
     </form>
@@ -695,10 +777,12 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     let activeRunId = undefined;
     let queueLength = 0;
     let progress = 'Thinking...';
+    let modelInfo = undefined;
     let slashCompletionRequestId = 0;
     let slashCompletionItems = [];
     let slashCompletionActiveIndex = 0;
     const openToolMessages = new Set();
+    const openThinkingMessages = new Set();
 
     const messagesEl = document.getElementById('messages');
     const sessionsEl = document.getElementById('sessions');
@@ -706,10 +790,12 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     const changesEl = document.getElementById('changes');
     const inputEl = document.getElementById('input');
     const sendEl = document.getElementById('send');
+    const modelInfoEl = document.getElementById('modelInfo');
     const errorEl = document.getElementById('error');
     const slashMenuEl = document.getElementById('slashMenu');
 
     document.getElementById('configure').addEventListener('click', () => post({ type: 'config.open' }));
+    modelInfoEl.addEventListener('click', () => post({ type: 'config.open' }));
     document.getElementById('clear').addEventListener('click', () => post({ type: 'session.clear' }));
     document.getElementById('newSession').addEventListener('click', () => post({ type: 'session.new' }));
 
@@ -768,6 +854,7 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       if (message.type === 'session.updated') {
         session = message.session;
         sessions = Array.isArray(message.sessions) ? message.sessions : [];
+        modelInfo = message.modelInfo || modelInfo;
         busy = Boolean(session.busy);
         activeRunId = session.activeRunId || undefined;
         queueLength = Number(session.queueLength || 0);
@@ -820,6 +907,7 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     function renderComposer() {
       sendEl.disabled = false;
       inputEl.disabled = false;
+      renderModelInfo();
       if (activeRunId) {
         sendEl.classList.add('stop');
         sendEl.textContent = '■';
@@ -831,6 +919,90 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       sendEl.textContent = '↑';
       sendEl.title = busy ? 'Queue message' : 'Send message';
       sendEl.setAttribute('aria-label', busy ? 'Queue message' : 'Send message');
+    }
+
+    function renderModelInfo() {
+      const label = formatModelLabel(modelInfo);
+      modelInfoEl.textContent = label;
+      modelInfoEl.title = formatModelTitle(modelInfo);
+    }
+
+    function formatModelLabel(info) {
+      if (!info) {
+        return 'Model';
+      }
+      const provider = compactProviderName(info.provider);
+      const model = info.model || 'unset';
+      const thinking = info.thinking
+        ? 'think:' + compactThinking(info.thinking)
+        : 'effort:' + (info.reasoningEnabled === false ? 'off' : (info.effort || 'medium'));
+      const context = 'ctx:' + formatContextUsage(info);
+      return [provider, model, thinking, context].filter(Boolean).join(' · ');
+    }
+
+    function formatModelTitle(info) {
+      if (!info) {
+        return 'Configure model';
+      }
+      const rows = [
+        'Provider: ' + (info.provider || 'openai-compatible'),
+        'API: ' + (info.api || 'chat-completions'),
+        'Model: ' + (info.model || 'unset'),
+        'Reasoning: ' + (info.reasoningEnabled === false ? 'disabled' : 'enabled'),
+        'Effort: ' + (info.effort || 'medium'),
+        info.thinking ? 'Thinking: ' + info.thinking : undefined,
+        'Cache optimization: ' + formatCacheOptimization(info),
+        'Context window: ' + formatContextUsage(info) + ' (' + formatChars(info.contextUsedChars) + ' / ' + formatChars(info.contextMaxChars) + ')',
+      ].filter(Boolean);
+      return rows.join('\\n');
+    }
+
+    function compactProviderName(provider) {
+      if (provider === 'anthropic') return 'claude';
+      if (provider === 'openai') return 'gpt';
+      return provider || 'model';
+    }
+
+    function compactThinking(value) {
+      if (value === 'adaptive') return 'adaptive';
+      if (value === 'enabled') return 'on';
+      if (value === 'disabled') return 'off';
+      return value || 'auto';
+    }
+
+    function formatCacheOptimization(info) {
+      if (info.cacheEnabled === false) {
+        return 'disabled';
+      }
+      if (info.provider === 'anthropic') {
+        return 'enabled (Claude block cache)';
+      }
+      if (info.provider === 'qwen') {
+        return 'enabled (Qwen context cache)';
+      }
+      if (info.provider === 'openai') {
+        return 'enabled (OpenAI prompt cache)';
+      }
+      return 'enabled (provider automatic)';
+    }
+
+    function formatContextUsage(info) {
+      const percent = Number(info?.contextUsagePercent);
+      return Number.isFinite(percent) ? percent + '%' : '0%';
+    }
+
+    function formatChars(value) {
+      const chars = Number(value || 0);
+      if (!Number.isFinite(chars) || chars <= 0) {
+        return '0';
+      }
+      if (chars >= 1000000) {
+        return (chars / 1000000).toFixed(1).replace(/\\.0$/, '') + 'M chars';
+      }
+      if (chars >= 1000) {
+        return (chars / 1000).toFixed(1).replace(/\\.0$/, '') + 'k chars';
+      }
+      return String(Math.round(chars)) + ' chars';
     }
 
     function requestSlashCompletions() {
@@ -1004,12 +1176,17 @@ export function getWebviewHtml(webview: vscode.Webview): string {
           messagesEl.appendChild(item);
           continue;
         }
+        if (message.kind === 'thinking') {
+          item.appendChild(thinkingCard(message));
+          messagesEl.appendChild(item);
+          continue;
+        }
 
         const bubble = document.createElement('div');
         bubble.className = 'message-bubble';
         bubble.appendChild(label(messageLabel(message)));
         bubble.appendChild(markdown(message.content));
-        if (message.status === 'running' && message.kind !== 'tool') {
+        if (message.status === 'running' && message.kind !== 'tool' && message.kind !== 'thinking') {
           const cursor = document.createElement('span');
           cursor.className = 'cursor';
           cursor.textContent = '▌';
@@ -1144,6 +1321,16 @@ export function getWebviewHtml(webview: vscode.Webview): string {
                 : 'running';
         return 'tool · ' + (message.toolName || 'tool') + ' · ' + status;
       }
+      if (message.kind === 'thinking') {
+        const status = message.status === 'complete'
+          ? 'done'
+          : message.status === 'interrupted'
+            ? 'interrupted'
+            : message.status === 'error'
+              ? 'error'
+              : 'streaming';
+        return 'thinking · ' + status;
+      }
       if (message.status === 'running') {
         return message.role + ' · streaming';
       }
@@ -1193,7 +1380,10 @@ export function getWebviewHtml(webview: vscode.Webview): string {
               ? 'queued'
               : 'running';
       body.appendChild(status);
-      body.appendChild(markdown(message.content));
+      if (isPlainObject(message.metadata?.input)) {
+        body.appendChild(toolSection('Input', jsonBlock(message.metadata.input)));
+      }
+      body.appendChild(toolSection('Output', toolOutput(message.content)));
 
       card.append(summary, body);
       return card;
@@ -1201,6 +1391,79 @@ export function getWebviewHtml(webview: vscode.Webview): string {
 
     function toolStateKey(message) {
       return message.toolUseId || message.id || message.toolName || 'tool';
+    }
+
+    function thinkingCard(message) {
+      const card = document.createElement('details');
+      card.className = ['thinking-card', message.status || ''].filter(Boolean).join(' ');
+      const stateKey = thinkingStateKey(message);
+      card.open = openThinkingMessages.has(stateKey);
+      card.addEventListener('toggle', () => {
+        if (card.open) {
+          openThinkingMessages.add(stateKey);
+        } else {
+          openThinkingMessages.delete(stateKey);
+        }
+      });
+
+      const summary = document.createElement('summary');
+      summary.className = 'thinking-summary';
+      const name = document.createElement('span');
+      name.className = 'thinking-name';
+      name.textContent = 'thinking';
+      const params = document.createElement('span');
+      params.className = 'thinking-params';
+      params.textContent = formatThinkingSummary(message);
+      summary.append(name, params);
+
+      const body = document.createElement('div');
+      body.className = 'thinking-body';
+      const status = document.createElement('div');
+      status.className = 'thinking-status';
+      status.textContent = message.status === 'complete'
+        ? 'complete'
+        : message.status === 'interrupted'
+          ? 'interrupted'
+          : message.status === 'error'
+            ? 'error'
+            : 'streaming';
+      body.appendChild(status);
+      body.appendChild(thinkingSection('Reasoning', thinkingOutput(message.content)));
+
+      card.append(summary, body);
+      return card;
+    }
+
+    function thinkingStateKey(message) {
+      return message.id || 'thinking';
+    }
+
+    function formatThinkingSummary(message) {
+      const content = String(message.content || '').replace(/\\s+/g, ' ').trim();
+      if (message.status === 'running') {
+        return content ? content.slice(0, 180) : 'streaming';
+      }
+      if (!content) {
+        return 'empty';
+      }
+      return content.length > 180 ? content.slice(0, 179) + '…' : content;
+    }
+
+    function thinkingSection(title, contentNode) {
+      const section = document.createElement('div');
+      section.className = 'thinking-section';
+      const heading = document.createElement('div');
+      heading.className = 'thinking-section-title';
+      heading.textContent = title;
+      section.append(heading, contentNode);
+      return section;
+    }
+
+    function thinkingOutput(content) {
+      const pre = document.createElement('pre');
+      pre.className = 'thinking-text';
+      pre.textContent = String(content || '');
+      return pre;
     }
 
     function formatToolParams(input) {
@@ -1232,6 +1495,47 @@ export function getWebviewHtml(webview: vscode.Webview): string {
         return '{' + Object.keys(value).slice(0, 3).join(',') + '}';
       }
       return String(value);
+    }
+
+    function toolSection(title, contentNode) {
+      const section = document.createElement('div');
+      section.className = 'tool-section';
+      const heading = document.createElement('div');
+      heading.className = 'tool-section-title';
+      heading.textContent = title;
+      section.append(heading, contentNode);
+      return section;
+    }
+
+    function toolOutput(content) {
+      const parsed = parseJsonLike(content);
+      if (parsed.ok) {
+        return jsonBlock(parsed.value);
+      }
+      return markdown(content);
+    }
+
+    function jsonBlock(value) {
+      const pre = document.createElement('pre');
+      pre.className = 'tool-json';
+      pre.textContent = JSON.stringify(value, null, 2);
+      return pre;
+    }
+
+    function parseJsonLike(value) {
+      const text = String(value || '').trim();
+      if (!text || !/^[{[]/.test(text)) {
+        return { ok: false };
+      }
+      try {
+        return { ok: true, value: JSON.parse(text) };
+      } catch {
+        return { ok: false };
+      }
+    }
+
+    function isPlainObject(value) {
+      return value && typeof value === 'object' && !Array.isArray(value);
     }
 
     function markdown(value) {

@@ -71,6 +71,7 @@ export class ReActAgent {
         step: stepIndex + 1,
         stopReason: result.stopReason,
         assistantText: result.assistantText,
+        thinkingText: result.thinkingText,
         toolUseCount: result.toolUseCount,
       }
       run.steps.push(step)

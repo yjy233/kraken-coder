@@ -99,6 +99,7 @@ export interface RunStep {
   step: number
   stopReason: string | null
   assistantText: string
+  thinkingText?: string
   toolUseCount: number
 }
 
@@ -118,6 +119,7 @@ export interface RunResult {
 /** 模型原始响应结构 */
 export interface ModelResponse {
   text: string
+  thinking?: string
   toolUses: ToolUse[]
   usage: ModelUsage
   stopReason: string | null
@@ -131,6 +133,7 @@ export interface InvokeModelParams {
   messages: AgentMessage[]
   tools: ToolDefinition[]
   onDelta?: (delta: string) => void
+  onThinkingDelta?: (delta: string) => void
   signal?: AbortSignal
 }
 
@@ -154,6 +157,7 @@ export interface ReActAgentConfig {
 export interface LoopQueryResult {
   done: boolean               // 本轮是否已拿到最终文本（无 tool_use）
   assistantText: string       // 本轮模型输出的文本
+  thinkingText?: string       // 本轮模型输出的 thinking/reasoning 内容
   stopReason: string | null   // 模型 stop reason
   toolUseCount: number        // 本轮请求的工具数量
   toolExecutions: ToolExecution[]

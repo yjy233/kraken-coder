@@ -5,6 +5,13 @@ import * as vscode from 'vscode';
 import { expandHomePath, parseInteger } from '../utils/helpers';
 import { getWorkspaceRoot } from './workspace';
 import type { LspLanguage } from '../lsp/types';
+import type {
+  ModelApiMode,
+  ModelCacheStrategy,
+  ModelProvider,
+  ModelReasoningDisplay,
+  ModelReasoningEffort
+} from '../shared/types';
 
 type TomlPrimitive = string | number | boolean;
 type TomlValue = TomlPrimitive | TomlPrimitive[];
@@ -16,7 +23,12 @@ export interface KrakenFileConfig {
     name?: string;
     proxy?: string;
     apiKey?: string;
+    provider?: ModelProvider;
+    api?: ModelApiMode;
+    reasoning?: Partial<KrakenModelReasoningConfig>;
+    cache?: Partial<KrakenModelCacheConfig>;
   };
+  providers?: Partial<KrakenProviderFileConfig>;
   context?: {
     maxChars?: number;
   };
@@ -56,12 +68,61 @@ export interface KrakenFileConfig {
   };
 }
 
+export interface KrakenModelReasoningConfig {
+  enabled: boolean;
+  effort: ModelReasoningEffort;
+  display: ModelReasoningDisplay;
+  budgetTokens: number;
+  preserve: boolean;
+  maxStoredTokens: number;
+}
+
+export interface KrakenModelCacheConfig {
+  enabled: boolean;
+  strategy: ModelCacheStrategy;
+  retention: string;
+}
+
+export interface KrakenProviderFileConfig {
+  openai: {
+    api?: 'responses' | 'chat-completions';
+    effort?: ModelReasoningEffort;
+    promptCacheKey?: string;
+    promptCacheRetention?: string;
+  };
+  anthropic: {
+    api?: 'messages';
+    thinking?: 'auto' | 'adaptive' | 'enabled' | 'disabled';
+    effort?: ModelReasoningEffort;
+    thinkingBudgetTokens?: number;
+    maxTokens?: number;
+    preserveThinking?: boolean;
+    cacheTtl?: string;
+  };
+  qwen: {
+    api?: 'chat-completions';
+    enableThinking?: boolean;
+    thinkingBudget?: number;
+    preserveThinking?: boolean;
+    cacheMode?: 'auto' | 'explicit' | 'implicit' | 'disabled';
+  };
+}
+
 export interface KrakenConfig {
   model: {
     baseUrl: string;
     name: string;
     proxy?: string;
     apiKey: string;
+    provider: ModelProvider;
+    api: ModelApiMode;
+    reasoning: KrakenModelReasoningConfig;
+    cache: KrakenModelCacheConfig;
+  };
+  providers: {
+    openai: Required<KrakenProviderFileConfig['openai']>;
+    anthropic: Required<KrakenProviderFileConfig['anthropic']>;
+    qwen: Required<KrakenProviderFileConfig['qwen']>;
   };
   context: {
     maxChars: number;
@@ -175,6 +236,12 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
   const agent = fileConfig.agent ?? {};
   const context = fileConfig.context ?? {};
   const model = fileConfig.model ?? {};
+  const reasoning = model.reasoning ?? {};
+  const cache = model.cache ?? {};
+  const providers = fileConfig.providers ?? {};
+  const openai = providers.openai ?? {};
+  const anthropic = providers.anthropic ?? {};
+  const qwen = providers.qwen ?? {};
   const skills = fileConfig.skills ?? {};
   const lsp = fileConfig.lsp ?? {};
   const memory = fileConfig.memory ?? {};
@@ -199,11 +266,145 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
       baseUrl: normalizeBaseUrl(stringValue(
         model.baseUrl,
         getVSCodeConfigValue<string>(vscodeConfig, 'model.baseUrl'),
-        'https://api.openai.com/v1'
+        'https://dashscope.aliyuncs.com/compatible-mode/v1'
       )),
-      name: stringValue(model.name, getVSCodeConfigValue<string>(vscodeConfig, 'model.name'), '').trim(),
+      name: stringValue(model.name, getVSCodeConfigValue<string>(vscodeConfig, 'model.name'), 'qwen3.6-plus').trim(),
       apiKey: stringValue(model.apiKey, ''),
+      provider: normalizeModelProvider(stringValue(
+        model.provider,
+        getVSCodeConfigValue<string>(vscodeConfig, 'model.provider'),
+        'qwen'
+      )),
+      api: normalizeModelApi(stringValue(
+        model.api,
+        getVSCodeConfigValue<string>(vscodeConfig, 'model.api'),
+        'chat-completions'
+      )),
+      reasoning: {
+        enabled: booleanValue(reasoning.enabled, getVSCodeConfigValue<boolean>(vscodeConfig, 'model.reasoning.enabled'), true),
+        effort: normalizeReasoningEffort(stringValue(
+          reasoning.effort,
+          getVSCodeConfigValue<string>(vscodeConfig, 'model.reasoning.effort'),
+          'medium'
+        )),
+        display: normalizeReasoningDisplay(stringValue(
+          reasoning.display,
+          getVSCodeConfigValue<string>(vscodeConfig, 'model.reasoning.display'),
+          'hidden'
+        )),
+        budgetTokens: Math.max(
+          0,
+          Math.floor(numberValue(
+            reasoning.budgetTokens,
+            getVSCodeConfigValue<number>(vscodeConfig, 'model.reasoning.budgetTokens'),
+            0
+          ))
+        ),
+        preserve: booleanValue(reasoning.preserve, getVSCodeConfigValue<boolean>(vscodeConfig, 'model.reasoning.preserve'), false),
+        maxStoredTokens: Math.max(
+          0,
+          Math.floor(numberValue(
+            reasoning.maxStoredTokens,
+            getVSCodeConfigValue<number>(vscodeConfig, 'model.reasoning.maxStoredTokens'),
+            4096
+          ))
+        ),
+      },
+      cache: {
+        enabled: booleanValue(cache.enabled, getVSCodeConfigValue<boolean>(vscodeConfig, 'model.cache.enabled'), true),
+        strategy: normalizeCacheStrategy(stringValue(
+          cache.strategy,
+          getVSCodeConfigValue<string>(vscodeConfig, 'model.cache.strategy'),
+          'auto'
+        )),
+        retention: stringValue(
+          cache.retention,
+          getVSCodeConfigValue<string>(vscodeConfig, 'model.cache.retention'),
+          'in_memory'
+        ),
+      },
       ...(normalizeOptionalString(model.proxy) ? { proxy: normalizeOptionalString(model.proxy) } : {}),
+    },
+    providers: {
+      openai: {
+        api: normalizeOpenAIApi(stringValue(openai.api, getVSCodeConfigValue<string>(vscodeConfig, 'providers.openai.api'), 'responses')),
+        effort: normalizeReasoningEffort(stringValue(openai.effort, getVSCodeConfigValue<string>(vscodeConfig, 'providers.openai.effort'), 'medium')),
+        promptCacheKey: stringValue(
+          openai.promptCacheKey,
+          getVSCodeConfigValue<string>(vscodeConfig, 'providers.openai.promptCacheKey'),
+          'workspace'
+        ),
+        promptCacheRetention: stringValue(
+          openai.promptCacheRetention,
+          getVSCodeConfigValue<string>(vscodeConfig, 'providers.openai.promptCacheRetention'),
+          'in_memory'
+        ),
+      },
+      anthropic: {
+        api: 'messages',
+        thinking: normalizeAnthropicThinking(stringValue(
+          anthropic.thinking,
+          getVSCodeConfigValue<string>(vscodeConfig, 'providers.anthropic.thinking'),
+          'adaptive'
+        )),
+        effort: normalizeReasoningEffort(stringValue(
+          anthropic.effort,
+          getVSCodeConfigValue<string>(vscodeConfig, 'providers.anthropic.effort'),
+          'medium'
+        )),
+        thinkingBudgetTokens: Math.max(
+          0,
+          Math.floor(numberValue(
+            anthropic.thinkingBudgetTokens,
+            getVSCodeConfigValue<number>(vscodeConfig, 'providers.anthropic.thinkingBudgetTokens'),
+            16000
+          ))
+        ),
+        maxTokens: Math.max(
+          1,
+          Math.floor(numberValue(
+            anthropic.maxTokens,
+            getVSCodeConfigValue<number>(vscodeConfig, 'providers.anthropic.maxTokens'),
+            32000
+          ))
+        ),
+        preserveThinking: booleanValue(
+          anthropic.preserveThinking,
+          getVSCodeConfigValue<boolean>(vscodeConfig, 'providers.anthropic.preserveThinking'),
+          true
+        ),
+        cacheTtl: normalizeCacheTtl(stringValue(
+          anthropic.cacheTtl,
+          getVSCodeConfigValue<string>(vscodeConfig, 'providers.anthropic.cacheTtl'),
+          '5m'
+        )),
+      },
+      qwen: {
+        api: 'chat-completions',
+        enableThinking: booleanValue(
+          qwen.enableThinking,
+          getVSCodeConfigValue<boolean>(vscodeConfig, 'providers.qwen.enableThinking'),
+          true
+        ),
+        thinkingBudget: Math.max(
+          0,
+          Math.floor(numberValue(
+            qwen.thinkingBudget,
+            getVSCodeConfigValue<number>(vscodeConfig, 'providers.qwen.thinkingBudget'),
+            8192
+          ))
+        ),
+        preserveThinking: booleanValue(
+          qwen.preserveThinking,
+          getVSCodeConfigValue<boolean>(vscodeConfig, 'providers.qwen.preserveThinking'),
+          false
+        ),
+        cacheMode: normalizeQwenCacheMode(stringValue(
+          qwen.cacheMode,
+          getVSCodeConfigValue<string>(vscodeConfig, 'providers.qwen.cacheMode'),
+          'auto'
+        )),
+      },
     },
     context: {
       maxChars: numberValue(context.maxChars, getVSCodeConfigValue<number>(vscodeConfig, 'context.maxChars'), 60000),
@@ -360,6 +561,7 @@ function parseToml(content: string): ParsedToml {
 
 function normalizeParsedConfig(parsed: ParsedToml): KrakenFileConfig {
   const model = asRecord(parsed.model);
+  const providers = asRecord(parsed.providers);
   const context = asRecord(parsed.context);
   const agent = asRecord(parsed.agent);
   const skills = asRecord(parsed.skills);
@@ -374,11 +576,30 @@ function normalizeParsedConfig(parsed: ParsedToml): KrakenFileConfig {
     const name = firstDefined(getString(model, 'name'), getString(model, 'model'));
     const proxy = getString(model, 'proxy');
     const apiKey = firstDefined(getString(model, 'apiKey'), getString(model, 'api_key'));
+    const provider = getString(model, 'provider');
+    const api = getString(model, 'api');
+    const modelReasoning = asRecord(model.reasoning);
+    const modelCache = asRecord(model.cache);
     config.model = {
       ...(baseUrl !== undefined ? { baseUrl } : {}),
       ...(name !== undefined ? { name } : {}),
       ...(proxy !== undefined ? { proxy } : {}),
       ...(apiKey !== undefined ? { apiKey } : {}),
+      ...(provider !== undefined ? { provider: normalizeModelProvider(provider) } : {}),
+      ...(api !== undefined ? { api: normalizeModelApi(api) } : {}),
+      ...(modelReasoning ? { reasoning: normalizeReasoningSection(modelReasoning) } : {}),
+      ...(modelCache ? { cache: normalizeCacheSection(modelCache) } : {}),
+    };
+  }
+
+  if (providers) {
+    const openai = asRecord(providers.openai);
+    const anthropic = asRecord(providers.anthropic);
+    const qwen = asRecord(providers.qwen);
+    config.providers = {
+      ...(openai ? { openai: normalizeOpenAIProviderSection(openai) } : {}),
+      ...(anthropic ? { anthropic: normalizeAnthropicProviderSection(anthropic) } : {}),
+      ...(qwen ? { qwen: normalizeQwenProviderSection(qwen) } : {}),
     };
   }
 
@@ -479,7 +700,8 @@ function normalizeParsedConfig(parsed: ParsedToml): KrakenFileConfig {
 
 function mergeFileConfig(base: KrakenFileConfig, override: KrakenFileConfig): KrakenFileConfig {
   return {
-    ...(mergeSection(base.model, override.model) ? { model: mergeSection(base.model, override.model) } : {}),
+    ...(mergeModelSection(base.model, override.model) ? { model: mergeModelSection(base.model, override.model) } : {}),
+    ...(mergeProvidersSection(base.providers, override.providers) ? { providers: mergeProvidersSection(base.providers, override.providers) } : {}),
     ...(mergeSection(base.context, override.context) ? { context: mergeSection(base.context, override.context) } : {}),
     ...(mergeSection(base.agent, override.agent) ? { agent: mergeSection(base.agent, override.agent) } : {}),
     ...(mergeSection(base.skills, override.skills) ? { skills: mergeSection(base.skills, override.skills) } : {}),
@@ -488,6 +710,38 @@ function mergeFileConfig(base: KrakenFileConfig, override: KrakenFileConfig): Kr
     ...(mergeSection(base.episodes, override.episodes) ? { episodes: mergeSection(base.episodes, override.episodes) } : {}),
     ...(mergeSection(base.sessions, override.sessions) ? { sessions: mergeSection(base.sessions, override.sessions) } : {}),
   };
+}
+
+function mergeModelSection(
+  base?: KrakenFileConfig['model'],
+  override?: KrakenFileConfig['model']
+): KrakenFileConfig['model'] | undefined {
+  const merged = mergeSection(base, override);
+  if (!merged) {
+    return undefined;
+  }
+  const reasoning = mergeSection(base?.reasoning, override?.reasoning);
+  const cache = mergeSection(base?.cache, override?.cache);
+  return {
+    ...merged,
+    ...(reasoning ? { reasoning } : {}),
+    ...(cache ? { cache } : {}),
+  };
+}
+
+function mergeProvidersSection(
+  base?: Partial<KrakenProviderFileConfig>,
+  override?: Partial<KrakenProviderFileConfig>
+): Partial<KrakenProviderFileConfig> | undefined {
+  const openai = mergeSection(base?.openai, override?.openai);
+  const anthropic = mergeSection(base?.anthropic, override?.anthropic);
+  const qwen = mergeSection(base?.qwen, override?.qwen);
+  const merged = {
+    ...(openai ? { openai } : {}),
+    ...(anthropic ? { anthropic } : {}),
+    ...(qwen ? { qwen } : {}),
+  };
+  return Object.keys(merged).length ? merged : undefined;
 }
 
 function mergeSection<T extends Record<string, unknown>>(base?: T, override?: T): T | undefined {
@@ -500,7 +754,15 @@ function mergeSection<T extends Record<string, unknown>>(base?: T, override?: T)
 
 function serializeKrakenToml(config: KrakenFileConfig): string {
   const sections: string[] = [];
-  pushSection(sections, 'model', config.model);
+  const model = config.model
+    ? { ...config.model, reasoning: undefined, cache: undefined }
+    : undefined;
+  pushSection(sections, 'model', model);
+  pushSection(sections, 'model.reasoning', config.model?.reasoning);
+  pushSection(sections, 'model.cache', config.model?.cache);
+  pushSection(sections, 'providers.openai', config.providers?.openai);
+  pushSection(sections, 'providers.anthropic', config.providers?.anthropic);
+  pushSection(sections, 'providers.qwen', config.providers?.qwen);
   pushSection(sections, 'context', config.context);
   pushSection(sections, 'agent', config.agent);
   pushSection(sections, 'skills', config.skills);
@@ -738,6 +1000,104 @@ function getBoolean(record: Record<string, unknown>, key: string): boolean | und
   return typeof value === 'boolean' ? value : undefined;
 }
 
+function normalizeReasoningSection(record: Record<string, unknown>): Partial<KrakenModelReasoningConfig> {
+  const enabled = getBoolean(record, 'enabled');
+  const effort = getString(record, 'effort');
+  const display = getString(record, 'display');
+  const budgetTokens = firstDefined(getNumber(record, 'budgetTokens'), getNumber(record, 'budget_tokens'));
+  const preserve = getBoolean(record, 'preserve');
+  const maxStoredTokens = firstDefined(getNumber(record, 'maxStoredTokens'), getNumber(record, 'max_stored_tokens'));
+
+  return {
+    ...(enabled !== undefined ? { enabled } : {}),
+    ...(effort !== undefined ? { effort: normalizeReasoningEffort(effort) } : {}),
+    ...(display !== undefined ? { display: normalizeReasoningDisplay(display) } : {}),
+    ...(budgetTokens !== undefined ? { budgetTokens } : {}),
+    ...(preserve !== undefined ? { preserve } : {}),
+    ...(maxStoredTokens !== undefined ? { maxStoredTokens } : {}),
+  };
+}
+
+function normalizeCacheSection(record: Record<string, unknown>): Partial<KrakenModelCacheConfig> {
+  const enabled = getBoolean(record, 'enabled');
+  const strategy = getString(record, 'strategy');
+  const retention = getString(record, 'retention');
+
+  return {
+    ...(enabled !== undefined ? { enabled } : {}),
+    ...(strategy !== undefined ? { strategy: normalizeCacheStrategy(strategy) } : {}),
+    ...(retention !== undefined ? { retention } : {}),
+  };
+}
+
+function normalizeOpenAIProviderSection(
+  record: Record<string, unknown>
+): Partial<KrakenProviderFileConfig['openai']> {
+  const api = getString(record, 'api');
+  const effort = getString(record, 'effort');
+  const promptCacheKey = firstDefined(getString(record, 'promptCacheKey'), getString(record, 'prompt_cache_key'));
+  const promptCacheRetention = firstDefined(
+    getString(record, 'promptCacheRetention'),
+    getString(record, 'prompt_cache_retention')
+  );
+
+  return {
+    ...(api !== undefined ? { api: normalizeOpenAIApi(api) } : {}),
+    ...(effort !== undefined ? { effort: normalizeReasoningEffort(effort) } : {}),
+    ...(promptCacheKey !== undefined ? { promptCacheKey } : {}),
+    ...(promptCacheRetention !== undefined ? { promptCacheRetention } : {}),
+  };
+}
+
+function normalizeAnthropicProviderSection(
+  record: Record<string, unknown>
+): Partial<KrakenProviderFileConfig['anthropic']> {
+  const api = getString(record, 'api');
+  const thinking = getString(record, 'thinking');
+  const effort = getString(record, 'effort');
+  const thinkingBudgetTokens = firstDefined(
+    getNumber(record, 'thinkingBudgetTokens'),
+    getNumber(record, 'thinking_budget_tokens')
+  );
+  const maxTokens = firstDefined(getNumber(record, 'maxTokens'), getNumber(record, 'max_tokens'));
+  const preserveThinking = firstDefined(
+    getBoolean(record, 'preserveThinking'),
+    getBoolean(record, 'preserve_thinking')
+  );
+  const cacheTtl = firstDefined(getString(record, 'cacheTtl'), getString(record, 'cache_ttl'));
+
+  return {
+    ...(api !== undefined ? { api: 'messages' } : {}),
+    ...(thinking !== undefined ? { thinking: normalizeAnthropicThinking(thinking) } : {}),
+    ...(effort !== undefined ? { effort: normalizeReasoningEffort(effort) } : {}),
+    ...(thinkingBudgetTokens !== undefined ? { thinkingBudgetTokens } : {}),
+    ...(maxTokens !== undefined ? { maxTokens } : {}),
+    ...(preserveThinking !== undefined ? { preserveThinking } : {}),
+    ...(cacheTtl !== undefined ? { cacheTtl: normalizeCacheTtl(cacheTtl) } : {}),
+  };
+}
+
+function normalizeQwenProviderSection(
+  record: Record<string, unknown>
+): Partial<KrakenProviderFileConfig['qwen']> {
+  const api = getString(record, 'api');
+  const enableThinking = firstDefined(getBoolean(record, 'enableThinking'), getBoolean(record, 'enable_thinking'));
+  const thinkingBudget = firstDefined(getNumber(record, 'thinkingBudget'), getNumber(record, 'thinking_budget'));
+  const preserveThinking = firstDefined(
+    getBoolean(record, 'preserveThinking'),
+    getBoolean(record, 'preserve_thinking')
+  );
+  const cacheMode = firstDefined(getString(record, 'cacheMode'), getString(record, 'cache_mode'));
+
+  return {
+    ...(api !== undefined ? { api: 'chat-completions' } : {}),
+    ...(enableThinking !== undefined ? { enableThinking } : {}),
+    ...(thinkingBudget !== undefined ? { thinkingBudget } : {}),
+    ...(preserveThinking !== undefined ? { preserveThinking } : {}),
+    ...(cacheMode !== undefined ? { cacheMode: normalizeQwenCacheMode(cacheMode) } : {}),
+  };
+}
+
 function firstDefined<T>(...values: Array<T | undefined>): T | undefined {
   return values.find((value) => value !== undefined);
 }
@@ -787,6 +1147,94 @@ function booleanValue(...values: Array<boolean | undefined>): boolean {
     }
   }
   return false;
+}
+
+function normalizeModelProvider(value: string): ModelProvider {
+  const normalized = value.trim().toLowerCase();
+  if (
+    normalized === 'openai' ||
+    normalized === 'anthropic' ||
+    normalized === 'qwen' ||
+    normalized === 'openai-compatible'
+  ) {
+    return normalized;
+  }
+  return 'openai-compatible';
+}
+
+function normalizeModelApi(value: string): ModelApiMode {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'responses' || normalized === 'messages' || normalized === 'chat-completions') {
+    return normalized;
+  }
+  return 'chat-completions';
+}
+
+function normalizeOpenAIApi(value: string): 'responses' | 'chat-completions' {
+  return value.trim().toLowerCase() === 'chat-completions' ? 'chat-completions' : 'responses';
+}
+
+function normalizeReasoningEffort(value: string): ModelReasoningEffort {
+  const normalized = value.trim().toLowerCase();
+  if (
+    normalized === 'none' ||
+    normalized === 'minimal' ||
+    normalized === 'low' ||
+    normalized === 'medium' ||
+    normalized === 'high' ||
+    normalized === 'xhigh' ||
+    normalized === 'max'
+  ) {
+    return normalized;
+  }
+  return 'medium';
+}
+
+function normalizeReasoningDisplay(value: string): ModelReasoningDisplay {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'hidden' || normalized === 'summary' || normalized === 'visible') {
+    return normalized;
+  }
+  return 'hidden';
+}
+
+function normalizeCacheStrategy(value: string): ModelCacheStrategy {
+  const normalized = value.trim().toLowerCase();
+  if (
+    normalized === 'auto' ||
+    normalized === 'auto-prefix' ||
+    normalized === 'explicit' ||
+    normalized === 'explicit-blocks' ||
+    normalized === 'implicit' ||
+    normalized === 'disabled'
+  ) {
+    return normalized;
+  }
+  return 'auto';
+}
+
+function normalizeAnthropicThinking(value: string): 'auto' | 'adaptive' | 'enabled' | 'disabled' {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'auto' || normalized === 'adaptive' || normalized === 'enabled' || normalized === 'disabled') {
+    return normalized;
+  }
+  return 'adaptive';
+}
+
+function normalizeQwenCacheMode(value: string): 'auto' | 'explicit' | 'implicit' | 'disabled' {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'auto' || normalized === 'explicit' || normalized === 'implicit' || normalized === 'disabled') {
+    return normalized;
+  }
+  return 'auto';
+}
+
+function normalizeCacheTtl(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === '5m' || normalized === '1h') {
+    return normalized;
+  }
+  return '5m';
 }
 
 function normalizeLspAdapter(value: string): KrakenConfig['lsp']['adapter'] {

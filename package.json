@@ -123,21 +123,214 @@
       "properties": {
         "kraken.model.baseUrl": {
           "type": "string",
-          "default": "https://api.openai.com/v1",
-          "description": "Base URL for an OpenAI-compatible model API."
+          "default": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+          "description": "Base URL for the selected model provider API."
         },
         "kraken.model.provider": {
           "type": "string",
-          "default": "openai-compatible",
+          "default": "qwen",
           "enum": [
-            "openai-compatible"
+            "openai",
+            "anthropic",
+            "qwen"
           ],
           "description": "Model provider adapter."
         },
+        "kraken.model.api": {
+          "type": "string",
+          "default": "chat-completions",
+          "enum": [
+            "responses",
+            "chat-completions",
+            "messages"
+          ],
+          "description": "Model API mode used by the selected provider."
+        },
         "kraken.model.name": {
           "type": "string",
-          "default": "",
-          "description": "Model name to use. Leave empty to be prompted on first request."
+          "default": "qwen3.6-plus",
+          "enum": [
+            "qwen3.6-plus",
+            "gpt-5.4",
+            "gpt-5.5",
+            "claude-opus-4.7-fast",
+            "claude-sonnet-4.6"
+          ],
+          "description": "Model name to use."
+        },
+        "kraken.model.reasoning.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable provider reasoning or thinking controls when supported."
+        },
+        "kraken.model.reasoning.effort": {
+          "type": "string",
+          "default": "medium",
+          "enum": [
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "description": "Provider-neutral reasoning effort preference."
+        },
+        "kraken.model.reasoning.display": {
+          "type": "string",
+          "default": "hidden",
+          "enum": [
+            "hidden",
+            "summary",
+            "visible"
+          ],
+          "description": "How reasoning or thinking should be displayed when the provider returns it."
+        },
+        "kraken.model.reasoning.budgetTokens": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Provider-neutral reasoning budget hint in tokens. Use 0 for provider default."
+        },
+        "kraken.model.reasoning.preserve": {
+          "type": "boolean",
+          "default": false,
+          "description": "Preserve reasoning or thinking state across tool loops when supported."
+        },
+        "kraken.model.reasoning.maxStoredTokens": {
+          "type": "number",
+          "default": 4096,
+          "minimum": 0,
+          "description": "Maximum reasoning or thinking tokens Kraken should keep for continuity."
+        },
+        "kraken.model.cache.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable provider prompt or block cache controls when supported."
+        },
+        "kraken.model.cache.strategy": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "disabled"
+          ],
+          "description": "Provider cache optimization mode. Auto maps to provider-specific prompt, block, or context cache."
+        },
+        "kraken.model.cache.retention": {
+          "type": "string",
+          "default": "in_memory",
+          "description": "Provider-neutral cache retention hint."
+        },
+        "kraken.providers.openai.api": {
+          "type": "string",
+          "default": "responses",
+          "enum": [
+            "responses",
+            "chat-completions"
+          ],
+          "description": "OpenAI/GPT API mode."
+        },
+        "kraken.providers.openai.effort": {
+          "type": "string",
+          "default": "medium",
+          "enum": [
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "description": "OpenAI/GPT reasoning effort."
+        },
+        "kraken.providers.openai.promptCacheKey": {
+          "type": "string",
+          "default": "workspace",
+          "description": "OpenAI/GPT prompt cache key hint."
+        },
+        "kraken.providers.openai.promptCacheRetention": {
+          "type": "string",
+          "default": "in_memory",
+          "description": "OpenAI/GPT prompt cache retention hint."
+        },
+        "kraken.providers.anthropic.thinking": {
+          "type": "string",
+          "default": "adaptive",
+          "enum": [
+            "auto",
+            "adaptive",
+            "enabled",
+            "disabled"
+          ],
+          "description": "Claude thinking mode."
+        },
+        "kraken.providers.anthropic.effort": {
+          "type": "string",
+          "default": "medium",
+          "enum": [
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "description": "Claude output effort."
+        },
+        "kraken.providers.anthropic.thinkingBudgetTokens": {
+          "type": "number",
+          "default": 16000,
+          "minimum": 0,
+          "description": "Claude manual extended thinking budget in tokens."
+        },
+        "kraken.providers.anthropic.maxTokens": {
+          "type": "number",
+          "default": 32000,
+          "minimum": 1,
+          "description": "Claude max output tokens."
+        },
+        "kraken.providers.anthropic.preserveThinking": {
+          "type": "boolean",
+          "default": true,
+          "description": "Preserve Claude thinking blocks across tool loops when supported."
+        },
+        "kraken.providers.anthropic.cacheTtl": {
+          "type": "string",
+          "default": "5m",
+          "enum": [
+            "5m",
+            "1h"
+          ],
+          "description": "Claude ephemeral block cache TTL."
+        },
+        "kraken.providers.qwen.enableThinking": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Qwen thinking when supported."
+        },
+        "kraken.providers.qwen.thinkingBudget": {
+          "type": "number",
+          "default": 8192,
+          "minimum": 0,
+          "description": "Qwen thinking budget in tokens."
+        },
+        "kraken.providers.qwen.preserveThinking": {
+          "type": "boolean",
+          "default": false,
+          "description": "Preserve Qwen reasoning content across tool loops when supported."
+        },
+        "kraken.providers.qwen.cacheMode": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "disabled"
+          ],
+          "description": "Qwen context cache mode. Auto lets Kraken choose the provider-specific cache settings."
         },
         "kraken.context.maxChars": {
           "type": "number",

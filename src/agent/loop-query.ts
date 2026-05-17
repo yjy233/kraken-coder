@@ -41,6 +41,9 @@ export async function loopQuery(params: {
   modelOptions.onDelta = (delta: string) => {
     emit?.('assistant:delta', { step, text: delta })
   }
+  modelOptions.onThinkingDelta = (delta: string) => {
+    emit?.('assistant:thinking_delta', { step, text: delta })
+  }
   modelOptions.signal = signal
   if (timeout !== undefined) {
     modelOptions.timeout = timeout
@@ -74,6 +77,7 @@ export async function loopQuery(params: {
       toolExecutions: [],
       updatedMessages,
       usage: modelResponse.usage,
+      thinkingText: modelResponse.thinking,
     }
   }
 
@@ -113,6 +117,7 @@ export async function loopQuery(params: {
     toolExecutions,
     updatedMessages,
     usage: modelResponse.usage,
+    thinkingText: modelResponse.thinking,
   }
 }
 

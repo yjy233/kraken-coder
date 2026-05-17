@@ -9,6 +9,7 @@ import {
   ChatSessionSummary,
   ChatSession,
   ContextItem,
+  ModelStatusInfo,
   SlashCompletionItem,
   WebviewToExtensionMessage
 } from '../shared/types';
@@ -69,6 +70,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
 
   private webviewView?: vscode.WebviewView;
   private streamingAssistantMessageId?: string;
+  private streamingThinkingMessageId?: string;
   private readonly runtime = new AgentRuntime();
   private session: ChatSession = createEmptyChatSession();
   private sessionSummaries: ChatSessionSummary[] = [];
@@ -110,6 +112,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     this.session.context = [];
     this.session.changeSets = [];
     this.streamingAssistantMessageId = undefined;
+    this.streamingThinkingMessageId = undefined;
     this.syncRuntimeState();
     await this.persistSession();
     await this.postSession();
@@ -298,6 +301,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       );
       this.availableSkills = availableSkills;
       this.streamingAssistantMessageId = undefined;
+      this.streamingThinkingMessageId = undefined;
       const result = await this.runtime.run({
         userText,
         history: this.buildRunHistory(options),
@@ -345,6 +349,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       throw error;
     } finally {
       this.streamingAssistantMessageId = undefined;
+      this.streamingThinkingMessageId = undefined;
       if (this.currentRun?.id === runId) {
         this.currentRun = undefined;
       }
@@ -476,6 +481,11 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       runId,
       interruptedAt: Date.now()
     });
+    this.finishStreamingThinkingMessage('interrupted', {
+      interrupted: true,
+      runId,
+      interruptedAt: Date.now()
+    });
     if (!this.session.messages.some((message) => message.metadata?.runId === runId && message.status === 'interrupted')) {
       this.session.messages.push({
         id: createId('msg'),
@@ -491,7 +501,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       });
     }
     for (const message of this.session.messages) {
-      if (message.kind === 'tool' && message.status === 'running') {
+      if ((message.kind === 'tool' || message.kind === 'thinking') && message.status === 'running') {
         message.status = 'interrupted';
         message.metadata = {
           ...(message.metadata ?? {}),
@@ -503,7 +513,9 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
   }
 
   private buildRunHistory(options: { addUserMessage: boolean; userMessageId?: string }): ChatMessage[] {
-    let history = this.session.messages.filter((message) => message.status !== 'queued' && message.kind !== 'tool');
+    let history = this.session.messages.filter(
+      (message) => message.status !== 'queued' && message.kind !== 'tool' && message.kind !== 'thinking'
+    );
     if (options.userMessageId) {
       history = history.filter((message) => message.id !== options.userMessageId);
     } else if (options.addUserMessage) {
@@ -746,6 +758,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     this.currentCommandId = undefined;
     this.pendingInputs.length = 0;
     this.streamingAssistantMessageId = undefined;
+    this.streamingThinkingMessageId = undefined;
     this.syncRuntimeState();
     await this.postSession();
   }
@@ -760,6 +773,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     await this.persistSession();
     this.session = createEmptyChatSession();
     this.streamingAssistantMessageId = undefined;
+    this.streamingThinkingMessageId = undefined;
     this.currentCommandId = undefined;
     this.syncRuntimeState();
     await this.persistSession();
@@ -783,6 +797,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     }
     this.session = loaded;
     this.streamingAssistantMessageId = undefined;
+    this.streamingThinkingMessageId = undefined;
     this.currentCommandId = undefined;
     this.syncRuntimeState();
     await this.postSession();
@@ -799,6 +814,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     if (sessionId === this.session.id) {
       this.session = await loadLatestSession(getWorkspaceRoot()?.fsPath);
       this.streamingAssistantMessageId = undefined;
+      this.streamingThinkingMessageId = undefined;
       this.currentCommandId = undefined;
       this.syncRuntimeState();
     }
@@ -814,7 +830,11 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     this.webviewView?.webview.postMessage({
       type: 'session.updated',
       session: this.session,
-      sessions: this.sessionSummaries
+      sessions: this.sessionSummaries,
+      modelInfo: buildModelStatusInfo(
+        getKrakenConfig({ extensionRoot: this.extensionUri.fsPath }),
+        this.session.context
+      )
     });
   }
 
@@ -841,13 +861,20 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     const payload = parseProgressPayload(message);
     if (payload?.type === 'run:step') {
       this.finishStreamingAssistantMessage();
+      this.finishStreamingThinkingMessage();
       return;
     }
     if (payload?.type === 'assistant:delta') {
+      this.finishStreamingThinkingMessage();
       this.appendAssistantDelta(payload.text ?? '');
       return;
     }
+    if (payload?.type === 'assistant:thinking_delta') {
+      this.appendThinkingDelta(payload.text ?? '');
+      return;
+    }
     if (payload?.type === 'tool:requested') {
+      this.finishStreamingThinkingMessage();
       this.upsertToolMessage(
         payload.toolName ?? 'tool',
         'Requested',
@@ -892,6 +919,33 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     this.postSession();
   }
 
+  private appendThinkingDelta(delta: string): void {
+    if (!delta) {
+      return;
+    }
+
+    let message = this.streamingThinkingMessageId
+      ? this.session.messages.find((entry) => entry.id === this.streamingThinkingMessageId)
+      : undefined;
+
+    if (!message) {
+      message = {
+        id: createId('msg'),
+        role: 'assistant',
+        kind: 'thinking',
+        content: '',
+        createdAt: Date.now(),
+        status: 'running'
+      };
+      this.session.messages.push(message);
+      this.streamingThinkingMessageId = message.id;
+    }
+
+    message.content += delta;
+    message.status = 'running';
+    this.postSession();
+  }
+
   private finishStreamingAssistantMessage(
     status: Extract<ChatMessageStatus, 'complete' | 'interrupted'> = 'complete',
     metadata?: Record<string, unknown>
@@ -912,6 +966,28 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       this.postSession();
     }
     this.streamingAssistantMessageId = undefined;
+  }
+
+  private finishStreamingThinkingMessage(
+    status: Extract<ChatMessageStatus, 'complete' | 'interrupted'> = 'complete',
+    metadata?: Record<string, unknown>
+  ): void {
+    if (!this.streamingThinkingMessageId) {
+      return;
+    }
+
+    const message = this.session.messages.find((entry) => entry.id === this.streamingThinkingMessageId);
+    if (message?.status === 'running') {
+      message.status = status;
+      if (metadata) {
+        message.metadata = {
+          ...(message.metadata ?? {}),
+          ...metadata,
+        };
+      }
+      this.postSession();
+    }
+    this.streamingThinkingMessageId = undefined;
   }
 
   private upsertToolMessage(
@@ -968,7 +1044,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
 }
 
 function parseProgressPayload(value: string): {
-  type: 'run:step' | 'assistant:delta' | 'tool:requested' | 'tool:running' | 'tool:result';
+  type: 'run:step' | 'assistant:delta' | 'assistant:thinking_delta' | 'tool:requested' | 'tool:running' | 'tool:result';
   text?: string;
   toolUseId?: string;
   toolName?: string;
@@ -985,6 +1061,7 @@ function parseProgressPayload(value: string): {
     if (
       parsed.type !== 'run:step'
       && parsed.type !== 'assistant:delta'
+      && parsed.type !== 'assistant:thinking_delta'
       && parsed.type !== 'tool:requested'
       && parsed.type !== 'tool:running'
       && parsed.type !== 'tool:result'
@@ -1007,6 +1084,58 @@ function parseProgressPayload(value: string): {
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function buildModelStatusInfo(config: ReturnType<typeof getKrakenConfig>, context: ContextItem[]): ModelStatusInfo {
+  const provider = config.model.provider;
+  const contextUsedChars = context.reduce((total, item) => {
+    const header = `Context: ${item.label}${item.path ? ` (${item.path})` : ''}`;
+    return total + header.length + item.content.length;
+  }, 0);
+  const contextMaxChars = Math.max(1, config.context.maxChars);
+  const contextUsagePercent = Math.min(999, Math.round((contextUsedChars / contextMaxChars) * 100));
+  const base = {
+    provider,
+    api: config.model.api,
+    model: config.model.name,
+    effort: config.model.reasoning.effort,
+    reasoningEnabled: config.model.reasoning.enabled,
+    cacheEnabled: config.model.cache.enabled,
+    cacheStrategy: config.model.cache.strategy,
+    contextUsedChars,
+    contextMaxChars,
+    contextUsagePercent,
+  };
+
+  if (provider === 'anthropic') {
+    return {
+      ...base,
+      api: config.providers.anthropic.api,
+      effort: config.providers.anthropic.effort,
+      thinking: config.providers.anthropic.thinking,
+      cacheMode: config.providers.anthropic.cacheTtl,
+    };
+  }
+
+  if (provider === 'qwen') {
+    return {
+      ...base,
+      api: config.providers.qwen.api,
+      thinking: config.providers.qwen.enableThinking ? 'enabled' : 'disabled',
+      cacheMode: config.providers.qwen.cacheMode,
+    };
+  }
+
+  if (provider === 'openai') {
+    return {
+      ...base,
+      api: config.providers.openai.api,
+      effort: config.providers.openai.effort,
+      cacheMode: config.providers.openai.promptCacheRetention,
+    };
+  }
+
+  return base;
 }
 
 function matchesSlashCompletion(item: SlashCompletionItem, query: string): boolean {

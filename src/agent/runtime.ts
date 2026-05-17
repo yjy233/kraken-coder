@@ -147,6 +147,13 @@ function buildEmit(onProgress: RunAgentOptions['onProgress']): EmitFn {
       }))
       return
     }
+    if (event === 'assistant:thinking_delta' && isRecord(data)) {
+      onProgress(JSON.stringify({
+        type: 'assistant:thinking_delta',
+        text: String(data.text || ''),
+      }))
+      return
+    }
     if (event === 'tool:requested' && isRecord(data) && isRecord(data.toolUse)) {
       const toolUse = data.toolUse
       onProgress(JSON.stringify({

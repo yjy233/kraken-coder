@@ -1,14 +1,24 @@
 import * as vscode from 'vscode';
-import { ModelSettings } from '../shared/types';
+import type {
+  ModelApiMode,
+  ModelProvider,
+  ModelReasoningDisplay,
+  ModelReasoningEffort,
+  ModelSettings
+} from '../shared/types';
 import { KrakenFileConfig, getKrakenConfig, normalizeBaseUrl, updateGlobalKrakenConfig } from './krakenConfig';
 
 export function getModelSettings(): ModelSettings {
   const config = getKrakenConfig();
   return {
     baseUrl: config.model.baseUrl,
-    provider: 'openai-compatible',
+    provider: config.model.provider,
+    api: config.model.api,
     model: config.model.name,
     apiKey: config.model.apiKey,
+    reasoning: config.model.reasoning,
+    cache: config.model.cache,
+    providers: config.providers,
     ...(config.model.proxy ? { proxy: config.model.proxy } : {})
   };
 }
@@ -18,9 +28,9 @@ export async function ensureModelConfigured(): Promise<ModelSettings | undefined
   if (!current.model) {
     const model = await vscode.window.showInputBox({
       title: 'Kraken model name',
-      prompt: 'Enter the OpenAI-compatible model name to use.',
+      prompt: 'Enter the model name to use.',
       ignoreFocusOut: true,
-      placeHolder: 'gpt-4.1'
+      placeHolder: 'qwen3.6-plus'
     });
 
     if (!model?.trim()) {
@@ -42,7 +52,7 @@ export async function ensureModelConfigured(): Promise<ModelSettings | undefined
   if (!current.apiKey) {
     const apiKey = await vscode.window.showInputBox({
       title: 'Kraken API key',
-      prompt: 'Enter the API key for your configured OpenAI-compatible provider.',
+      prompt: 'Enter the API key for your configured model provider.',
       password: true,
       ignoreFocusOut: true,
       placeHolder: 'sk-...'
@@ -129,10 +139,32 @@ class ConfigPanel {
 }
 
 interface ConfigFormValues {
+  modelSelection: string;
   modelBaseUrl: string;
   modelName: string;
   modelApiKey: string;
   modelProxy: string;
+  modelReasoningEnabled: boolean;
+  modelReasoningEffort: string;
+  modelReasoningDisplay: string;
+  modelReasoningBudgetTokens: number;
+  modelReasoningPreserve: boolean;
+  modelReasoningMaxStoredTokens: number;
+  modelCacheEnabled: boolean;
+  modelCacheRetention: string;
+  openaiApi: string;
+  openaiEffort: string;
+  openaiPromptCacheKey: string;
+  openaiPromptCacheRetention: string;
+  anthropicThinking: string;
+  anthropicEffort: string;
+  anthropicThinkingBudgetTokens: number;
+  anthropicMaxTokens: number;
+  anthropicPreserveThinking: boolean;
+  anthropicCacheTtl: string;
+  qwenEnableThinking: boolean;
+  qwenThinkingBudget: number;
+  qwenPreserveThinking: boolean;
   contextMaxChars: number;
   agentAutoApply: boolean;
   agentBrowserBin: string;
@@ -158,12 +190,93 @@ interface ConfigFormValues {
   sessionsEnabled: boolean;
 }
 
+interface SupportedModelOption {
+  id: string;
+  label: string;
+  provider: Exclude<ModelProvider, 'openai-compatible'>;
+  api: ModelApiMode;
+  model: string;
+  baseUrl: string;
+  effortOptions: ModelReasoningEffort[];
+}
+
+const supportedModelOptions: SupportedModelOption[] = [
+  {
+    id: 'qwen/qwen3.6-plus',
+    label: 'qwen/qwen3.6-plus',
+    provider: 'qwen',
+    api: 'chat-completions',
+    model: 'qwen3.6-plus',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    effortOptions: ['low', 'medium', 'high'],
+  },
+  {
+    id: 'openai/gpt-5.4',
+    label: 'openai/gpt-5.4',
+    provider: 'openai',
+    api: 'responses',
+    model: 'gpt-5.4',
+    baseUrl: 'https://api.openai.com/v1',
+    effortOptions: ['low', 'medium', 'high'],
+  },
+  {
+    id: 'openai/gpt-5.5',
+    label: 'openai/gpt-5.5',
+    provider: 'openai',
+    api: 'responses',
+    model: 'gpt-5.5',
+    baseUrl: 'https://api.openai.com/v1',
+    effortOptions: ['none', 'low', 'medium', 'high', 'xhigh'],
+  },
+  {
+    id: 'anthropic/claude-opus-4.7-fast',
+    label: 'anthropic/claude-opus-4.7-fast',
+    provider: 'anthropic',
+    api: 'messages',
+    model: 'claude-opus-4.7-fast',
+    baseUrl: 'https://api.anthropic.com/v1',
+    effortOptions: ['low', 'medium', 'high'],
+  },
+  {
+    id: 'anthropic/claude-sonnet-4.6',
+    label: 'anthropic/claude-sonnet-4.6',
+    provider: 'anthropic',
+    api: 'messages',
+    model: 'claude-sonnet-4.6',
+    baseUrl: 'https://api.anthropic.com/v1',
+    effortOptions: ['low', 'medium', 'high'],
+  },
+];
+
 function configToForm(config: ReturnType<typeof getKrakenConfig>): ConfigFormValues {
+  const selectedModel = getSelectedModelOption(config);
   return {
-    modelBaseUrl: config.model.baseUrl,
+    modelSelection: selectedModel.option.id,
+    modelBaseUrl: selectedModel.matched ? config.model.baseUrl : selectedModel.option.baseUrl,
     modelName: config.model.name,
     modelApiKey: config.model.apiKey,
     modelProxy: config.model.proxy ?? '',
+    modelReasoningEnabled: config.model.reasoning.enabled,
+    modelReasoningEffort: config.model.reasoning.effort,
+    modelReasoningDisplay: config.model.reasoning.display,
+    modelReasoningBudgetTokens: config.model.reasoning.budgetTokens,
+    modelReasoningPreserve: config.model.reasoning.preserve,
+    modelReasoningMaxStoredTokens: config.model.reasoning.maxStoredTokens,
+    modelCacheEnabled: config.model.cache.enabled,
+    modelCacheRetention: config.model.cache.retention,
+    openaiApi: config.providers.openai.api,
+    openaiEffort: config.providers.openai.effort,
+    openaiPromptCacheKey: config.providers.openai.promptCacheKey,
+    openaiPromptCacheRetention: config.providers.openai.promptCacheRetention,
+    anthropicThinking: config.providers.anthropic.thinking,
+    anthropicEffort: config.providers.anthropic.effort,
+    anthropicThinkingBudgetTokens: config.providers.anthropic.thinkingBudgetTokens,
+    anthropicMaxTokens: config.providers.anthropic.maxTokens,
+    anthropicPreserveThinking: config.providers.anthropic.preserveThinking,
+    anthropicCacheTtl: config.providers.anthropic.cacheTtl,
+    qwenEnableThinking: config.providers.qwen.enableThinking,
+    qwenThinkingBudget: config.providers.qwen.thinkingBudget,
+    qwenPreserveThinking: config.providers.qwen.preserveThinking,
     contextMaxChars: config.context.maxChars,
     agentAutoApply: config.agent.autoApply,
     agentBrowserBin: config.agent.browserBin,
@@ -191,12 +304,76 @@ function configToForm(config: ReturnType<typeof getKrakenConfig>): ConfigFormVal
 }
 
 function formToConfig(values: Record<string, unknown>): KrakenFileConfig {
+  const selectedModel = resolveSupportedModel(stringValue(values.modelSelection, ''));
   return {
     model: {
-      baseUrl: normalizeBaseUrl(stringValue(values.modelBaseUrl, 'https://api.openai.com/v1')),
-      name: stringValue(values.modelName, ''),
+      baseUrl: normalizeBaseUrl(stringValue(values.modelBaseUrl, selectedModel.baseUrl)),
+      provider: selectedModel.provider,
+      api: selectedModel.api,
+      name: selectedModel.model,
       apiKey: stringValue(values.modelApiKey, ''),
       proxy: stringValue(values.modelProxy, ''),
+      reasoning: {
+        enabled: booleanValue(values.modelReasoningEnabled),
+        effort: enumValue<ModelReasoningEffort>(
+          values.modelReasoningEffort,
+          ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+          'medium'
+        ),
+        display: enumValue<ModelReasoningDisplay>(
+          values.modelReasoningDisplay,
+          ['hidden', 'summary', 'visible'],
+          'hidden'
+        ),
+        budgetTokens: Math.max(0, Math.floor(numberValue(values.modelReasoningBudgetTokens, 0))),
+        preserve: booleanValue(values.modelReasoningPreserve),
+        maxStoredTokens: Math.max(0, Math.floor(numberValue(values.modelReasoningMaxStoredTokens, 4096))),
+      },
+      cache: {
+        enabled: booleanValue(values.modelCacheEnabled),
+        strategy: booleanValue(values.modelCacheEnabled) ? 'auto' : 'disabled',
+        retention: stringValue(values.modelCacheRetention, 'in_memory'),
+      },
+    },
+    providers: {
+      openai: {
+        api: enumValue<'responses' | 'chat-completions'>(
+          values.openaiApi,
+          ['responses', 'chat-completions'],
+          'responses'
+        ),
+        effort: enumValue<ModelReasoningEffort>(
+          values.openaiEffort,
+          ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+          'medium'
+        ),
+        promptCacheKey: stringValue(values.openaiPromptCacheKey, 'workspace'),
+        promptCacheRetention: stringValue(values.openaiPromptCacheRetention, 'in_memory'),
+      },
+      anthropic: {
+        api: 'messages',
+        thinking: enumValue<'auto' | 'adaptive' | 'enabled' | 'disabled'>(
+          values.anthropicThinking,
+          ['auto', 'adaptive', 'enabled', 'disabled'],
+          'adaptive'
+        ),
+        effort: enumValue<ModelReasoningEffort>(
+          values.anthropicEffort,
+          ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+          'medium'
+        ),
+        thinkingBudgetTokens: Math.max(0, Math.floor(numberValue(values.anthropicThinkingBudgetTokens, 16000))),
+        maxTokens: Math.max(1, Math.floor(numberValue(values.anthropicMaxTokens, 32000))),
+        preserveThinking: booleanValue(values.anthropicPreserveThinking),
+        cacheTtl: enumValue<'5m' | '1h'>(values.anthropicCacheTtl, ['5m', '1h'], '5m'),
+      },
+      qwen: {
+        api: 'chat-completions',
+        enableThinking: booleanValue(values.qwenEnableThinking),
+        thinkingBudget: Math.max(0, Math.floor(numberValue(values.qwenThinkingBudget, 8192))),
+        preserveThinking: booleanValue(values.qwenPreserveThinking),
+        cacheMode: 'auto',
+      },
     },
     context: {
       maxChars: numberValue(values.contextMaxChars, 60000),
@@ -299,7 +476,8 @@ function getConfigHtml(webview: vscode.Webview, values: ConfigFormValues): strin
     }
     input[type="text"],
     input[type="password"],
-    input[type="number"] {
+    input[type="number"],
+    select {
       width: 100%;
       min-height: 30px;
       color: var(--vscode-input-foreground);
@@ -337,6 +515,9 @@ function getConfigHtml(webview: vscode.Webview, values: ConfigFormValues): strin
       margin-top: 12px;
       color: var(--vscode-descriptionForeground);
     }
+    section[hidden] {
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -348,11 +529,57 @@ function getConfigHtml(webview: vscode.Webview, values: ConfigFormValues): strin
     </div>
     <form id="form">
       ${section('Model', [
+        select('modelSelection', 'Model', supportedModelOptions.map((option) => [option.id, option.label])),
         text('modelBaseUrl', 'Base URL'),
-        text('modelName', 'Model name'),
         password('modelApiKey', 'API key'),
         text('modelProxy', 'HTTP proxy'),
       ])}
+      ${section('Reasoning / Thinking', [
+        checkbox('modelReasoningEnabled', 'Enable reasoning'),
+        select('modelReasoningEffort', 'Effort', effortOptions(values.modelReasoningEffort)),
+        select('modelReasoningDisplay', 'Display', [
+          ['hidden', 'Hidden'],
+          ['summary', 'Summary'],
+          ['visible', 'Visible'],
+        ]),
+        number('modelReasoningBudgetTokens', 'Budget tokens'),
+        checkbox('modelReasoningPreserve', 'Preserve reasoning'),
+        number('modelReasoningMaxStoredTokens', 'Max stored tokens'),
+      ])}
+      ${section('Cache Optimization', [
+        checkbox('modelCacheEnabled', 'Enable provider cache optimization'),
+        text('modelCacheRetention', 'OpenAI retention'),
+      ])}
+      ${section('GPT / OpenAI', [
+        select('openaiApi', 'API', [
+          ['responses', 'Responses'],
+          ['chat-completions', 'Chat Completions'],
+        ]),
+        select('openaiEffort', 'Effort', effortOptions(values.openaiEffort)),
+        text('openaiPromptCacheKey', 'Prompt cache key'),
+        text('openaiPromptCacheRetention', 'Prompt cache retention'),
+      ], 'openai')}
+      ${section('Claude', [
+        select('anthropicThinking', 'Thinking', [
+          ['auto', 'Auto'],
+          ['adaptive', 'Adaptive'],
+          ['enabled', 'Enabled'],
+          ['disabled', 'Disabled'],
+        ]),
+        select('anthropicEffort', 'Effort', effortOptions(values.anthropicEffort)),
+        number('anthropicThinkingBudgetTokens', 'Thinking budget tokens'),
+        number('anthropicMaxTokens', 'Max tokens'),
+        checkbox('anthropicPreserveThinking', 'Preserve thinking'),
+        select('anthropicCacheTtl', 'Cache TTL', [
+          ['5m', '5m'],
+          ['1h', '1h'],
+        ]),
+      ], 'anthropic')}
+      ${section('Qwen', [
+        checkbox('qwenEnableThinking', 'Enable thinking'),
+        number('qwenThinkingBudget', 'Thinking budget'),
+        checkbox('qwenPreserveThinking', 'Preserve thinking'),
+      ], 'qwen')}
       ${section('Context', [
         number('contextMaxChars', 'Max context chars'),
       ])}
@@ -396,7 +623,9 @@ function getConfigHtml(webview: vscode.Webview, values: ConfigFormValues): strin
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const initialValues = ${data};
+    const modelProfiles = ${JSON.stringify(supportedModelOptions).replace(/</g, '\\u003c')};
     const statusEl = document.getElementById('status');
+    let lastSelectedModelId = '';
     for (const [key, value] of Object.entries(initialValues)) {
       const input = document.querySelector('[name="' + key + '"]');
       if (!input) continue;
@@ -406,6 +635,12 @@ function getConfigHtml(webview: vscode.Webview, values: ConfigFormValues): strin
         input.value = value ?? '';
       }
     }
+    const modelSelect = document.querySelector('[name="modelSelection"]');
+    lastSelectedModelId = modelSelect?.value || modelProfiles[0]?.id || '';
+    applySelectedModel(false);
+    modelSelect?.addEventListener('change', () => {
+      applySelectedModel(true);
+    });
     document.getElementById('save').addEventListener('click', () => {
       vscode.postMessage({ type: 'save', values: collectValues() });
     });
@@ -427,13 +662,53 @@ function getConfigHtml(webview: vscode.Webview, values: ConfigFormValues): strin
       }
       return values;
     }
+    function applySelectedModel(updateBaseUrl) {
+      const selected = modelProfiles.find((profile) => profile.id === modelSelect?.value) || modelProfiles[0];
+      if (!selected) return;
+      const baseUrlInput = document.querySelector('[name="modelBaseUrl"]');
+      const previous = modelProfiles.find((profile) => profile.id === lastSelectedModelId);
+      if (
+        updateBaseUrl &&
+        baseUrlInput &&
+        (!baseUrlInput.value || !previous || baseUrlInput.value === previous.baseUrl)
+      ) {
+        baseUrlInput.value = selected.baseUrl;
+      }
+      lastSelectedModelId = selected.id;
+      syncEffortOptions(selected);
+      for (const section of document.querySelectorAll('[data-provider-section]')) {
+        section.hidden = section.getAttribute('data-provider-section') !== selected.provider;
+      }
+    }
+    function syncEffortOptions(selected) {
+      for (const name of ['modelReasoningEffort', 'openaiEffort', 'anthropicEffort']) {
+        const select = document.querySelector('[name="' + name + '"]');
+        if (!select) continue;
+        const current = select.value;
+        select.innerHTML = '';
+        for (const effort of selected.effortOptions || ['low', 'medium', 'high']) {
+          const option = document.createElement('option');
+          option.value = effort;
+          option.textContent = formatEffortLabel(effort);
+          select.appendChild(option);
+        }
+        select.value = Array.from(select.options).some((option) => option.value === current)
+          ? current
+          : 'medium';
+      }
+    }
+    function formatEffortLabel(effort) {
+      if (effort === 'xhigh') return 'XHigh';
+      return String(effort || '').slice(0, 1).toUpperCase() + String(effort || '').slice(1);
+    }
   </script>
 </body>
 </html>`;
 }
 
-function section(title: string, controls: string[]): string {
-  return `<section><h2>${escapeHtml(title)}</h2><div class="grid">${controls.join('')}</div></section>`;
+function section(title: string, controls: string[], provider?: SupportedModelOption['provider']): string {
+  const providerAttr = provider ? ` data-provider-section="${escapeHtml(provider)}"` : '';
+  return `<section${providerAttr}><h2>${escapeHtml(title)}</h2><div class="grid">${controls.join('')}</div></section>`;
 }
 
 function text(name: keyof ConfigFormValues, label: string): string {
@@ -448,8 +723,52 @@ function number(name: keyof ConfigFormValues, label: string): string {
   return `<label><span class="label">${escapeHtml(label)}</span><input type="number" name="${name}"></label>`;
 }
 
+function select(name: keyof ConfigFormValues, label: string, options: Array<[string, string]>): string {
+  const optionHtml = options
+    .map(([value, title]) => `<option value="${escapeHtml(value)}">${escapeHtml(title)}</option>`)
+    .join('');
+  return `<label><span class="label">${escapeHtml(label)}</span><select name="${name}">${optionHtml}</select></label>`;
+}
+
 function checkbox(name: keyof ConfigFormValues, label: string): string {
   return `<label class="check"><input type="checkbox" name="${name}"><span>${escapeHtml(label)}</span></label>`;
+}
+
+function effortOptions(current: string): Array<[ModelReasoningEffort, string]> {
+  const values: ModelReasoningEffort[] = ['low', 'medium', 'high'];
+  if (isReasoningEffort(current) && !values.includes(current)) {
+    values.unshift(current);
+  }
+  return values.map((value) => [value, effortLabel(value)]);
+}
+
+function effortLabel(value: ModelReasoningEffort): string {
+  if (value === 'xhigh') {
+    return 'XHigh';
+  }
+  return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
+}
+
+function isReasoningEffort(value: string): value is ModelReasoningEffort {
+  return ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(value);
+}
+
+function getSelectedModelOption(config: ReturnType<typeof getKrakenConfig>): {
+  option: SupportedModelOption;
+  matched: boolean;
+} {
+  const matched = supportedModelOptions.find((option) =>
+    option.provider === config.model.provider && option.model === config.model.name
+  );
+  if (matched) {
+    return { option: matched, matched: true };
+  }
+
+  return { option: supportedModelOptions[0], matched: false };
+}
+
+function resolveSupportedModel(value: string): SupportedModelOption {
+  return supportedModelOptions.find((option) => option.id === value) ?? supportedModelOptions[0];
 }
 
 function stringValue(value: unknown, fallback: string): string {
@@ -463,6 +782,11 @@ function numberValue(value: unknown, fallback: number): number {
 
 function booleanValue(value: unknown): boolean {
   return value === true || value === 'true';
+}
+
+function enumValue<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  const normalized = stringValue(value, fallback).toLowerCase();
+  return allowed.includes(normalized as T) ? normalized as T : fallback;
 }
 
 function parseDomainList(value: unknown): string[] {
