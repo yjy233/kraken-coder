@@ -608,6 +608,33 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       justify-content: flex-end;
     }
 
+    .send-button {
+      width: 44px;
+      height: 44px;
+      min-width: 44px;
+      min-height: 44px;
+      padding: 0;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 999px;
+      color: var(--vscode-editor-background);
+      background: var(--vscode-foreground);
+      font-size: 26px;
+      line-height: 1;
+    }
+
+    .send-button:hover {
+      background: var(--vscode-button-hoverBackground);
+    }
+
+    .send-button:disabled {
+      opacity: 0.7;
+    }
+
+    .send-button.stop {
+      font-size: 18px;
+    }
+
     .error {
       color: var(--vscode-errorForeground);
       margin: 0 0 8px;
@@ -656,8 +683,7 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       <textarea id="input" placeholder="Ask Kraken to explain, fix, or write code..."></textarea>
       </div>
       <div class="composer-actions">
-        <button type="button" class="secondary" id="stop" hidden>Stop</button>
-        <button type="submit" id="send">Send</button>
+        <button class="send-button" type="submit" id="send" title="Send message" aria-label="Send message">↑</button>
       </div>
     </form>
   </div>
@@ -666,6 +692,8 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     let session = undefined;
     let sessions = [];
     let busy = false;
+    let activeRunId = undefined;
+    let queueLength = 0;
     let progress = 'Thinking...';
     let slashCompletionRequestId = 0;
     let slashCompletionItems = [];
@@ -678,22 +706,16 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     const changesEl = document.getElementById('changes');
     const inputEl = document.getElementById('input');
     const sendEl = document.getElementById('send');
-    const stopEl = document.getElementById('stop');
     const errorEl = document.getElementById('error');
     const slashMenuEl = document.getElementById('slashMenu');
 
     document.getElementById('configure').addEventListener('click', () => post({ type: 'config.open' }));
     document.getElementById('clear').addEventListener('click', () => post({ type: 'session.clear' }));
     document.getElementById('newSession').addEventListener('click', () => post({ type: 'session.new' }));
-    stopEl.addEventListener('click', () => {
-      stopEl.disabled = true;
-      stopEl.textContent = 'Stopping...';
-      post({ type: 'agent.stop' });
-    });
 
     document.getElementById('composer').addEventListener('submit', (event) => {
       event.preventDefault();
-      sendCurrentMessage();
+      submitComposer();
     });
 
     inputEl.addEventListener('keydown', (event) => {
@@ -703,7 +725,7 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       const isEnter = event.key === 'Enter' || event.code === 'Enter' || event.code === 'NumpadEnter';
       if ((event.metaKey || event.ctrlKey) && isEnter) {
         event.preventDefault();
-        sendCurrentMessage();
+        submitComposer();
       }
     });
 
@@ -718,6 +740,18 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     inputEl.addEventListener('blur', () => {
       window.setTimeout(() => hideSlashCompletions(), 120);
     });
+
+    function submitComposer() {
+      if (activeRunId) {
+        sendEl.disabled = true;
+        sendEl.textContent = '■';
+        sendEl.title = 'Stopping current agent run';
+        sendEl.setAttribute('aria-label', 'Stopping current agent run');
+        post({ type: 'agent.stop' });
+        return;
+      }
+      sendCurrentMessage();
+    }
 
     function sendCurrentMessage() {
       const text = inputEl.value.trim();
@@ -735,18 +769,22 @@ export function getWebviewHtml(webview: vscode.Webview): string {
         session = message.session;
         sessions = Array.isArray(message.sessions) ? message.sessions : [];
         busy = Boolean(session.busy);
+        activeRunId = session.activeRunId || undefined;
+        queueLength = Number(session.queueLength || 0);
         if (!busy) {
           progress = 'Thinking...';
         }
         render();
       }
       if (message.type === 'agent.runStarted') {
-        stopEl.disabled = false;
-        stopEl.textContent = 'Stop';
+        activeRunId = message.runId || activeRunId;
+        renderComposer();
       }
       if (message.type === 'agent.runStopped') {
-        stopEl.disabled = false;
-        stopEl.textContent = 'Stop';
+        if (!message.runId || message.runId === activeRunId) {
+          activeRunId = undefined;
+        }
+        renderComposer();
       }
       if (message.type === 'agent.progress') {
         progress = message.message || 'Thinking...';
@@ -772,18 +810,27 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     }
 
     function render() {
-      sendEl.disabled = false;
-      sendEl.textContent = busy ? 'Queue' : 'Send';
-      inputEl.disabled = false;
-      stopEl.hidden = !busy;
-      stopEl.disabled = !busy;
-      if (!busy) {
-        stopEl.textContent = 'Stop';
-      }
+      renderComposer();
       renderMessages();
       renderSessions();
       renderChanges();
       renderContext();
+    }
+
+    function renderComposer() {
+      sendEl.disabled = false;
+      inputEl.disabled = false;
+      if (activeRunId) {
+        sendEl.classList.add('stop');
+        sendEl.textContent = '■';
+        sendEl.title = 'Stop current agent run';
+        sendEl.setAttribute('aria-label', 'Stop current agent run');
+        return;
+      }
+      sendEl.classList.remove('stop');
+      sendEl.textContent = '↑';
+      sendEl.title = busy ? 'Queue message' : 'Send message';
+      sendEl.setAttribute('aria-label', busy ? 'Queue message' : 'Send message');
     }
 
     function requestSlashCompletions() {
@@ -806,7 +853,7 @@ export function getWebviewHtml(webview: vscode.Webview): string {
 
     function renderSlashCompletions() {
       slashMenuEl.innerHTML = '';
-      if (!slashCompletionItems.length || busy) {
+      if (!slashCompletionItems.length) {
         slashMenuEl.hidden = true;
         return;
       }

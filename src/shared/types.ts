@@ -79,6 +79,8 @@ export interface ChatSession {
   context: ContextItem[];
   changeSets: ChangeSet[];
   busy: boolean;
+  activeRunId?: string;
+  queueLength?: number;
 }
 
 export interface ChatSessionSummary {

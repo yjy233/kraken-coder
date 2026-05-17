@@ -1,4 +1,5 @@
 import type { Tool } from './types.js'
+import { combineAbortSignals, throwIfAborted } from '../utils/abort.js'
 
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY || ''
 const TAVILY_ENDPOINT = 'https://api.tavily.com/search'
@@ -22,7 +23,8 @@ export const searchTool: Tool = {
     },
     required: ['query'],
   },
-  execute: async (input) => {
+  execute: async (input, ctx) => {
+    throwIfAborted(ctx.signal)
     if (!TAVILY_API_KEY) {
       throw new Error('TAVILY_API_KEY is not configured. Add it to .env.')
     }
@@ -45,7 +47,7 @@ export const searchTool: Tool = {
         include_answer: true,
         include_images: false,
       }),
-      signal: AbortSignal.timeout(20000),
+      signal: combineAbortSignals([ctx.signal, AbortSignal.timeout(20000)]),
     })
 
     if (!response.ok) {

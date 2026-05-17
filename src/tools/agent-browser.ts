@@ -5,6 +5,7 @@ import path from 'node:path'
 import type { Tool, ToolContext } from './types.js'
 import { ensureSandboxLayout } from './sandbox.js'
 import { clampInteger, truncate } from '../utils/helpers.js'
+import { throwIfAborted } from '../utils/abort.js'
 
 type AgentBrowserAction =
   | 'doctor'
@@ -135,15 +136,13 @@ export const agentBrowserTool: Tool = {
     required: ['action'],
   },
   execute: async (input, ctx) => {
-    if (!ctx.allowAgentBrowserTool) {
-      throw new Error('agent_browser is disabled. Set ALLOW_AGENT_BROWSER=true after installing agent-browser.')
-    }
-
+    throwIfAborted(ctx.signal)
     const action = normalizeAction(input.action)
     const timeoutMs = clampInteger(input.timeout_ms, ctx.agentBrowserDefaultTimeout, 1000, 120000)
     const maxOutput = clampInteger(input.max_output, ctx.agentBrowserMaxOutput, 1000, 200000)
     const bin = resolveAgentBrowserBin(ctx)
     const command = await buildCommand(action, input, ctx)
+    throwIfAborted(ctx.signal)
     const result = await runAgentBrowser(bin, command.args, ctx, timeoutMs, maxOutput)
 
     const outputParams: Parameters<typeof formatToolOutput>[0] = {
@@ -422,6 +421,7 @@ async function runAgentBrowser(
     cwd: ctx.sandboxPolicy.workspaceRoot,
     env: buildAgentBrowserEnv(ctx),
     shell: false,
+    detached: process.platform !== 'win32',
   })
 
   return new Promise((resolve, reject) => {
@@ -431,9 +431,27 @@ async function runAgentBrowser(
     const timer = setTimeout(() => {
       if (settled) return
       settled = true
-      child.kill('SIGTERM')
+      killProcessTree(child, 'SIGTERM')
       reject(new Error(`agent-browser timed out after ${timeoutMs}ms`))
     }, timeoutMs)
+    const abort = () => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      ctx.signal?.removeEventListener('abort', abort)
+      killProcessTree(child, 'SIGINT')
+      setTimeout(() => {
+        if (child.exitCode === null) {
+          killProcessTree(child, 'SIGTERM')
+        }
+      }, 1000).unref()
+      reject(new Error('agent-browser interrupted.'))
+    }
+    if (ctx.signal?.aborted) {
+      abort()
+      return
+    }
+    ctx.signal?.addEventListener('abort', abort, { once: true })
 
     child.stdout?.on('data', (chunk) => {
       stdout += String(chunk)
@@ -451,11 +469,11 @@ async function runAgentBrowser(
       if (settled) return
       settled = true
       clearTimeout(timer)
+      ctx.signal?.removeEventListener('abort', abort)
       if (error.code === 'ENOENT') {
         reject(new Error([
           `agent-browser executable not found: ${bin}`,
-          'Install it first, then set ALLOW_AGENT_BROWSER=true.',
-          'See README.md for setup steps.',
+          'Install it first or configure the browser tool executable.',
         ].join('\n')))
         return
       }
@@ -465,6 +483,7 @@ async function runAgentBrowser(
       if (settled) return
       settled = true
       clearTimeout(timer)
+      ctx.signal?.removeEventListener('abort', abort)
       resolve({
         stdout: stdout.trim(),
         stderr: stderr.trim(),
@@ -472,6 +491,18 @@ async function runAgentBrowser(
       })
     })
   })
+}
+
+function killProcessTree(child: { pid?: number; kill: (signal?: NodeJS.Signals) => boolean }, signal: NodeJS.Signals): void {
+  if (process.platform !== 'win32' && child.pid) {
+    try {
+      process.kill(-child.pid, signal)
+      return
+    } catch {
+      // Fall through to killing the direct child.
+    }
+  }
+  child.kill(signal)
 }
 
 function buildAgentBrowserEnv(ctx: ToolContext): NodeJS.ProcessEnv {

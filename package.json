@@ -150,21 +150,6 @@
           "default": false,
           "description": "Apply generated changes automatically. Off by default."
         },
-        "kraken.agent.allowTerminal": {
-          "type": "boolean",
-          "default": false,
-          "description": "Allow Kraken to run shell commands through the shell_command tool."
-        },
-        "kraken.agent.allowFileWriteTool": {
-          "type": "boolean",
-          "default": false,
-          "description": "Allow Kraken to write files directly through write_file and replace."
-        },
-        "kraken.agent.allowBrowserTool": {
-          "type": "boolean",
-          "default": false,
-          "description": "Allow Kraken to control agent-browser."
-        },
         "kraken.agent.browserBin": {
           "type": "string",
           "default": "agent-browser",
@@ -198,11 +183,6 @@
           "default": "",
           "description": "Optional skill install/discovery directory. Used when TOML [skills].dir is unset; falls back to KRAKEN_SKILLS_DIR or ~/kraken-coder/skills."
         },
-        "kraken.lsp.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable read-only LSP tools for TypeScript, Go, and Python."
-        },
         "kraken.lsp.adapter": {
           "type": "string",
           "default": "auto",
@@ -212,23 +192,6 @@
             "process"
           ],
           "description": "LSP adapter selection. VS Code currently uses vscode when auto."
-        },
-        "kraken.lsp.languages": {
-          "type": "array",
-          "default": [
-            "typescript",
-            "go",
-            "python"
-          ],
-          "items": {
-            "type": "string",
-            "enum": [
-              "typescript",
-              "go",
-              "python"
-            ]
-          },
-          "description": "Languages enabled for LSP tools."
         },
         "kraken.lsp.maxResults": {
           "type": "number",

@@ -206,9 +206,6 @@ maxChars = 60000
 
 [agent]
 autoApply = false
-allowTerminal = false
-allowFileWriteTool = false
-allowBrowserTool = false
 ```
 
 `AGENT.md` 用来记录项目级 agent 指令：

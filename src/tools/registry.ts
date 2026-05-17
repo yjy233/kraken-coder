@@ -27,9 +27,6 @@ import { refreshSkills } from '../skills/manager.js'
 
 export interface CreateRegistryOptions {
   rootDir: string
-  allowShellTool: boolean
-  allowFileWriteTool: boolean
-  allowAgentBrowserTool: boolean
   agentBrowserBin: string
   agentBrowserMaxOutput: number
   agentBrowserDefaultTimeout: number
@@ -38,7 +35,7 @@ export interface CreateRegistryOptions {
   enableSeatbelt: boolean
   defaultWorkspaceRoot: string
   sensitivePaths: string[]
-  enabledTools?: string[] | undefined // 若为空则启用全部（write_file/shell_command 仍受独立开关控制）
+  enabledTools?: string[] | undefined // 若为空则启用全部
 }
 
 export function createToolRegistry(options: CreateRegistryOptions, request?: {
@@ -85,9 +82,6 @@ export function createToolRegistry(options: CreateRegistryOptions, request?: {
 
   const ctx: ToolContext = {
     rootDir: options.rootDir,
-    allowShellTool: options.allowShellTool,
-    allowFileWriteTool: options.allowFileWriteTool,
-    allowAgentBrowserTool: options.allowAgentBrowserTool,
     agentBrowserBin: options.agentBrowserBin,
     agentBrowserMaxOutput: options.agentBrowserMaxOutput,
     agentBrowserDefaultTimeout: options.agentBrowserDefaultTimeout,

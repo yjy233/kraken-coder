@@ -51,9 +51,6 @@ maxChars = 60000
 
 [agent]
 autoApply = false
-allowTerminal = false
-allowFileWriteTool = false
-allowBrowserTool = false
 browserBin = "agent-browser"
 browserMaxOutput = 50000
 browserDefaultTimeout = 25000

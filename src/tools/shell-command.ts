@@ -6,7 +6,7 @@ import { clampInteger } from '../utils/helpers.js'
 
 export const shellCommandTool: Tool = {
   name: 'shell_command',
-  description: 'Run a shell command inside the project. Disabled unless ALLOW_SHELL_TOOL=true.',
+  description: 'Run a shell command inside the project.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -24,9 +24,6 @@ export const shellCommandTool: Tool = {
     required: ['command'],
   },
   execute: async (input, ctx) => {
-    if (!ctx.allowShellTool) {
-      throw new Error('shell_command is disabled. Set ALLOW_SHELL_TOOL=true to enable it.')
-    }
     const timeoutMs = clampInteger(input.timeout_ms, 15000, 1000, 120000)
     const result = await runShellCommand(ctx, String(input.command || ''), timeoutMs)
     return {
@@ -63,7 +60,7 @@ async function runShellCommand(
     const timer = setTimeout(() => {
       if (settled) return
       settled = true
-      child.kill('SIGTERM')
+      killProcessTree(child, 'SIGTERM')
       reject(new Error(`Command timed out after ${timeoutMs}ms`))
     }, timeoutMs)
     const abort = () => {
@@ -71,10 +68,10 @@ async function runShellCommand(
       settled = true
       clearTimeout(timer)
       ctx.signal?.removeEventListener('abort', abort)
-      child.kill('SIGINT')
+      killProcessTree(child, 'SIGINT')
       setTimeout(() => {
         if (child.exitCode === null) {
-          child.kill('SIGTERM')
+          killProcessTree(child, 'SIGTERM')
         }
       }, 1000).unref()
       reject(new Error('Command interrupted.'))
@@ -89,7 +86,7 @@ async function runShellCommand(
       stdout += text
       ctx.emit?.('tool:running', {
         toolName: 'shell_command',
-        outputPreview: truncateOutput(text),
+        outputPreview: formatRunningOutput(command, stdout, stderr),
       })
     })
     child.stderr?.on('data', (chunk) => {
@@ -97,7 +94,7 @@ async function runShellCommand(
       stderr += text
       ctx.emit?.('tool:running', {
         toolName: 'shell_command',
-        outputPreview: truncateOutput(text),
+        outputPreview: formatRunningOutput(command, stdout, stderr),
       })
     })
     child.on('error', (error) => {
@@ -121,9 +118,23 @@ async function runShellCommand(
   })
 }
 
+function formatRunningOutput(command: string, stdout: string, stderr: string): string {
+  return [
+    `$ ${command}`,
+    '',
+    stdout ? `stdout:\n${truncateOutput(stdout)}` : 'stdout:\n(empty)',
+    '',
+    stderr ? `stderr:\n${truncateOutput(stderr)}` : 'stderr:\n(empty)',
+  ].join('\n')
+}
+
 function truncateOutput(value: string): string {
-  const normalized = value.replace(/\s+/g, ' ').trim()
-  return normalized.length > 240 ? `${normalized.slice(0, 239)}…` : normalized
+  const maxLength = 4000
+  const normalized = value.trim()
+  if (normalized.length <= maxLength) {
+    return normalized
+  }
+  return `[output truncated]\n${normalized.slice(-maxLength)}`
 }
 
 async function spawnSandboxedCommand(
@@ -136,6 +147,7 @@ async function spawnSandboxedCommand(
     return spawn('/bin/zsh', ['-lc', command], {
       cwd: ctx.sandboxPolicy.workspaceRoot,
       env,
+      detached: process.platform !== 'win32',
     })
   }
 
@@ -143,5 +155,18 @@ async function spawnSandboxedCommand(
   return spawn('/usr/bin/sandbox-exec', ['-f', profilePath, '/bin/zsh', '-lc', command], {
     cwd: ctx.sandboxPolicy.workspaceRoot,
     env,
+    detached: process.platform !== 'win32',
   })
+}
+
+function killProcessTree(child: { pid?: number; kill: (signal?: NodeJS.Signals) => boolean }, signal: NodeJS.Signals): void {
+  if (process.platform !== 'win32' && child.pid) {
+    try {
+      process.kill(-child.pid, signal)
+      return
+    } catch {
+      // Fall through to killing the direct child.
+    }
+  }
+  child.kill(signal)
 }

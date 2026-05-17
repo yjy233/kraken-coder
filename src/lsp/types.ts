@@ -80,7 +80,6 @@ export interface LspHostAdapter {
 }
 
 export interface LspToolConfig {
-  enabled: boolean
   languages: LspLanguage[]
   maxResults: number
   hoverMaxChars: number

@@ -28,9 +28,6 @@ export const replaceTool: Tool = {
     required: ['path', 'pattern', 'replacement'],
   },
   execute: async (input, ctx) => {
-    if (!ctx.allowFileWriteTool) {
-      throw new Error('replace is disabled. Set ALLOW_FILE_WRITE_TOOL=true to enable it.')
-    }
     const filePath = await resolveSandboxPath(ctx.sandboxPolicy, input.path, { mode: 'write' })
     const pattern = String(input.pattern || '')
     const replacement = String(input.replacement || '')

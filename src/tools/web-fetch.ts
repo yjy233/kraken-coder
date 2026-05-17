@@ -1,4 +1,5 @@
 import type { Tool } from './types.js'
+import { combineAbortSignals, throwIfAborted } from '../utils/abort.js'
 
 export const webFetchTool: Tool = {
   name: 'web_fetch',
@@ -13,7 +14,8 @@ export const webFetchTool: Tool = {
     },
     required: ['url'],
   },
-  execute: async (input) => {
+  execute: async (input, ctx) => {
+    throwIfAborted(ctx.signal)
     const url = String(input.url || '').trim()
     if (!url) {
       throw new Error('url is required')
@@ -26,7 +28,7 @@ export const webFetchTool: Tool = {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; KrakenAgent/1.0)',
       },
-      signal: AbortSignal.timeout(15000),
+      signal: combineAbortSignals([ctx.signal, AbortSignal.timeout(15000)]),
     })
 
     if (!response.ok) {

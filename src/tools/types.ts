@@ -27,9 +27,6 @@ export interface SessionSandboxPolicy {
 
 export interface ToolContext {
   rootDir: string
-  allowShellTool: boolean
-  allowFileWriteTool: boolean
-  allowAgentBrowserTool: boolean
   agentBrowserBin: string
   agentBrowserMaxOutput: number
   agentBrowserDefaultTimeout: number

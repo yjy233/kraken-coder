@@ -240,9 +240,6 @@ function buildWorkspaceConfigToml(): string {
     '',
     '[agent]',
     'autoApply = false',
-    'allowTerminal = false',
-    'allowFileWriteTool = false',
-    'allowBrowserTool = false',
     '',
   ].join('\n');
 }

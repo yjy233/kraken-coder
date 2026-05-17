@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { expandHomePath, parseBoolean, parseInteger } from '../utils/helpers';
+import { expandHomePath, parseInteger } from '../utils/helpers';
 import { getWorkspaceRoot } from './workspace';
 import type { LspLanguage } from '../lsp/types';
 
@@ -22,9 +22,6 @@ export interface KrakenFileConfig {
   };
   agent?: {
     autoApply?: boolean;
-    allowTerminal?: boolean;
-    allowFileWriteTool?: boolean;
-    allowBrowserTool?: boolean;
     browserBin?: string;
     browserMaxOutput?: number;
     browserDefaultTimeout?: number;
@@ -35,9 +32,7 @@ export interface KrakenFileConfig {
     dir?: string;
   };
   lsp?: {
-    enabled?: boolean;
     adapter?: string;
-    languages?: string[];
     maxResults?: number;
     hoverMaxChars?: number;
     timeoutMs?: number;
@@ -73,9 +68,6 @@ export interface KrakenConfig {
   };
   agent: {
     autoApply: boolean;
-    allowTerminal: boolean;
-    allowFileWriteTool: boolean;
-    allowBrowserTool: boolean;
     browserBin: string;
     browserMaxOutput: number;
     browserDefaultTimeout: number;
@@ -86,7 +78,6 @@ export interface KrakenConfig {
     dir?: string;
   };
   lsp: {
-    enabled: boolean;
     adapter: 'auto' | 'vscode' | 'process';
     languages: LspLanguage[];
     maxResults: number;
@@ -219,21 +210,6 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
     },
     agent: {
       autoApply: booleanValue(agent.autoApply, getVSCodeConfigValue<boolean>(vscodeConfig, 'agent.autoApply'), false),
-      allowTerminal: booleanValue(
-        agent.allowTerminal,
-        getVSCodeConfigValue<boolean>(vscodeConfig, 'agent.allowTerminal'),
-        parseBoolean(process.env.ALLOW_SHELL_TOOL, false)
-      ),
-      allowFileWriteTool: booleanValue(
-        agent.allowFileWriteTool,
-        getVSCodeConfigValue<boolean>(vscodeConfig, 'agent.allowFileWriteTool'),
-        parseBoolean(process.env.ALLOW_FILE_WRITE_TOOL, false)
-      ),
-      allowBrowserTool: booleanValue(
-        agent.allowBrowserTool,
-        getVSCodeConfigValue<boolean>(vscodeConfig, 'agent.allowBrowserTool'),
-        parseBoolean(process.env.ALLOW_AGENT_BROWSER, false)
-      ),
       browserBin: stringValue(
         agent.browserBin,
         getVSCodeConfigValue<string>(vscodeConfig, 'agent.browserBin'),
@@ -264,16 +240,12 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
       ...(skillsDir ? { dir: skillsDir } : {}),
     },
     lsp: {
-      enabled: booleanValue(lsp.enabled, getVSCodeConfigValue<boolean>(vscodeConfig, 'lsp.enabled'), true),
       adapter: normalizeLspAdapter(stringValue(
         lsp.adapter,
         getVSCodeConfigValue<string>(vscodeConfig, 'lsp.adapter'),
         'auto'
       )),
-      languages: normalizeLspLanguages(firstNonEmptyStringArray(
-        lsp.languages,
-        getVSCodeConfigValue<string[]>(vscodeConfig, 'lsp.languages')
-      )),
+      languages: ['typescript', 'go', 'python'],
       maxResults: Math.max(
         1,
         Math.floor(numberValue(lsp.maxResults, getVSCodeConfigValue<number>(vscodeConfig, 'lsp.maxResults'), 50))
@@ -419,12 +391,6 @@ function normalizeParsedConfig(parsed: ParsedToml): KrakenFileConfig {
 
   if (agent) {
     const autoApply = firstDefined(getBoolean(agent, 'autoApply'), getBoolean(agent, 'auto_apply'));
-    const allowTerminal = firstDefined(getBoolean(agent, 'allowTerminal'), getBoolean(agent, 'allow_terminal'));
-    const allowFileWriteTool = firstDefined(
-      getBoolean(agent, 'allowFileWriteTool'),
-      getBoolean(agent, 'allow_file_write_tool')
-    );
-    const allowBrowserTool = firstDefined(getBoolean(agent, 'allowBrowserTool'), getBoolean(agent, 'allow_browser_tool'));
     const browserBin = firstDefined(getString(agent, 'browserBin'), getString(agent, 'browser_bin'));
     const browserMaxOutput = firstDefined(getNumber(agent, 'browserMaxOutput'), getNumber(agent, 'browser_max_output'));
     const browserDefaultTimeout = firstDefined(
@@ -439,9 +405,6 @@ function normalizeParsedConfig(parsed: ParsedToml): KrakenFileConfig {
 
     config.agent = {
       ...(autoApply !== undefined ? { autoApply } : {}),
-      ...(allowTerminal !== undefined ? { allowTerminal } : {}),
-      ...(allowFileWriteTool !== undefined ? { allowFileWriteTool } : {}),
-      ...(allowBrowserTool !== undefined ? { allowBrowserTool } : {}),
       ...(browserBin !== undefined ? { browserBin } : {}),
       ...(browserMaxOutput !== undefined ? { browserMaxOutput } : {}),
       ...(browserDefaultTimeout !== undefined ? { browserDefaultTimeout } : {}),
@@ -794,10 +757,6 @@ function firstNonEmptyStringOrArray(
   });
 }
 
-function firstNonEmptyStringArray(...values: Array<string[] | undefined>): string[] | undefined {
-  return values.find((value) => Array.isArray(value) && value.some((item) => item.trim()));
-}
-
 function getVSCodeConfigValue<T>(config: vscode.WorkspaceConfiguration, key: string): T | undefined {
   const inspected = config.inspect<T>(key);
   return firstDefined(inspected?.workspaceFolderValue, inspected?.workspaceValue, inspected?.globalValue);
@@ -836,14 +795,6 @@ function normalizeLspAdapter(value: string): KrakenConfig['lsp']['adapter'] {
     return normalized;
   }
   return 'auto';
-}
-
-function normalizeLspLanguages(value: string[] | undefined): LspLanguage[] {
-  const allowed = new Set<LspLanguage>(['typescript', 'go', 'python']);
-  const languages = (value ?? ['typescript', 'go', 'python'])
-    .map((item) => item.trim().toLowerCase())
-    .filter((item): item is LspLanguage => allowed.has(item as LspLanguage));
-  return languages.length ? Array.from(new Set(languages)) : ['typescript', 'go', 'python'];
 }
 
 function normalizeOptionalPath(value: unknown): string | undefined {

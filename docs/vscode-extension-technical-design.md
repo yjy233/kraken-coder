@@ -290,10 +290,6 @@ interface ChangeSet {
       "kraken.agent.autoApply": {
         "type": "boolean",
         "default": false
-      },
-      "kraken.agent.allowTerminal": {
-        "type": "boolean",
-        "default": false
       }
     }
   }

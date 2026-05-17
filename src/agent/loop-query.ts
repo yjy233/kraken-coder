@@ -134,9 +134,10 @@ async function executeTool(
       output: `Unknown tool: ${toolUse.name}`,
     }
   }
+  throwIfAborted(signal)
   try {
-    throwIfAborted(signal)
     const result = await tool.execute(toolUse.input || {}, signal, buildToolEmit(emit, toolUse))
+    throwIfAborted(signal)
     return {
       toolUseId: toolUse.id,
       toolName: toolUse.name,
@@ -144,6 +145,9 @@ async function executeTool(
       output: String(result.output || ''),
     }
   } catch (error) {
+    if (signal?.aborted) {
+      throw error
+    }
     return {
       toolUseId: toolUse.id,
       toolName: toolUse.name,

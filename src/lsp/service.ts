@@ -18,6 +18,7 @@ export interface LspServiceOptions {
   workspaceRoot: string
   adapter: LspHostAdapter
   config: LspToolConfig
+  signal?: AbortSignal | undefined
 }
 
 export class LspService {
@@ -34,7 +35,8 @@ export class LspService {
         language: target.language,
         position,
       }),
-      this.options.config.timeoutMs
+      this.options.config.timeoutMs,
+      this.options.signal
     )
     const hoverMaxChars = Math.max(0, this.options.config.hoverMaxChars)
     const contents = result.contents
@@ -66,7 +68,8 @@ export class LspService {
         position,
         kind,
       }),
-      this.options.config.timeoutMs
+      this.options.config.timeoutMs,
+      this.options.signal
     )
     const normalized = await this.withPreviews(locations.slice(0, maxResults))
 
@@ -98,7 +101,8 @@ export class LspService {
         position,
         includeDeclaration,
       }),
-      this.options.config.timeoutMs
+      this.options.config.timeoutMs,
+      this.options.signal
     )
     const normalized = await this.withReferencePreviews(references.slice(0, maxResults))
 
@@ -126,7 +130,8 @@ export class LspService {
         path: target.displayPath,
         language: target.language,
       }),
-      this.options.config.timeoutMs
+      this.options.config.timeoutMs,
+      this.options.signal
     )
 
     return stringify({
@@ -158,7 +163,8 @@ export class LspService {
           query,
           language: currentLanguage,
         }),
-        this.options.config.timeoutMs
+        this.options.config.timeoutMs,
+        this.options.signal
       )
       collected.push(...symbols.map((symbol) => ({ ...symbol, language: symbol.language ?? currentLanguage })))
     }
@@ -180,7 +186,8 @@ export class LspService {
   private async initialize(language: LspLanguage): Promise<void> {
     await withTimeout(
       this.options.adapter.initializeWorkspace(this.options.workspaceRoot, language),
-      this.options.config.timeoutMs
+      this.options.config.timeoutMs,
+      this.options.signal
     )
   }
 
@@ -350,19 +357,34 @@ function toDisplayPath(workspaceRoot: string, targetPath: string): string {
   return relative && !relative.startsWith('..') && !path.isAbsolute(relative) ? relative : targetPath
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, signal?: AbortSignal): Promise<T> {
   const timeout = Math.max(1000, Math.floor(timeoutMs || 8000))
   let timer: NodeJS.Timeout | undefined
+  let abort: (() => void) | undefined
   try {
     return await Promise.race([
       promise,
       new Promise<T>((_resolve, reject) => {
         timer = setTimeout(() => reject(new Error(`LSP request timed out after ${timeout}ms`)), timeout)
       }),
+      new Promise<T>((_resolve, reject) => {
+        if (!signal) {
+          return
+        }
+        abort = () => reject(new Error('LSP request interrupted.'))
+        if (signal.aborted) {
+          abort()
+          return
+        }
+        signal.addEventListener('abort', abort, { once: true })
+      }),
     ])
   } finally {
     if (timer) {
       clearTimeout(timer)
+    }
+    if (abort) {
+      signal?.removeEventListener('abort', abort)
     }
   }
 }

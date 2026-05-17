@@ -37,9 +37,6 @@ export function createVSCodeToolRegistry(
   const availableSkills = refreshSkills()
   const tools = createToolRegistry({
     rootDir: extensionRootFallback(root.fsPath),
-    allowShellTool: config.agent.allowTerminal,
-    allowFileWriteTool: config.agent.allowFileWriteTool,
-    allowAgentBrowserTool: config.agent.allowBrowserTool,
     agentBrowserBin: config.agent.browserBin,
     agentBrowserMaxOutput: config.agent.browserMaxOutput,
     agentBrowserDefaultTimeout: config.agent.browserDefaultTimeout,

@@ -7,11 +7,6 @@ export function createLspTools(params: {
   adapter: LspHostAdapter
   config: LspToolConfig
 }): ToolDefinition[] {
-  if (!params.config.enabled) {
-    return []
-  }
-
-  const service = new LspService(params)
   return [
     {
       name: 'lsp_hover',
@@ -36,7 +31,7 @@ export function createLspTools(params: {
         },
         required: ['path', 'line', 'character'],
       },
-      execute: async (input) => ({ output: await service.hover(input) }),
+      execute: async (input, signal) => ({ output: await withSignal(params, signal).hover(input) }),
     },
     {
       name: 'lsp_definition',
@@ -72,7 +67,7 @@ export function createLspTools(params: {
         },
         required: ['path', 'line', 'character'],
       },
-      execute: async (input) => ({ output: await service.definition(input) }),
+      execute: async (input, signal) => ({ output: await withSignal(params, signal).definition(input) }),
     },
     {
       name: 'lsp_references',
@@ -107,7 +102,7 @@ export function createLspTools(params: {
         },
         required: ['path', 'line', 'character'],
       },
-      execute: async (input) => ({ output: await service.references(input) }),
+      execute: async (input, signal) => ({ output: await withSignal(params, signal).references(input) }),
     },
     {
       name: 'lsp_document_symbols',
@@ -128,7 +123,7 @@ export function createLspTools(params: {
         },
         required: ['path'],
       },
-      execute: async (input) => ({ output: await service.documentSymbols(input) }),
+      execute: async (input, signal) => ({ output: await withSignal(params, signal).documentSymbols(input) }),
     },
     {
       name: 'lsp_workspace_symbols',
@@ -154,7 +149,18 @@ export function createLspTools(params: {
         },
         required: ['query'],
       },
-      execute: async (input) => ({ output: await service.workspaceSymbols(input) }),
+      execute: async (input, signal) => ({ output: await withSignal(params, signal).workspaceSymbols(input) }),
     },
   ]
+}
+
+function withSignal(
+  params: {
+    workspaceRoot: string
+    adapter: LspHostAdapter
+    config: LspToolConfig
+  },
+  signal?: AbortSignal
+): LspService {
+  return new LspService({ ...params, signal })
 }

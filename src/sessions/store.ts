@@ -105,10 +105,28 @@ export function summarizeSession(session: ChatSession, updatedAt = Date.now()): 
 function normalizeSession(session: ChatSession): ChatSession {
   return {
     ...session,
+    messages: session.messages.map(normalizeMessage),
     title: session.title && session.title !== 'New session'
       ? session.title
       : inferSessionTitle(session.messages),
     busy: false,
+    activeRunId: undefined,
+    queueLength: 0,
+  };
+}
+
+function normalizeMessage(message: ChatMessage): ChatMessage {
+  if (message.status !== 'queued' && message.status !== 'running') {
+    return message;
+  }
+  return {
+    ...message,
+    status: 'interrupted',
+    metadata: {
+      ...(message.metadata ?? {}),
+      interrupted: true,
+      interruptedAt: Date.now(),
+    },
   };
 }
 

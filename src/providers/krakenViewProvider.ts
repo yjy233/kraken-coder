@@ -53,6 +53,11 @@ interface CurrentRun {
   abortController: AbortController;
 }
 
+interface SlashCommandExecutionOptions {
+  messageId?: string;
+  markMessageComplete?: boolean;
+}
+
 class AgentInterruptedError extends Error {
   constructor(readonly runId: string, readonly reason: 'user' | 'system' = 'user') {
     super('Agent run interrupted.')
@@ -69,6 +74,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
   private sessionSummaries: ChatSessionSummary[] = [];
   private availableSkills: Skill[] = [];
   private currentRun?: CurrentRun;
+  private currentCommandId?: string;
   private readonly pendingInputs: PendingInput[] = [];
 
   constructor(private readonly extensionUri: vscode.Uri) {}
@@ -98,12 +104,13 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
   async clearSession(): Promise<void> {
     this.currentRun?.abortController.abort();
     this.currentRun = undefined;
+    this.currentCommandId = undefined;
     this.pendingInputs.length = 0;
     this.session.messages = [];
     this.session.context = [];
     this.session.changeSets = [];
-    this.session.busy = false;
     this.streamingAssistantMessageId = undefined;
+    this.syncRuntimeState();
     await this.persistSession();
     await this.postSession();
   }
@@ -194,7 +201,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    if (this.currentRun || this.session.busy) {
+    if (this.currentRun || this.currentCommandId || this.pendingInputs.length > 0) {
       const userMessage: ChatMessage = {
         id: createId('msg'),
         role: 'user',
@@ -204,6 +211,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       };
       this.session.messages.push(userMessage);
       this.pendingInputs.push({ id: createId('run'), messageId: userMessage.id, text: userText });
+      this.syncRuntimeState();
       await this.persistSession();
       await this.postSession();
       return;
@@ -224,11 +232,23 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
   ): Promise<void> {
     const settings = await ensureModelConfigured();
     if (!settings) {
+      if (options.userMessageId) {
+        this.markMessageStatus(options.userMessageId, 'interrupted');
+        await this.persistSession();
+        await this.postSession();
+        await this.drainPendingInputs();
+      }
       return;
     }
 
     const apiKey = settings.apiKey.trim();
     if (!apiKey) {
+      if (options.userMessageId) {
+        this.markMessageStatus(options.userMessageId, 'interrupted');
+        await this.persistSession();
+        await this.postSession();
+        await this.drainPendingInputs();
+      }
       return;
     }
 
@@ -252,7 +272,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     const runId = createId('run');
     const abortController = new AbortController();
     this.currentRun = { id: runId, abortController };
-    this.session.busy = true;
+    this.syncRuntimeState();
     await this.postSession();
     this.webviewView?.webview.postMessage({ type: 'agent.runStarted', runId });
     this.postProgress('Thinking...');
@@ -328,14 +348,13 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       if (this.currentRun?.id === runId) {
         this.currentRun = undefined;
       }
-      this.session.busy = Boolean(this.pendingInputs.length);
+      this.syncRuntimeState();
       await this.postSession();
       await this.drainPendingInputs();
     }
   }
 
   private async runSlashCommand(userText: string, invocation: NonNullable<ReturnType<typeof parseSlashCommand>>): Promise<void> {
-    const command = findSlashCommand(invocation.name);
     const userMessage: ChatMessage = {
       id: createId('msg'),
       role: 'user',
@@ -344,28 +363,50 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       status: 'running'
     };
     this.session.messages.push(userMessage);
+    await this.executeSlashCommand(userText, invocation, {
+      messageId: userMessage.id,
+      markMessageComplete: true,
+    });
+    await this.drainPendingInputs();
+  }
 
+  private async executeSlashCommand(
+    userText: string,
+    invocation: NonNullable<ReturnType<typeof parseSlashCommand>>,
+    options: SlashCommandExecutionOptions = {}
+  ): Promise<void> {
+    const command = findSlashCommand(invocation.name);
     if (!command) {
       this.postAssistantMessage([
         `Unknown slash command: /${invocation.name}`,
         '',
         buildSlashHelp(),
       ].join('\n'));
+      if (options.messageId) {
+        this.markMessageStatus(options.messageId, 'complete');
+      }
       await this.persistSession();
       await this.postSession();
       return;
     }
 
-    this.session.busy = true;
+    if (options.messageId) {
+      this.markMessageStatus(options.messageId, 'running');
+    }
+    this.currentCommandId = createId('command');
+    this.syncRuntimeState();
     await this.postSession();
 
     try {
       await command.execute(invocation, {
-        ...this.buildSlashCommandContext(),
+        ...this.buildSlashCommandContext({ userMessageId: options.messageId }),
       });
-      this.markMessageStatus(userMessage.id, 'complete');
+      if (options.markMessageComplete !== false && options.messageId) {
+        this.markMessageStatus(options.messageId, 'complete');
+      }
     } finally {
-      this.session.busy = false;
+      this.currentCommandId = undefined;
+      this.syncRuntimeState();
       await this.persistSession();
       await this.postSession();
     }
@@ -379,69 +420,39 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     run.abortController.abort();
     this.markCurrentRunInterrupted(run.id);
     this.webviewView?.webview.postMessage({ type: 'agent.runStopped', runId: run.id, reason });
+    this.syncRuntimeState();
     await this.persistSession();
     await this.postSession();
   }
 
   private async drainPendingInputs(): Promise<void> {
-    if (this.currentRun || this.pendingInputs.length === 0) {
-      this.session.busy = Boolean(this.currentRun);
+    if (this.currentRun || this.currentCommandId || this.pendingInputs.length === 0) {
+      this.syncRuntimeState();
       await this.postSession();
       return;
     }
 
     const next = this.pendingInputs.shift();
     if (!next) {
+      this.syncRuntimeState();
       return;
     }
+    this.syncRuntimeState();
+    await this.postSession();
     await this.runQueuedInput(next);
   }
 
   private async runQueuedInput(input: PendingInput): Promise<void> {
     const slashInvocation = parseSlashCommand(input.text);
     if (slashInvocation) {
-      this.markMessageStatus(input.messageId, 'running');
-      await this.runSlashCommandForExistingMessage(input.text, slashInvocation, input.messageId);
+      await this.executeSlashCommand(input.text, slashInvocation, {
+        messageId: input.messageId,
+        markMessageComplete: true,
+      });
+      await this.drainPendingInputs();
       return;
     }
     await this.runAgentForUserText(input.text, { addUserMessage: false, userMessageId: input.messageId });
-  }
-
-  private async runSlashCommandForExistingMessage(
-    userText: string,
-    invocation: NonNullable<ReturnType<typeof parseSlashCommand>>,
-    messageId: string
-  ): Promise<void> {
-    const original = this.session.messages.find((message) => message.id === messageId);
-    if (original) {
-      original.status = 'running';
-    }
-    const command = findSlashCommand(invocation.name);
-    if (!command) {
-      this.postAssistantMessage([
-        `Unknown slash command: /${invocation.name}`,
-        '',
-        buildSlashHelp(),
-      ].join('\n'));
-      this.markMessageStatus(messageId, 'complete');
-      await this.persistSession();
-      await this.postSession();
-      await this.drainPendingInputs();
-      return;
-    }
-
-    this.session.busy = true;
-    await this.postSession();
-
-    try {
-      await command.execute(invocation, this.buildSlashCommandContext());
-      this.markMessageStatus(messageId, 'complete');
-    } finally {
-      this.session.busy = Boolean(this.pendingInputs.length);
-      await this.persistSession();
-      await this.postSession();
-      await this.drainPendingInputs();
-    }
   }
 
   private markMessageStatus(messageId: string, status: ChatMessageStatus): void {
@@ -449,6 +460,14 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     if (message) {
       message.status = status;
     }
+  }
+
+  private syncRuntimeState(): void {
+    this.session.activeRunId = this.currentRun && !this.currentRun.abortController.signal.aborted
+      ? this.currentRun.id
+      : undefined;
+    this.session.queueLength = this.pendingInputs.length;
+    this.session.busy = Boolean(this.currentRun) || Boolean(this.currentCommandId) || this.pendingInputs.length > 0;
   }
 
   private markCurrentRunInterrupted(runId: string): void {
@@ -484,7 +503,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
   }
 
   private buildRunHistory(options: { addUserMessage: boolean; userMessageId?: string }): ChatMessage[] {
-    let history = this.session.messages.filter((message) => message.status !== 'queued');
+    let history = this.session.messages.filter((message) => message.status !== 'queued' && message.kind !== 'tool');
     if (options.userMessageId) {
       history = history.filter((message) => message.id !== options.userMessageId);
     } else if (options.addUserMessage) {
@@ -493,7 +512,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     return history;
   }
 
-  private buildSlashCommandContext(): Parameters<NonNullable<ReturnType<typeof findSlashCommand>>['execute']>[1] {
+  private buildSlashCommandContext(options: { userMessageId?: string } = {}): Parameters<NonNullable<ReturnType<typeof findSlashCommand>>['execute']>[1] {
     return {
       workspaceRoot: getWorkspaceRoot()?.fsPath,
       globalRoot: getKrakenConfig({ extensionRoot: this.extensionUri.fsPath }).paths.globalRoot,
@@ -507,7 +526,10 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
         await vscode.window.showTextDocument(document, { preview: false });
       },
       getAvailableSkills: () => this.getAvailableSkills(),
-      runAgent: (agentText) => this.runAgentForUserText(agentText, { addUserMessage: false }),
+      runAgent: (agentText) => this.runAgentForUserText(agentText, {
+        addUserMessage: false,
+        userMessageId: options.userMessageId,
+      }),
     };
   }
 
@@ -720,8 +742,11 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
 
   private async loadInitialSession(): Promise<void> {
     this.session = await loadLatestSession(getWorkspaceRoot()?.fsPath);
-    this.session.busy = false;
+    this.currentRun = undefined;
+    this.currentCommandId = undefined;
+    this.pendingInputs.length = 0;
     this.streamingAssistantMessageId = undefined;
+    this.syncRuntimeState();
     await this.postSession();
   }
 
@@ -735,6 +760,8 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     await this.persistSession();
     this.session = createEmptyChatSession();
     this.streamingAssistantMessageId = undefined;
+    this.currentCommandId = undefined;
+    this.syncRuntimeState();
     await this.persistSession();
     await this.postSession();
   }
@@ -755,8 +782,9 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       throw new Error(`Session not found: ${sessionId}`);
     }
     this.session = loaded;
-    this.session.busy = false;
     this.streamingAssistantMessageId = undefined;
+    this.currentCommandId = undefined;
+    this.syncRuntimeState();
     await this.postSession();
   }
 
@@ -770,8 +798,9 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     await deleteSession(getWorkspaceRoot()?.fsPath, sessionId);
     if (sessionId === this.session.id) {
       this.session = await loadLatestSession(getWorkspaceRoot()?.fsPath);
-      this.session.busy = false;
       this.streamingAssistantMessageId = undefined;
+      this.currentCommandId = undefined;
+      this.syncRuntimeState();
     }
     await this.postSession();
   }
@@ -925,7 +954,9 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
 
   private showError(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
-    this.session.busy = false;
+    this.currentRun = undefined;
+    this.currentCommandId = undefined;
+    this.syncRuntimeState();
     this.webviewView?.webview.postMessage({
       type: 'error',
       message,

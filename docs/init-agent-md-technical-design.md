@@ -361,9 +361,6 @@ maxChars = 60000
 
 [agent]
 autoApply = false
-allowTerminal = false
-allowFileWriteTool = false
-allowBrowserTool = false
 ```
 
 不写 `[model]`：

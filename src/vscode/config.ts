@@ -135,18 +135,13 @@ interface ConfigFormValues {
   modelProxy: string;
   contextMaxChars: number;
   agentAutoApply: boolean;
-  agentAllowTerminal: boolean;
-  agentAllowFileWriteTool: boolean;
-  agentAllowBrowserTool: boolean;
   agentBrowserBin: string;
   agentBrowserMaxOutput: number;
   agentBrowserDefaultTimeout: number;
   agentMaxSteps: number;
   agentBrowserAllowedDomains: string;
   skillsDir: string;
-  lspEnabled: boolean;
   lspAdapter: string;
-  lspLanguages: string;
   lspMaxResults: number;
   lspHoverMaxChars: number;
   lspTimeoutMs: number;
@@ -171,18 +166,13 @@ function configToForm(config: ReturnType<typeof getKrakenConfig>): ConfigFormVal
     modelProxy: config.model.proxy ?? '',
     contextMaxChars: config.context.maxChars,
     agentAutoApply: config.agent.autoApply,
-    agentAllowTerminal: config.agent.allowTerminal,
-    agentAllowFileWriteTool: config.agent.allowFileWriteTool,
-    agentAllowBrowserTool: config.agent.allowBrowserTool,
     agentBrowserBin: config.agent.browserBin,
     agentBrowserMaxOutput: config.agent.browserMaxOutput,
     agentBrowserDefaultTimeout: config.agent.browserDefaultTimeout,
     agentMaxSteps: config.agent.maxSteps,
     agentBrowserAllowedDomains: config.agent.browserAllowedDomains ?? '',
     skillsDir: config.skills.dir ?? '',
-    lspEnabled: config.lsp.enabled,
     lspAdapter: config.lsp.adapter,
-    lspLanguages: config.lsp.languages.join(', '),
     lspMaxResults: config.lsp.maxResults,
     lspHoverMaxChars: config.lsp.hoverMaxChars,
     lspTimeoutMs: config.lsp.timeoutMs,
@@ -213,9 +203,6 @@ function formToConfig(values: Record<string, unknown>): KrakenFileConfig {
     },
     agent: {
       autoApply: booleanValue(values.agentAutoApply),
-      allowTerminal: booleanValue(values.agentAllowTerminal),
-      allowFileWriteTool: booleanValue(values.agentAllowFileWriteTool),
-      allowBrowserTool: booleanValue(values.agentAllowBrowserTool),
       browserBin: stringValue(values.agentBrowserBin, 'agent-browser'),
       browserMaxOutput: numberValue(values.agentBrowserMaxOutput, 50000),
       browserDefaultTimeout: numberValue(values.agentBrowserDefaultTimeout, 25000),
@@ -226,9 +213,7 @@ function formToConfig(values: Record<string, unknown>): KrakenFileConfig {
       dir: stringValue(values.skillsDir, ''),
     },
     lsp: {
-      enabled: booleanValue(values.lspEnabled),
       adapter: stringValue(values.lspAdapter, 'auto'),
-      languages: parseCommaList(values.lspLanguages),
       maxResults: numberValue(values.lspMaxResults, 50),
       hoverMaxChars: numberValue(values.lspHoverMaxChars, 4000),
       timeoutMs: numberValue(values.lspTimeoutMs, 8000),
@@ -373,9 +358,6 @@ function getConfigHtml(webview: vscode.Webview, values: ConfigFormValues): strin
       ])}
       ${section('Agent Tools', [
         checkbox('agentAutoApply', 'Auto apply change proposals'),
-        checkbox('agentAllowTerminal', 'Allow shell_command'),
-        checkbox('agentAllowFileWriteTool', 'Allow write_file and replace'),
-        checkbox('agentAllowBrowserTool', 'Allow agent_browser'),
         text('agentBrowserBin', 'Browser tool executable'),
         number('agentBrowserMaxOutput', 'Browser max output chars'),
         number('agentBrowserDefaultTimeout', 'Browser timeout ms'),
@@ -386,9 +368,7 @@ function getConfigHtml(webview: vscode.Webview, values: ConfigFormValues): strin
         text('skillsDir', 'Custom skills directory'),
       ])}
       ${section('LSP Tools', [
-        checkbox('lspEnabled', 'Enable LSP tools'),
         text('lspAdapter', 'Adapter (auto, vscode, process)'),
-        text('lspLanguages', 'Languages'),
         number('lspMaxResults', 'Max LSP results'),
         number('lspHoverMaxChars', 'Hover max chars'),
         number('lspTimeoutMs', 'LSP timeout ms'),
