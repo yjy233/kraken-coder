@@ -301,6 +301,7 @@ export interface ModelToolCall {
   name: string;
   arguments: JsonRecord;
   rawArguments: string;
+  argumentsParseError?: string;
 }
 
 export interface ModelResponse {

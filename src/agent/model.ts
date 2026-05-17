@@ -48,6 +48,8 @@ export async function invokeModel(params: InvokeModelParams & {
       id: toolCall.id,
       name: toolCall.name,
       input: toolCall.arguments,
+      rawInput: toolCall.rawArguments,
+      inputParseError: toolCall.argumentsParseError,
     })),
     usage: response.usage,
     stopReason: response.finishReason ?? null,
@@ -76,12 +78,17 @@ function convertMessages(systemPrompt: string, messages: AgentMessage[]): ModelM
 
   for (const message of messages) {
     if (typeof message.content === 'string') {
-      result.push({
-        role: message.role,
-        content: message.role === 'user'
-          ? convertUserContent(message.content, extractAttachments(message))
-          : message.content,
-      })
+      if (message.role === 'user') {
+        result.push({
+          role: 'user',
+          content: convertUserContent(message.content, extractAttachments(message)),
+        })
+      } else {
+        result.push({
+          role: 'assistant',
+          content: message.content,
+        })
+      }
       continue
     }
 
@@ -130,7 +137,10 @@ function extractAttachments(message: AgentMessage): ChatAttachment[] {
   return Array.isArray(candidate) ? candidate : []
 }
 
-function convertUserContent(text: string, attachments: ChatAttachment[]): ModelMessage['content'] {
+function convertUserContent(
+  text: string,
+  attachments: ChatAttachment[]
+): Extract<ModelMessage, { role: 'user' }>['content'] {
   if (!attachments.length) {
     return text
   }

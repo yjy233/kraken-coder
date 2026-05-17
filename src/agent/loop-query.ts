@@ -59,7 +59,9 @@ export async function loopQuery(params: {
 
   for (const toolUse of modelResponse.toolUses) {
     assistantContent.push({ type: 'tool_use', id: toolUse.id, name: toolUse.name, input: toolUse.input })
-    emit?.('tool:requested', { step, toolUse })
+    if (!isSkippableInvalidToolUse(toolUse)) {
+      emit?.('tool:requested', { step, toolUse })
+    }
   }
 
   const updatedMessages: AgentMessage[] = [...messages]
@@ -87,7 +89,9 @@ export async function loopQuery(params: {
 
   for (const toolUse of modelResponse.toolUses) {
     throwIfAborted(signal)
-    emit?.('tool:running', { step, toolUseId: toolUse.id, toolName: toolUse.name })
+    if (!isSkippableInvalidToolUse(toolUse)) {
+      emit?.('tool:running', { step, toolUseId: toolUse.id, toolName: toolUse.name })
+    }
     const toolResult = await executeTool(toolUse, tools, signal, emit)
     toolExecutions.push(toolResult)
     toolResults.push({
@@ -97,6 +101,9 @@ export async function loopQuery(params: {
       content: toolResult.output,
       is_error: toolResult.isError,
     })
+    if (isSkippableInvalidToolUse(toolUse)) {
+      continue
+    }
     emit?.('tool:result', {
       step,
       toolUseId: toolUse.id,
@@ -130,6 +137,16 @@ async function executeTool(
   signal?: AbortSignal,
   emit?: EmitFn
 ): Promise<ToolExecution> {
+  const validationError = validateToolUse(toolUse)
+  if (validationError) {
+    return {
+      toolUseId: toolUse.id,
+      toolName: toolUse.name,
+      isError: true,
+      output: validationError,
+    }
+  }
+
   const tool = tools.find((entry) => entry.name === toolUse.name)
   if (!tool) {
     return {
@@ -183,6 +200,28 @@ function buildToolEmit(emit: EmitFn | undefined, toolUse: ToolUse): EmitFn | und
     }
     emit(event, data)
   }
+}
+
+function validateToolUse(toolUse: ToolUse): string | null {
+  if (toolUse.inputParseError) {
+    return `Invalid tool arguments for ${toolUse.name}: ${toolUse.inputParseError} Raw arguments: ${toolUse.rawInput || '{}'}`
+  }
+
+  if (toolUse.name !== 'propose_changes') {
+    return null
+  }
+
+  const summary = typeof toolUse.input.summary === 'string' ? toolUse.input.summary.trim() : ''
+  const changes = Array.isArray(toolUse.input.changes) ? toolUse.input.changes : []
+  if (!summary || changes.length === 0) {
+    return 'Invalid propose_changes call: summary and at least one file change are required. Read files and build the full proposal before calling propose_changes.'
+  }
+
+  return null
+}
+
+function isSkippableInvalidToolUse(toolUse: ToolUse): boolean {
+  return Boolean(validateToolUse(toolUse) && toolUse.name === 'propose_changes')
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -74,6 +74,11 @@ export class PromptBuilder {
       sections.push('', replaceSection)
     }
 
+    const proposalSection = this.buildProposeChangesGuidelines()
+    if (proposalSection) {
+      sections.push('', proposalSection)
+    }
+
     const lspSection = this.buildLspGuidelines()
     if (lspSection) {
       sections.push('', lspSection)
@@ -163,6 +168,18 @@ export class PromptBuilder {
       '## Replace Tool Guidelines',
       '- Use `replace` for precise text substitutions in existing files.',
       '- For large rewrites, use `write_file` instead.',
+    ].join('\n')
+  }
+
+  private buildProposeChangesGuidelines(): string | null {
+    if (!this.hasTool('propose_changes')) return null
+    return [
+      '## Change Proposal Guidelines',
+      '- Use `propose_changes` only after you already know the exact file edits you want to propose.',
+      '- Do not call `propose_changes` with `{}`, partial JSON, placeholder fields, or an empty `changes` array.',
+      '- `summary` must be a non-empty short sentence.',
+      '- `changes` must contain at least one file change, and each create/modify change must include complete final file content.',
+      '- If you are still reading files, comparing options, or planning, continue using normal text replies or other tools first.',
     ].join('\n')
   }
 

@@ -6,22 +6,25 @@ export type ProposeChangesHandler = (summary: string, changes: FileChange[]) => 
 export function createProposeChangesTool(handler: ProposeChangesHandler): Tool {
   return {
     name: 'propose_changes',
-    description: 'Create a reviewable VS Code change proposal. Prefer this for code edits so the user can inspect a diff before applying.',
+    description: 'Create a reviewable VS Code change proposal once you already know the exact file edits. Do not call this with empty, placeholder, or partial arguments.',
     inputSchema: {
       type: 'object',
       properties: {
         summary: {
           type: 'string',
-          description: 'Short user-facing summary for the proposed changes.',
+          minLength: 1,
+          description: 'Required. Short user-facing summary for the proposed changes.',
         },
         changes: {
           type: 'array',
-          description: 'File changes with complete desired file content for created or modified files.',
+          minItems: 1,
+          description: 'Required. Non-empty list of file changes with complete desired file content for created or modified files.',
           items: {
             type: 'object',
             properties: {
               path: {
                 type: 'string',
+                minLength: 1,
                 description: 'Workspace-relative file path.',
               },
               type: {
@@ -30,7 +33,7 @@ export function createProposeChangesTool(handler: ProposeChangesHandler): Tool {
               },
               fullText: {
                 type: 'string',
-                description: 'Complete desired file content for create or modify changes.',
+                description: 'Complete desired file content for create or modify changes. Do not send partial patches here.',
               },
               rationale: {
                 type: 'string',

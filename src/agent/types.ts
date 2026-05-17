@@ -54,6 +54,8 @@ export interface ToolUse {
   id: string
   name: string
   input: ToolInput
+  rawInput?: string
+  inputParseError?: string
 }
 
 /** 工具执行后的记录（包含成功/失败标记） */

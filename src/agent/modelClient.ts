@@ -108,6 +108,11 @@ interface ToolCallPart {
   arguments: string;
 }
 
+interface ParsedToolArguments {
+  value: JsonRecord;
+  error?: string;
+}
+
 interface HttpTrace {
   id: string;
   provider: string;
@@ -236,12 +241,17 @@ export class OpenAICompatibleModelClient {
 
     const toolCalls = (message.tool_calls ?? [])
       .filter((toolCall) => toolCall.id && toolCall.function?.name)
-      .map((toolCall) => ({
-        id: String(toolCall.id),
-        name: String(toolCall.function?.name),
-        rawArguments: String(toolCall.function?.arguments ?? '{}'),
-        arguments: parseToolArguments(toolCall.function?.arguments)
-      }));
+      .map((toolCall) => {
+        const rawArguments = String(toolCall.function?.arguments ?? '{}');
+        const parsedArguments = parseToolArguments(toolCall.function?.arguments);
+        return {
+          id: String(toolCall.id),
+          name: String(toolCall.function?.name),
+          rawArguments,
+          arguments: parsedArguments.value,
+          ...(parsedArguments.error ? { argumentsParseError: parsedArguments.error } : {})
+        };
+      });
 
     assertHasModelOutput(content, toolCalls.length);
 
@@ -775,12 +785,17 @@ function parseOpenAIResponsesResponse(parsed: ResponsesResponse): ModelResponse 
 
   const toolCalls = (parsed.output ?? [])
     .filter((item) => item.type === 'function_call' && item.name)
-    .map((item) => ({
-      id: String(item.call_id ?? item.id ?? ''),
-      name: String(item.name),
-      rawArguments: String(item.arguments ?? '{}'),
-      arguments: parseToolArguments(item.arguments)
-    }))
+    .map((item) => {
+      const rawArguments = String(item.arguments ?? '{}');
+      const parsedArguments = parseToolArguments(item.arguments);
+      return {
+        id: String(item.call_id ?? item.id ?? ''),
+        name: String(item.name),
+        rawArguments,
+        arguments: parsedArguments.value,
+        ...(parsedArguments.error ? { argumentsParseError: parsedArguments.error } : {})
+      };
+    })
     .filter((toolCall) => toolCall.id && toolCall.name);
 
   assertHasModelOutput(content, toolCalls.length);
@@ -998,11 +1013,12 @@ function convertMessagesToAnthropic(
         content.push({ type: 'text', text: message.content });
       }
       for (const toolCall of message.tool_calls ?? []) {
+        const parsedArguments = parseToolArguments(toolCall.function.arguments);
         content.push({
           type: 'tool_use',
           id: toolCall.id,
           name: toolCall.function.name,
-          input: parseToolArguments(toolCall.function.arguments)
+          input: parsedArguments.value
         });
       }
       if (content.length) {
@@ -1475,12 +1491,17 @@ function toolCallPartsToModelToolCalls(toolCallParts: Map<number, ToolCallPart>)
   return Array.from(toolCallParts.entries())
     .sort(([left], [right]) => left - right)
     .filter(([, toolCall]) => toolCall.id && toolCall.name)
-    .map(([, toolCall]) => ({
-      id: String(toolCall.id),
-      name: String(toolCall.name),
-      rawArguments: toolCall.arguments || '{}',
-      arguments: parseToolArguments(toolCall.arguments)
-    }));
+    .map(([, toolCall]) => {
+      const rawArguments = toolCall.arguments || '{}';
+      const parsedArguments = parseToolArguments(toolCall.arguments);
+      return {
+        id: String(toolCall.id),
+        name: String(toolCall.name),
+        rawArguments,
+        arguments: parsedArguments.value,
+        ...(parsedArguments.error ? { argumentsParseError: parsedArguments.error } : {})
+      };
+    });
 }
 
 function assertHasModelOutput(content: string, toolCallCount: number): void {
@@ -1489,16 +1510,25 @@ function assertHasModelOutput(content: string, toolCallCount: number): void {
   }
 }
 
-function parseToolArguments(raw: string | undefined): Record<string, unknown> {
+function parseToolArguments(raw: string | undefined): ParsedToolArguments {
   if (!raw?.trim()) {
-    return {};
+    return { value: {} };
   }
 
   try {
     const parsed = JSON.parse(raw) as unknown;
-    return isRecord(parsed) ? parsed : {};
+    if (!isRecord(parsed)) {
+      return {
+        value: {},
+        error: 'Tool arguments must be a JSON object.'
+      };
+    }
+    return { value: parsed };
   } catch {
-    return {};
+    return {
+      value: {},
+      error: 'Tool arguments were not valid JSON.'
+    };
   }
 }
 
