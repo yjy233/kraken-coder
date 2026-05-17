@@ -316,6 +316,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
         sessionId: this.session.id,
         runId,
         history: this.buildRunHistory(options),
+        attachments: options.attachments,
         context: this.session.context,
         settings,
         apiKey,

@@ -736,6 +736,75 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       line-height: 1.4;
     }
 
+    .attachment-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .attachment-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 100%;
+      min-height: 28px;
+      padding: 4px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--vscode-badge-background, var(--vscode-editorWidget-background));
+      color: var(--vscode-foreground);
+      font-size: 11px;
+      line-height: 1.3;
+    }
+
+    .attachment-chip.image {
+      padding-left: 4px;
+    }
+
+    .attachment-thumb {
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+      object-fit: cover;
+      flex: 0 0 auto;
+    }
+
+    .attachment-meta {
+      min-width: 0;
+      display: grid;
+      gap: 1px;
+    }
+
+    .attachment-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 600;
+    }
+
+    .attachment-info {
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .attachment-remove {
+      flex: 0 0 auto;
+      min-width: 20px;
+      min-height: 20px;
+      padding: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1;
+    }
+
+    .attachment-remove:hover {
+      color: var(--vscode-foreground);
+      background: var(--vscode-toolbar-hoverBackground, var(--vscode-button-secondaryHoverBackground));
+    }
+
     .composer-actions {
       margin-top: 8px;
       display: flex;
@@ -798,6 +867,24 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       font-size: 18px;
     }
 
+    .attach-button {
+      width: 32px;
+      height: 32px;
+      min-width: 32px;
+      min-height: 32px;
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--vscode-foreground);
+      background: var(--vscode-button-secondaryBackground);
+      font-size: 20px;
+      line-height: 1;
+    }
+
+    .attach-button:hover {
+      background: var(--vscode-button-secondaryHoverBackground);
+    }
+
     .error {
       color: var(--vscode-errorForeground);
       margin: 0 0 8px;
@@ -855,7 +942,10 @@ export function getWebviewHtml(webview: vscode.Webview): string {
         <div class="slash-menu" id="slashMenu" hidden></div>
       <textarea id="input" placeholder="Ask Kraken to explain, fix, or write code..."></textarea>
       </div>
+      <div class="attachment-list" id="attachments"></div>
+      <input id="attachmentInput" type="file" hidden multiple>
       <div class="composer-actions">
+        <button class="attach-button" type="button" id="attach" title="Attach files" aria-label="Attach files">+</button>
         <div class="model-pill"><button type="button" id="modelInfo" title="Configure model">Model</button></div>
         <button class="send-button" type="submit" id="send" title="Send message" aria-label="Send message">↑</button>
       </div>
@@ -884,16 +974,33 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     const usageEl = document.getElementById('usage');
     const inputEl = document.getElementById('input');
     const sendEl = document.getElementById('send');
+    const attachEl = document.getElementById('attach');
+    const attachmentInputEl = document.getElementById('attachmentInput');
+    const attachmentsEl = document.getElementById('attachments');
     const modelInfoEl = document.getElementById('modelInfo');
     const errorEl = document.getElementById('error');
     const slashMenuEl = document.getElementById('slashMenu');
     const tabButtons = Array.from(document.querySelectorAll('[data-tab]'));
     const panels = Array.from(document.querySelectorAll('[data-panel]'));
+    let pendingAttachments = [];
 
     document.getElementById('configure').addEventListener('click', () => post({ type: 'config.open' }));
     modelInfoEl.addEventListener('click', () => post({ type: 'config.open' }));
     document.getElementById('clear').addEventListener('click', () => post({ type: 'session.clear' }));
     document.getElementById('newSession').addEventListener('click', () => post({ type: 'session.new' }));
+    attachEl.addEventListener('click', () => attachmentInputEl.click());
+    attachmentInputEl.addEventListener('change', () => {
+      const files = Array.from(attachmentInputEl.files || []);
+      if (!files.length) {
+        return;
+      }
+      ingestAttachments(files).catch((error) => {
+        errorEl.hidden = false;
+        errorEl.textContent = error instanceof Error ? error.message : String(error);
+      }).finally(() => {
+        attachmentInputEl.value = '';
+      });
+    });
     tabButtons.forEach((buttonEl) => {
       buttonEl.addEventListener('click', () => {
         activeTab = buttonEl.dataset.tab || 'chat';
@@ -943,12 +1050,165 @@ export function getWebviewHtml(webview: vscode.Webview): string {
 
     function sendCurrentMessage() {
       const text = inputEl.value.trim();
-      if (!text) {
+      if (!text && pendingAttachments.length === 0) {
         return;
       }
       inputEl.value = '';
+      const attachments = pendingAttachments.slice();
+      pendingAttachments = [];
+      renderPendingAttachments();
       hideSlashCompletions();
-      post({ type: 'chat.send', text });
+      post({ type: 'chat.send', text, attachments });
+    }
+
+    async function ingestAttachments(files) {
+      const next = [];
+      for (const file of files) {
+        next.push(await fileToAttachment(file));
+      }
+
+      const seen = new Set(pendingAttachments.map((item) => item.id));
+      for (const item of next) {
+        if (!seen.has(item.id)) {
+          pendingAttachments.push(item);
+          seen.add(item.id);
+        }
+      }
+      renderPendingAttachments();
+    }
+
+    async function fileToAttachment(file) {
+      const mimeType = String(file.type || guessMimeType(file.name) || 'application/octet-stream');
+      const base = {
+        id: createAttachmentId(file),
+        name: file.name || 'attachment',
+        mimeType,
+        size: Number(file.size || 0),
+      };
+
+      if (mimeType.startsWith('image/')) {
+        return {
+          ...base,
+          dataUrl: await readFileAsDataUrl(file),
+        };
+      }
+
+      return {
+        ...base,
+        textPreview: await buildTextPreview(file, mimeType),
+      };
+    }
+
+    function createAttachmentId(file) {
+      return [file.name || 'attachment', file.size || 0, file.lastModified || 0].join(':');
+    }
+
+    function readFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error || new Error('Failed to read file.'));
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function buildTextPreview(file, mimeType) {
+      if (!isTextLikeMimeType(mimeType) && !looksLikeTextFile(file.name)) {
+        return '[binary file attachment] ' + file.name + ' (' + mimeType + ', ' + formatBytes(file.size || 0) + ')';
+      }
+
+      const text = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error || new Error('Failed to read file.'));
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.readAsText(file);
+      });
+      const trimmed = text.length > 12000 ? text.slice(0, 12000) + '\\n...[truncated]' : text;
+      return trimmed || '[empty text file] ' + file.name;
+    }
+
+    function isTextLikeMimeType(mimeType) {
+      return mimeType.startsWith('text/')
+        || /json|javascript|typescript|xml|yaml|yml|toml|markdown|md|csv|html|css|svg/i.test(mimeType);
+    }
+
+    function looksLikeTextFile(name) {
+      return /\\.(txt|md|markdown|json|js|jsx|ts|tsx|py|go|rs|java|c|cc|cpp|h|hpp|css|html|xml|yml|yaml|toml|ini|cfg|sh|sql|csv|svg)$/i.test(String(name || ''));
+    }
+
+    function guessMimeType(name) {
+      const lower = String(name || '').toLowerCase();
+      if (/\\.(png)$/.test(lower)) return 'image/png';
+      if (/\\.(jpe?g)$/.test(lower)) return 'image/jpeg';
+      if (/\\.(gif)$/.test(lower)) return 'image/gif';
+      if (/\\.(webp)$/.test(lower)) return 'image/webp';
+      if (/\\.(svg)$/.test(lower)) return 'image/svg+xml';
+      if (/\\.(txt|md|markdown)$/.test(lower)) return 'text/plain';
+      if (/\\.(json)$/.test(lower)) return 'application/json';
+      if (/\\.(js|mjs|cjs)$/.test(lower)) return 'text/javascript';
+      if (/\\.(ts|tsx)$/.test(lower)) return 'text/typescript';
+      if (/\\.(html)$/.test(lower)) return 'text/html';
+      if (/\\.(css)$/.test(lower)) return 'text/css';
+      if (/\\.(yml|yaml)$/.test(lower)) return 'text/yaml';
+      return '';
+    }
+
+    function renderPendingAttachments() {
+      attachmentsEl.innerHTML = '';
+      if (!pendingAttachments.length) {
+        return;
+      }
+      for (const attachment of pendingAttachments) {
+        const chip = document.createElement('div');
+        chip.className = 'attachment-chip' + (attachment.mimeType.startsWith('image/') ? ' image' : '');
+
+        if (attachment.mimeType.startsWith('image/') && attachment.dataUrl) {
+          const thumb = document.createElement('img');
+          thumb.className = 'attachment-thumb';
+          thumb.src = attachment.dataUrl;
+          thumb.alt = attachment.name;
+          chip.appendChild(thumb);
+        }
+
+        const meta = document.createElement('div');
+        meta.className = 'attachment-meta';
+        const name = document.createElement('div');
+        name.className = 'attachment-name';
+        name.textContent = attachment.name;
+        name.title = attachment.name;
+        const info = document.createElement('div');
+        info.className = 'attachment-info';
+        info.textContent = [attachment.mimeType, formatBytes(attachment.size)].filter(Boolean).join(' · ');
+        meta.append(name, info);
+
+        const remove = document.createElement('button');
+        remove.className = 'attachment-remove';
+        remove.type = 'button';
+        remove.title = 'Remove attachment';
+        remove.setAttribute('aria-label', 'Remove attachment');
+        remove.textContent = '×';
+        remove.addEventListener('click', () => {
+          pendingAttachments = pendingAttachments.filter((item) => item.id !== attachment.id);
+          renderPendingAttachments();
+        });
+
+        chip.append(meta, remove);
+        attachmentsEl.appendChild(chip);
+      }
+    }
+
+    function formatBytes(value) {
+      const bytes = Number(value || 0);
+      if (!Number.isFinite(bytes) || bytes <= 0) {
+        return '0 B';
+      }
+      if (bytes >= 1024 * 1024) {
+        return (bytes / (1024 * 1024)).toFixed(1).replace(/\\.0$/, '') + ' MB';
+      }
+      if (bytes >= 1024) {
+        return (bytes / 1024).toFixed(1).replace(/\\.0$/, '') + ' KB';
+      }
+      return Math.round(bytes) + ' B';
     }
 
     window.addEventListener('message', (event) => {
@@ -1304,6 +1564,9 @@ export function getWebviewHtml(webview: vscode.Webview): string {
         const bubble = document.createElement('div');
         bubble.className = 'message-bubble';
         bubble.appendChild(label(messageLabel(message)));
+        if (Array.isArray(message.attachments) && message.attachments.length) {
+          bubble.appendChild(messageAttachmentList(message.attachments));
+        }
         bubble.appendChild(markdown(message.content));
         if (message.status === 'running' && message.kind !== 'tool' && message.kind !== 'thinking') {
           const cursor = document.createElement('span');
@@ -1618,6 +1881,34 @@ export function getWebviewHtml(webview: vscode.Webview): string {
         return message.role + ' · interrupted';
       }
       return message.role;
+    }
+
+    function messageAttachmentList(attachments) {
+      const list = document.createElement('div');
+      list.className = 'attachment-list';
+      for (const attachment of attachments) {
+        const chip = document.createElement('div');
+        chip.className = 'attachment-chip' + (String(attachment.mimeType || '').startsWith('image/') ? ' image' : '');
+        if (String(attachment.mimeType || '').startsWith('image/') && attachment.dataUrl) {
+          const thumb = document.createElement('img');
+          thumb.className = 'attachment-thumb';
+          thumb.src = attachment.dataUrl;
+          thumb.alt = attachment.name || 'image';
+          chip.appendChild(thumb);
+        }
+        const meta = document.createElement('div');
+        meta.className = 'attachment-meta';
+        const name = document.createElement('div');
+        name.className = 'attachment-name';
+        name.textContent = attachment.name || 'attachment';
+        const info = document.createElement('div');
+        info.className = 'attachment-info';
+        info.textContent = [attachment.mimeType || '', formatBytes(attachment.size || 0)].filter(Boolean).join(' · ');
+        meta.append(name, info);
+        chip.appendChild(meta);
+        list.appendChild(chip);
+      }
+      return list;
     }
 
     function toolCard(message) {

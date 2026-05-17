@@ -21,6 +21,7 @@ Prefer reading the local project before making implementation claims. When a tas
 export interface RunAgentOptions {
   userText: string
   history: ChatMessage[]
+  attachments?: ChatMessage['attachments']
   context: ContextItem[]
   settings: ModelSettings
   apiKey: string
@@ -73,7 +74,13 @@ export class AgentRuntime {
     })
 
     const result = await agent.run({
-      messages: buildAgentMessages(options.userText, options.history, options.context, options.maxContextChars),
+      messages: buildAgentMessages(
+        options.userText,
+        options.history,
+        options.context,
+        options.maxContextChars,
+        options.attachments ?? []
+      ),
       model: options.settings.model,
       systemPrompt,
       tools: options.tools,
@@ -92,7 +99,8 @@ function buildAgentMessages(
   userText: string,
   history: ChatMessage[],
   context: ContextItem[],
-  maxChars: number
+  maxChars: number,
+  attachments: NonNullable<ChatMessage['attachments']>
 ): AgentMessage[] {
   const messages: AgentMessage[] = []
   for (const message of history.slice(-10)) {
@@ -102,6 +110,7 @@ function buildAgentMessages(
     messages.push({
       role: message.role,
       content: message.content,
+      ...(message.attachments?.length ? { attachments: message.attachments } : {}),
     })
   }
 
@@ -113,6 +122,7 @@ function buildAgentMessages(
       'User task:',
       userText,
     ].join('\n'),
+    ...(attachments.length ? { attachments } : {}),
   })
 
   return messages
