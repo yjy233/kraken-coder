@@ -1135,6 +1135,15 @@ function buildModelStatusInfo(config: ReturnType<typeof getKrakenConfig>, contex
     };
   }
 
+  if (provider === 'openrouter') {
+    return {
+      ...base,
+      api: 'chat-completions',
+      thinking: config.model.reasoning.enabled ? 'enabled' : 'disabled',
+      cacheMode: 'provider',
+    };
+  }
+
   return base;
 }
 

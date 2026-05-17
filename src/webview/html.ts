@@ -960,6 +960,7 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     function compactProviderName(provider) {
       if (provider === 'anthropic') return 'claude';
       if (provider === 'openai') return 'gpt';
+      if (provider === 'openrouter') return 'openrouter';
       return provider || 'model';
     }
 
@@ -982,6 +983,9 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       }
       if (info.provider === 'openai') {
         return 'enabled (OpenAI prompt cache)';
+      }
+      if (info.provider === 'openrouter') {
+        return 'enabled (OpenRouter/provider automatic)';
       }
       return 'enabled (provider automatic)';
     }

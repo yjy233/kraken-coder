@@ -562,6 +562,10 @@ function buildChatCompletionsBody(request: ModelRequest): JsonRecord {
     }
   }
 
+  if (provider === 'openrouter') {
+    addOpenRouterReasoningParams(body, request);
+  }
+
   return body;
 }
 
@@ -894,6 +898,22 @@ function buildAnthropicThinking(request: ModelRequest): JsonRecord | undefined {
   return { type: 'adaptive' };
 }
 
+function addOpenRouterReasoningParams(body: JsonRecord, request: ModelRequest): void {
+  if (!request.settings.reasoning.enabled || request.settings.reasoning.effort === 'none') {
+    return;
+  }
+
+  const effort = normalizeOpenRouterReasoningEffort(request.settings.reasoning.effort);
+  if (!effort) {
+    return;
+  }
+
+  body.reasoning = {
+    effort,
+    exclude: request.settings.reasoning.display === 'hidden'
+  };
+}
+
 function addOpenAICacheParams(body: JsonRecord, request: ModelRequest): void {
   if (!isCacheEnabled(request)) {
     return;
@@ -920,6 +940,19 @@ function resolveOpenAIApi(request: ModelRequest): 'responses' | 'chat-completion
 
 function resolveOpenAIEffort(request: ModelRequest): ModelReasoningEffort {
   return request.settings.providers.openai.effort || request.settings.reasoning.effort;
+}
+
+function normalizeOpenRouterReasoningEffort(effort: ModelReasoningEffort): string | undefined {
+  if (effort === 'minimal') {
+    return 'low';
+  }
+  if (effort === 'max') {
+    return 'high';
+  }
+  if (effort === 'low' || effort === 'medium' || effort === 'high') {
+    return effort;
+  }
+  return undefined;
 }
 
 function normalizeOpenAIReasoningEffort(effort: ModelReasoningEffort): string | undefined {

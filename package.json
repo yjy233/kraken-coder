@@ -123,16 +123,18 @@
       "properties": {
         "kraken.model.baseUrl": {
           "type": "string",
-          "default": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+          "default": "https://openrouter.ai/api/v1",
           "description": "Base URL for the selected model provider API."
         },
         "kraken.model.provider": {
           "type": "string",
-          "default": "qwen",
+          "default": "openrouter",
           "enum": [
+            "openrouter",
             "openai",
             "anthropic",
-            "qwen"
+            "qwen",
+            "openai-compatible"
           ],
           "description": "Model provider adapter."
         },
@@ -148,13 +150,13 @@
         },
         "kraken.model.name": {
           "type": "string",
-          "default": "qwen3.6-plus",
+          "default": "qwen/qwen3.6-plus",
           "enum": [
-            "qwen3.6-plus",
-            "gpt-5.4",
-            "gpt-5.5",
-            "claude-opus-4.7-fast",
-            "claude-sonnet-4.6"
+            "qwen/qwen3.6-plus",
+            "openai/gpt-5.4",
+            "openai/gpt-5.5",
+            "anthropic/claude-opus-4.7-fast",
+            "anthropic/claude-sonnet-4.6"
           ],
           "description": "Model name to use."
         },

@@ -140,6 +140,7 @@ class ConfigPanel {
 
 interface ConfigFormValues {
   modelSelection: string;
+  modelProvider: string;
   modelBaseUrl: string;
   modelName: string;
   modelApiKey: string;
@@ -193,57 +194,78 @@ interface ConfigFormValues {
 interface SupportedModelOption {
   id: string;
   label: string;
-  provider: Exclude<ModelProvider, 'openai-compatible'>;
-  api: ModelApiMode;
+  defaultProvider: Exclude<ModelProvider, 'openai-compatible'>;
+  upstreamProvider: 'qwen' | 'openai' | 'anthropic';
+  defaultApi: ModelApiMode;
   model: string;
   baseUrl: string;
   effortOptions: ModelReasoningEffort[];
 }
 
+interface ProviderOption {
+  id: Exclude<ModelProvider, 'openai-compatible'>;
+  label: string;
+  baseUrl: string;
+  api: ModelApiMode;
+}
+
+const openRouterBaseUrl = 'https://openrouter.ai/api/v1';
+const providerOptions: ProviderOption[] = [
+  { id: 'openrouter', label: 'OpenRouter', baseUrl: openRouterBaseUrl, api: 'chat-completions' },
+  { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', api: 'responses' },
+  { id: 'anthropic', label: 'Anthropic', baseUrl: 'https://api.anthropic.com/v1', api: 'messages' },
+  { id: 'qwen', label: 'Qwen / DashScope', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', api: 'chat-completions' },
+];
+
 const supportedModelOptions: SupportedModelOption[] = [
   {
     id: 'qwen/qwen3.6-plus',
     label: 'qwen/qwen3.6-plus',
-    provider: 'qwen',
-    api: 'chat-completions',
-    model: 'qwen3.6-plus',
-    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    defaultProvider: 'openrouter',
+    upstreamProvider: 'qwen',
+    defaultApi: 'chat-completions',
+    model: 'qwen/qwen3.6-plus',
+    baseUrl: openRouterBaseUrl,
     effortOptions: ['low', 'medium', 'high'],
   },
   {
     id: 'openai/gpt-5.4',
     label: 'openai/gpt-5.4',
-    provider: 'openai',
-    api: 'responses',
-    model: 'gpt-5.4',
-    baseUrl: 'https://api.openai.com/v1',
+    defaultProvider: 'openrouter',
+    upstreamProvider: 'openai',
+    defaultApi: 'chat-completions',
+    model: 'openai/gpt-5.4',
+    baseUrl: openRouterBaseUrl,
     effortOptions: ['low', 'medium', 'high'],
   },
   {
     id: 'openai/gpt-5.5',
     label: 'openai/gpt-5.5',
-    provider: 'openai',
-    api: 'responses',
-    model: 'gpt-5.5',
-    baseUrl: 'https://api.openai.com/v1',
+    defaultProvider: 'openrouter',
+    upstreamProvider: 'openai',
+    defaultApi: 'chat-completions',
+    model: 'openai/gpt-5.5',
+    baseUrl: openRouterBaseUrl,
     effortOptions: ['none', 'low', 'medium', 'high', 'xhigh'],
   },
   {
     id: 'anthropic/claude-opus-4.7-fast',
     label: 'anthropic/claude-opus-4.7-fast',
-    provider: 'anthropic',
-    api: 'messages',
-    model: 'claude-opus-4.7-fast',
-    baseUrl: 'https://api.anthropic.com/v1',
+    defaultProvider: 'openrouter',
+    upstreamProvider: 'anthropic',
+    defaultApi: 'chat-completions',
+    model: 'anthropic/claude-opus-4.7-fast',
+    baseUrl: openRouterBaseUrl,
     effortOptions: ['low', 'medium', 'high'],
   },
   {
     id: 'anthropic/claude-sonnet-4.6',
     label: 'anthropic/claude-sonnet-4.6',
-    provider: 'anthropic',
-    api: 'messages',
-    model: 'claude-sonnet-4.6',
-    baseUrl: 'https://api.anthropic.com/v1',
+    defaultProvider: 'openrouter',
+    upstreamProvider: 'anthropic',
+    defaultApi: 'chat-completions',
+    model: 'anthropic/claude-sonnet-4.6',
+    baseUrl: openRouterBaseUrl,
     effortOptions: ['low', 'medium', 'high'],
   },
 ];
@@ -252,6 +274,7 @@ function configToForm(config: ReturnType<typeof getKrakenConfig>): ConfigFormVal
   const selectedModel = getSelectedModelOption(config);
   return {
     modelSelection: selectedModel.option.id,
+    modelProvider: config.model.provider,
     modelBaseUrl: selectedModel.matched ? config.model.baseUrl : selectedModel.option.baseUrl,
     modelName: config.model.name,
     modelApiKey: config.model.apiKey,
@@ -305,11 +328,12 @@ function configToForm(config: ReturnType<typeof getKrakenConfig>): ConfigFormVal
 
 function formToConfig(values: Record<string, unknown>): KrakenFileConfig {
   const selectedModel = resolveSupportedModel(stringValue(values.modelSelection, ''));
+  const selectedProvider = resolveProviderOption(stringValue(values.modelProvider, selectedModel.defaultProvider));
   return {
     model: {
-      baseUrl: normalizeBaseUrl(stringValue(values.modelBaseUrl, selectedModel.baseUrl)),
-      provider: selectedModel.provider,
-      api: selectedModel.api,
+      baseUrl: normalizeBaseUrl(stringValue(values.modelBaseUrl, selectedProvider.baseUrl)),
+      provider: selectedProvider.id,
+      api: selectedProvider.api,
       name: selectedModel.model,
       apiKey: stringValue(values.modelApiKey, ''),
       proxy: stringValue(values.modelProxy, ''),
@@ -530,6 +554,7 @@ function getConfigHtml(webview: vscode.Webview, values: ConfigFormValues): strin
     <form id="form">
       ${section('Model', [
         select('modelSelection', 'Model', supportedModelOptions.map((option) => [option.id, option.label])),
+        select('modelProvider', 'Request provider', providerOptions.map((option) => [option.id, option.label])),
         text('modelBaseUrl', 'Base URL'),
         password('modelApiKey', 'API key'),
         text('modelProxy', 'HTTP proxy'),
@@ -636,10 +661,14 @@ function getConfigHtml(webview: vscode.Webview, values: ConfigFormValues): strin
       }
     }
     const modelSelect = document.querySelector('[name="modelSelection"]');
+    const providerSelect = document.querySelector('[name="modelProvider"]');
     lastSelectedModelId = modelSelect?.value || modelProfiles[0]?.id || '';
-    applySelectedModel(false);
+    applySelectedModel(false, false);
     modelSelect?.addEventListener('change', () => {
-      applySelectedModel(true);
+      applySelectedModel(true, false);
+    });
+    providerSelect?.addEventListener('change', () => {
+      applySelectedModel(false, true);
     });
     document.getElementById('save').addEventListener('click', () => {
       vscode.postMessage({ type: 'save', values: collectValues() });
@@ -662,22 +691,41 @@ function getConfigHtml(webview: vscode.Webview, values: ConfigFormValues): strin
       }
       return values;
     }
-    function applySelectedModel(updateBaseUrl) {
+    function applySelectedModel(updateBaseUrl, updateProviderDefaults) {
       const selected = modelProfiles.find((profile) => profile.id === modelSelect?.value) || modelProfiles[0];
       if (!selected) return;
       const baseUrlInput = document.querySelector('[name="modelBaseUrl"]');
+      const provider = providerOptions.find((option) => option.id === providerSelect?.value)
+        || providerOptions.find((option) => option.id === selected.defaultProvider)
+        || providerOptions[0];
       const previous = modelProfiles.find((profile) => profile.id === lastSelectedModelId);
+      if (providerSelect && (!providerSelect.value || updateBaseUrl)) {
+        providerSelect.value = selected.defaultProvider;
+      }
+      const activeProvider = providerSelect
+        ? providerOptions.find((option) => option.id === providerSelect.value) || provider
+        : provider;
       if (
-        updateBaseUrl &&
+        (updateBaseUrl || updateProviderDefaults) &&
         baseUrlInput &&
-        (!baseUrlInput.value || !previous || baseUrlInput.value === previous.baseUrl)
+        (
+          !baseUrlInput.value
+          || !previous
+          || baseUrlInput.value === previous.baseUrl
+          || providerOptions.some((option) => option.baseUrl === baseUrlInput.value)
+        )
       ) {
-        baseUrlInput.value = selected.baseUrl;
+        baseUrlInput.value = activeProvider.baseUrl;
+      }
+      const openaiApi = document.querySelector('[name="openaiApi"]');
+      if (updateProviderDefaults && activeProvider.id === 'openai' && openaiApi) {
+        openaiApi.value = activeProvider.api;
       }
       lastSelectedModelId = selected.id;
       syncEffortOptions(selected);
+      const visibleProvider = selected.upstreamProvider || selected.defaultProvider;
       for (const section of document.querySelectorAll('[data-provider-section]')) {
-        section.hidden = section.getAttribute('data-provider-section') !== selected.provider;
+        section.hidden = section.getAttribute('data-provider-section') !== visibleProvider;
       }
     }
     function syncEffortOptions(selected) {
@@ -706,7 +754,7 @@ function getConfigHtml(webview: vscode.Webview, values: ConfigFormValues): strin
 </html>`;
 }
 
-function section(title: string, controls: string[], provider?: SupportedModelOption['provider']): string {
+function section(title: string, controls: string[], provider?: SupportedModelOption['upstreamProvider']): string {
   const providerAttr = provider ? ` data-provider-section="${escapeHtml(provider)}"` : '';
   return `<section${providerAttr}><h2>${escapeHtml(title)}</h2><div class="grid">${controls.join('')}</div></section>`;
 }
@@ -758,7 +806,9 @@ function getSelectedModelOption(config: ReturnType<typeof getKrakenConfig>): {
   matched: boolean;
 } {
   const matched = supportedModelOptions.find((option) =>
-    option.provider === config.model.provider && option.model === config.model.name
+    option.defaultProvider === config.model.provider && option.model === config.model.name
+  ) ?? supportedModelOptions.find((option) =>
+    option.model === config.model.name || stripProviderPrefix(option.model) === config.model.name
   );
   if (matched) {
     return { option: matched, matched: true };
@@ -769,6 +819,14 @@ function getSelectedModelOption(config: ReturnType<typeof getKrakenConfig>): {
 
 function resolveSupportedModel(value: string): SupportedModelOption {
   return supportedModelOptions.find((option) => option.id === value) ?? supportedModelOptions[0];
+}
+
+function resolveProviderOption(value: string): ProviderOption {
+  return providerOptions.find((option) => option.id === value) ?? providerOptions[0];
+}
+
+function stripProviderPrefix(value: string): string {
+  return value.includes('/') ? value.split('/').at(-1) ?? value : value;
 }
 
 function stringValue(value: unknown, fallback: string): string {

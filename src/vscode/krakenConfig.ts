@@ -266,14 +266,14 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
       baseUrl: normalizeBaseUrl(stringValue(
         model.baseUrl,
         getVSCodeConfigValue<string>(vscodeConfig, 'model.baseUrl'),
-        'https://dashscope.aliyuncs.com/compatible-mode/v1'
+        'https://openrouter.ai/api/v1'
       )),
-      name: stringValue(model.name, getVSCodeConfigValue<string>(vscodeConfig, 'model.name'), 'qwen3.6-plus').trim(),
+      name: stringValue(model.name, getVSCodeConfigValue<string>(vscodeConfig, 'model.name'), 'qwen/qwen3.6-plus').trim(),
       apiKey: stringValue(model.apiKey, ''),
       provider: normalizeModelProvider(stringValue(
         model.provider,
         getVSCodeConfigValue<string>(vscodeConfig, 'model.provider'),
-        'qwen'
+        'openrouter'
       )),
       api: normalizeModelApi(stringValue(
         model.api,
@@ -1153,6 +1153,7 @@ function normalizeModelProvider(value: string): ModelProvider {
   const normalized = value.trim().toLowerCase();
   if (
     normalized === 'openai' ||
+    normalized === 'openrouter' ||
     normalized === 'anthropic' ||
     normalized === 'qwen' ||
     normalized === 'openai-compatible'
