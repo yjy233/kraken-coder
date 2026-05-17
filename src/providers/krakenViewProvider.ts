@@ -1319,6 +1319,15 @@ function buildModelStatusInfo(config: ReturnType<typeof getKrakenConfig>, contex
     };
   }
 
+  if (provider === 'aicodemirror') {
+    return {
+      ...base,
+      api: 'responses',
+      effort: config.providers.openai.effort,
+      cacheMode: 'provider',
+    };
+  }
+
   if (provider === 'openrouter') {
     return {
       ...base,

@@ -195,7 +195,7 @@ interface SupportedModelOption {
   id: string;
   label: string;
   defaultProvider: Exclude<ModelProvider, 'openai-compatible'>;
-  upstreamProvider: 'qwen' | 'openai' | 'anthropic';
+  upstreamProvider: 'qwen' | 'openai' | 'anthropic' | 'aicodemirror';
   defaultApi: ModelApiMode;
   model: string;
   baseUrl: string;
@@ -210,11 +210,13 @@ interface ProviderOption {
 }
 
 const openRouterBaseUrl = 'https://openrouter.ai/api/v1';
+const aiCodeMirrorBaseUrl = 'https://api.aicodemirror.com/api/codex/backend-api/codex/v1';
 const providerOptions: ProviderOption[] = [
   { id: 'openrouter', label: 'OpenRouter', baseUrl: openRouterBaseUrl, api: 'chat-completions' },
   { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', api: 'responses' },
   { id: 'anthropic', label: 'Anthropic', baseUrl: 'https://api.anthropic.com/v1', api: 'messages' },
   { id: 'qwen', label: 'Qwen / DashScope', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', api: 'chat-completions' },
+  { id: 'aicodemirror', label: 'AICodeMirror', baseUrl: aiCodeMirrorBaseUrl, api: 'responses' },
 ];
 
 const supportedModelOptions: SupportedModelOption[] = [
@@ -267,6 +269,26 @@ const supportedModelOptions: SupportedModelOption[] = [
     model: 'anthropic/claude-sonnet-4.6',
     baseUrl: openRouterBaseUrl,
     effortOptions: ['low', 'medium', 'high'],
+  },
+  {
+    id: 'aicodemirror/gpt-5.4',
+    label: 'aicodemirror/gpt-5.4',
+    defaultProvider: 'aicodemirror',
+    upstreamProvider: 'aicodemirror',
+    defaultApi: 'responses',
+    model: 'gpt-5.4',
+    baseUrl: aiCodeMirrorBaseUrl,
+    effortOptions: ['low', 'medium', 'high'],
+  },
+  {
+    id: 'aicodemirror/gpt-5.5',
+    label: 'aicodemirror/gpt-5.5',
+    defaultProvider: 'aicodemirror',
+    upstreamProvider: 'aicodemirror',
+    defaultApi: 'responses',
+    model: 'gpt-5.5',
+    baseUrl: aiCodeMirrorBaseUrl,
+    effortOptions: ['none', 'low', 'medium', 'high', 'xhigh'],
   },
 ];
 

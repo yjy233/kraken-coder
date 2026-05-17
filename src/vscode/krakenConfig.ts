@@ -1156,6 +1156,7 @@ function normalizeModelProvider(value: string): ModelProvider {
     normalized === 'openrouter' ||
     normalized === 'anthropic' ||
     normalized === 'qwen' ||
+    normalized === 'aicodemirror' ||
     normalized === 'openai-compatible'
   ) {
     return normalized;

@@ -194,7 +194,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'agent.progress'; message: string }
   | { type: 'error'; message: string; recoverable: boolean };
 
-export type ModelProvider = 'openrouter' | 'openai' | 'anthropic' | 'qwen' | 'openai-compatible';
+export type ModelProvider = 'openrouter' | 'openai' | 'anthropic' | 'qwen' | 'aicodemirror' | 'openai-compatible';
 export type ModelApiMode = 'responses' | 'chat-completions' | 'messages';
 export type ModelReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export type ModelReasoningDisplay = 'hidden' | 'summary' | 'visible';

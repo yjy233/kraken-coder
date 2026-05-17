@@ -153,6 +153,10 @@ export class OpenAICompatibleModelClient {
       return this.completeAnthropicMessages(request);
     }
 
+    if (request.settings.provider === 'aicodemirror') {
+      return this.completeAICodeMirrorResponses(request);
+    }
+
     if (request.settings.provider === 'openai' && resolveOpenAIApi(request) === 'responses') {
       return this.completeOpenAIResponses(request);
     }
@@ -182,6 +186,22 @@ export class OpenAICompatibleModelClient {
       '/responses',
       buildBearerHeaders(request.apiKey),
       buildOpenAIResponsesBody(request)
+    );
+    const { response, trace } = posted;
+
+    if (request.onDelta && isEventStream(response)) {
+      return this.readOpenAIResponsesStreamingResponse(response, request.onDelta, request.onThinkingDelta, trace, request);
+    }
+
+    return this.readOpenAIResponsesNonStreamingResponse(response, request.onDelta, request.onThinkingDelta, trace, request);
+  }
+
+  private async completeAICodeMirrorResponses(request: ModelRequest): Promise<ModelResponse> {
+    const posted = await postJson(
+      request,
+      '/responses',
+      buildBearerHeaders(request.apiKey),
+      buildAICodeMirrorResponsesBody(request)
     );
     const { response, trace } = posted;
 
@@ -706,6 +726,17 @@ function buildOpenAIResponsesBody(request: ModelRequest): JsonRecord {
   addOpenAICacheParams(body, request);
 
   return body;
+}
+
+function buildAICodeMirrorResponsesBody(request: ModelRequest): JsonRecord {
+  return {
+    model: request.settings.model,
+    input: convertMessagesToResponsesInput(request.messages),
+    tools: request.tools?.length ? convertToolsToResponsesTools(request.tools) : undefined,
+    tool_choice: request.tools?.length ? 'auto' : undefined,
+    stream: Boolean(request.onDelta),
+    ...(request.maxOutputTokens ? { max_output_tokens: request.maxOutputTokens } : {}),
+  };
 }
 
 function buildAnthropicMessagesBody(request: ModelRequest): JsonRecord {
