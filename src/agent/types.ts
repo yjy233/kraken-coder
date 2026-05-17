@@ -1,3 +1,5 @@
+import type { ModelUsageRecord } from '../shared/types'
+
 /**
  * Agent 核心类型定义
  * 包含消息格式、工具定义、ReAct 循环结果等全量类型。
@@ -13,7 +15,7 @@ export type ToolInput = Record<string, unknown>
 export type JsonRecord = Record<string, unknown>
 
 /** 模型用量统计 */
-export type ModelUsage = JsonRecord | null
+export type ModelUsage = ModelUsageRecord | null
 
 export interface ContextWindowState {
   maxTokens: number
@@ -132,6 +134,7 @@ export interface InvokeModelParams {
   systemPrompt: string
   messages: AgentMessage[]
   tools: ToolDefinition[]
+  step?: number
   onDelta?: (delta: string) => void
   onThinkingDelta?: (delta: string) => void
   signal?: AbortSignal

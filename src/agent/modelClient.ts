@@ -9,7 +9,8 @@ import type {
   ModelReasoningEffort,
   ModelRequest,
   ModelResponse,
-  ModelToolDefinition
+  ModelToolDefinition,
+  ModelUsageRecord
 } from '../shared/types';
 
 interface ChatCompletionsResponse {
@@ -248,7 +249,8 @@ export class OpenAICompatibleModelClient {
       content,
       thinking,
       toolCalls,
-      finishReason: choice?.finish_reason
+      finishReason: choice?.finish_reason,
+      usage: request ? normalizeModelUsage(request, parsed.usage, 'provider-final') : null
     };
   }
 
@@ -272,6 +274,7 @@ export class OpenAICompatibleModelClient {
       let content = '';
       let thinking = '';
       let finishReason: string | undefined;
+      let finalUsage: JsonRecord | undefined;
       const toolCallParts = new Map<number, ToolCallPart>();
 
       const handleData = (data: string) => {
@@ -288,6 +291,10 @@ export class OpenAICompatibleModelClient {
 
         if (parsed.error?.message) {
           throw new Error(parsed.error.message);
+        }
+
+        if (isRecord(parsed.usage)) {
+          finalUsage = parsed.usage;
         }
 
         const choice = parsed.choices?.[0];
@@ -326,7 +333,8 @@ export class OpenAICompatibleModelClient {
         content,
         thinking,
         toolCalls,
-        finishReason
+        finishReason,
+        usage: request ? normalizeModelUsage(request, finalUsage, finalUsage ? 'provider-stream-final' : 'missing', finalUsage ? 'complete' : 'interrupted') : null
       };
     } catch (error) {
       if (trace && request) {
@@ -357,7 +365,10 @@ export class OpenAICompatibleModelClient {
     if (modelResponse.content && onDelta) {
       onDelta(modelResponse.content);
     }
-    return modelResponse;
+    return {
+      ...modelResponse,
+      usage: request ? normalizeModelUsage(request, parsed.usage, 'provider-final') : null
+    };
   }
 
   private async readOpenAIResponsesStreamingResponse(
@@ -380,6 +391,7 @@ export class OpenAICompatibleModelClient {
       let content = '';
       let thinking = '';
       let finalResponse: ResponsesResponse | undefined;
+      let finalUsage: JsonRecord | undefined;
       const toolCallParts = new Map<number, ToolCallPart>();
 
       const handleData = (data: string) => {
@@ -400,6 +412,9 @@ export class OpenAICompatibleModelClient {
         }
 
         const type = typeof event.type === 'string' ? event.type : '';
+        if (isRecord(event.usage)) {
+          finalUsage = event.usage;
+        }
         if (type === 'response.output_text.delta' && typeof event.delta === 'string') {
           content += event.delta;
           onDelta(event.delta);
@@ -466,7 +481,8 @@ export class OpenAICompatibleModelClient {
         content: responseContent,
         thinking: responseThinking,
         toolCalls,
-        finishReason: parsedFinal?.finishReason ?? finalResponse?.status
+        finishReason: parsedFinal?.finishReason ?? finalResponse?.status,
+        usage: request ? normalizeModelUsage(request, finalResponse?.usage ?? finalUsage, finalResponse?.usage || finalUsage ? 'provider-stream-final' : 'missing', finalResponse?.usage || finalUsage ? 'complete' : 'interrupted') : null
       };
     } catch (error) {
       if (trace && request) {
@@ -497,7 +513,10 @@ export class OpenAICompatibleModelClient {
     if (modelResponse.content && onDelta) {
       onDelta(modelResponse.content);
     }
-    return modelResponse;
+    return {
+      ...modelResponse,
+      usage: request ? normalizeModelUsage(request, parsed.usage, 'provider-final') : null
+    };
   }
 
   private async readAnthropicStreamingResponse(
@@ -520,6 +539,7 @@ export class OpenAICompatibleModelClient {
       let content = '';
       let thinking = '';
       let finishReason: string | undefined;
+      let finalUsage: JsonRecord | undefined;
       const toolCallParts = new Map<number, ToolCallPart>();
 
       const handleData = (data: string) => {
@@ -575,6 +595,9 @@ export class OpenAICompatibleModelClient {
           if (typeof delta?.stop_reason === 'string') {
             finishReason = delta.stop_reason;
           }
+          if (isRecord(event.usage)) {
+            finalUsage = event.usage;
+          }
         }
       };
 
@@ -590,7 +613,8 @@ export class OpenAICompatibleModelClient {
         content,
         thinking,
         toolCalls,
-        finishReason
+        finishReason,
+        usage: request ? normalizeModelUsage(request, finalUsage, finalUsage ? 'provider-stream-final' : 'missing', finalUsage ? 'complete' : 'interrupted') : null
       };
     } catch (error) {
       if (trace && request) {
@@ -613,6 +637,10 @@ function buildChatCompletionsBody(request: ModelRequest): JsonRecord {
       temperature: 0.2,
       stream: Boolean(request.onDelta)
   };
+
+  if (request.onDelta) {
+    body.stream_options = { include_usage: true };
+  }
 
   if (request.maxOutputTokens) {
     body[provider === 'openai' ? 'max_completion_tokens' : 'max_tokens'] = request.maxOutputTokens;
@@ -761,7 +789,8 @@ function parseOpenAIResponsesResponse(parsed: ResponsesResponse): ModelResponse 
     content,
     thinking,
     toolCalls,
-    finishReason: parsed.incomplete_details?.reason ?? parsed.status
+    finishReason: parsed.incomplete_details?.reason ?? parsed.status,
+    usage: null
   };
 }
 
@@ -796,8 +825,107 @@ function parseAnthropicMessageResponse(parsed: AnthropicMessageResponse): ModelR
     content,
     thinking: thinkingParts.join(''),
     toolCalls,
-    finishReason: parsed.stop_reason ?? undefined
+    finishReason: parsed.stop_reason ?? undefined,
+    usage: null
   };
+}
+
+function normalizeModelUsage(
+  request: ModelRequest,
+  rawUsage: JsonRecord | undefined,
+  source: ModelUsageRecord['source'],
+  status: ModelUsageRecord['status'] = 'complete'
+): ModelUsageRecord | null {
+  if (!rawUsage) {
+    return status === 'complete' ? null : {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      sessionId: request.debug?.sessionId,
+      runId: request.debug?.runId,
+      step: request.step,
+      provider: request.settings.provider,
+      api: request.settings.api,
+      model: request.settings.model,
+      stream: Boolean(request.onDelta),
+      status,
+      source,
+      startedAt: Date.now(),
+      completedAt: Date.now(),
+    };
+  }
+
+  const inputTokens = pickFirstNumber(
+    rawUsage.input_tokens,
+    rawUsage.prompt_tokens
+  );
+  const outputTokens = pickFirstNumber(
+    rawUsage.output_tokens,
+    rawUsage.completion_tokens
+  );
+  const totalTokens = pickFirstNumber(
+    rawUsage.total_tokens,
+    sumDefined(inputTokens, outputTokens)
+  );
+  const inputDetails = asRecord(rawUsage.input_tokens_details) ?? asRecord(rawUsage.prompt_tokens_details);
+  const outputDetails = asRecord(rawUsage.output_tokens_details) ?? asRecord(rawUsage.completion_tokens_details);
+  const cacheCreation = asRecord(rawUsage.cache_creation);
+  const reasoningOutputTokens = pickFirstNumber(outputDetails?.reasoning_tokens);
+  const visibleOutputTokens = typeof outputTokens === 'number' && typeof reasoningOutputTokens === 'number'
+    ? Math.max(0, outputTokens - reasoningOutputTokens)
+    : undefined;
+
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    sessionId: request.debug?.sessionId,
+    runId: request.debug?.runId,
+    step: request.step,
+    provider: request.settings.provider,
+    api: request.settings.api,
+    model: request.settings.model,
+    stream: Boolean(request.onDelta),
+    status,
+    source,
+    startedAt: Date.now(),
+    completedAt: Date.now(),
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    reasoningOutputTokens,
+    visibleOutputTokens,
+    cachedInputTokens: pickFirstNumber(inputDetails?.cached_tokens, rawUsage.cached_tokens),
+    cacheReadInputTokens: pickFirstNumber(rawUsage.cache_read_input_tokens),
+    cacheCreationInputTokens: pickFirstNumber(rawUsage.cache_creation_input_tokens),
+    cacheCreationInputTokens5m: pickFirstNumber(cacheCreation?.ephemeral_5m_input_tokens, rawUsage.ephemeral_5m_input_tokens),
+    cacheCreationInputTokens1h: pickFirstNumber(cacheCreation?.ephemeral_1h_input_tokens, rawUsage.ephemeral_1h_input_tokens),
+    textInputTokens: pickFirstNumber(inputDetails?.text_tokens),
+    imageInputTokens: pickFirstNumber(inputDetails?.image_tokens),
+    videoInputTokens: pickFirstNumber(inputDetails?.video_tokens),
+    audioInputTokens: pickFirstNumber(inputDetails?.audio_tokens),
+    textOutputTokens: pickFirstNumber(outputDetails?.text_tokens),
+    audioOutputTokens: pickFirstNumber(outputDetails?.audio_tokens),
+    serverToolUse: asRecord(rawUsage.server_tool_use),
+    rawUsage,
+  };
+}
+
+function pickFirstNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function sumDefined(...values: Array<number | undefined>): number | undefined {
+  let sum = 0;
+  let found = false;
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      sum += value;
+      found = true;
+    }
+  }
+  return found ? sum : undefined;
 }
 
 function convertMessagesToResponsesInput(messages: ModelMessage[]): JsonRecord[] {

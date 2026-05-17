@@ -1,6 +1,6 @@
 import { ChatMessage, ContextItem, ModelSettings, AgentResult } from '../shared/types'
 import { ReActAgent } from './react-agent'
-import type { AgentMessage, EmitFn, ToolDefinition } from './types'
+import type { AgentMessage, EmitFn, RunResult, ToolDefinition } from './types'
 import { configureModelRequest } from './model'
 import { PromptBuilder } from './prompt-builder'
 import { parseAgentResult } from './resultParser'
@@ -37,8 +37,13 @@ export interface RunAgentOptions {
   signal?: AbortSignal
 }
 
+export interface RuntimeRunResult {
+  result: AgentResult
+  run: RunResult
+}
+
 export class AgentRuntime {
-  async run(options: RunAgentOptions): Promise<AgentResult> {
+  async run(options: RunAgentOptions): Promise<RuntimeRunResult> {
     configureModelRequest({
       settings: options.settings,
       apiKey: options.apiKey,
@@ -76,7 +81,10 @@ export class AgentRuntime {
       signal: options.signal,
     })
 
-    return parseAgentResult(result.reply)
+    return {
+      result: parseAgentResult(result.reply),
+      run: result.run,
+    }
   }
 }
 

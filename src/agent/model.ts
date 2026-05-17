@@ -34,6 +34,7 @@ export async function invokeModel(params: InvokeModelParams & {
     messages: convertMessages(params.systemPrompt, params.messages),
     tools: convertTools(params.tools),
     maxOutputTokens: params.maxOutputTokens,
+    step: (params as { step?: number }).step,
     onDelta: params.onDelta,
     onThinkingDelta: params.onThinkingDelta,
     signal: params.signal,
@@ -47,7 +48,7 @@ export async function invokeModel(params: InvokeModelParams & {
       name: toolCall.name,
       input: toolCall.arguments,
     })),
-    usage: null,
+    usage: response.usage,
     stopReason: response.finishReason ?? null,
     raw: response,
   }

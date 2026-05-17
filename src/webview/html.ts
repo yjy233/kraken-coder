@@ -183,6 +183,35 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       padding: 10px 8px 12px;
     }
 
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin: 0 0 10px;
+      padding: 0 0 2px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tab-button {
+      min-width: 0;
+      padding: 5px 9px;
+      border: 1px solid transparent;
+      border-bottom-color: transparent;
+      border-radius: 4px 4px 0 0;
+      color: var(--muted);
+      background: transparent;
+    }
+
+    .tab-button:hover {
+      background: var(--vscode-toolbar-hoverBackground, var(--vscode-button-secondaryHoverBackground));
+    }
+
+    .tab-button.active {
+      color: var(--vscode-foreground);
+      border-color: var(--border);
+      border-bottom-color: var(--vscode-sideBar-background);
+      background: var(--vscode-sideBar-background);
+    }
+
     .section {
       margin-bottom: 14px;
     }
@@ -516,7 +545,9 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     }
 
     .context-item,
-    .change-set {
+    .change-set,
+    .usage-card,
+    .usage-row {
       border: 1px solid var(--border);
       border-radius: 6px;
       background: var(--vscode-editor-background);
@@ -542,6 +573,57 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       color: var(--muted);
       font-size: 11px;
       margin-top: 4px;
+    }
+
+    .usage-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .usage-metric-label {
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 2px;
+    }
+
+    .usage-metric-value {
+      font-family: var(--vscode-editor-font-family);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .usage-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .usage-row-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      justify-content: space-between;
+    }
+
+    .usage-row-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: var(--vscode-editor-font-family);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .usage-badge {
+      flex: 0 0 auto;
+      padding: 2px 6px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 10px;
+      text-transform: uppercase;
     }
 
     .files {
@@ -745,17 +827,27 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     </div>
     <main class="main">
       <div id="error" class="error" hidden></div>
-      <section class="section">
+      <div class="tabs" id="tabs">
+        <button type="button" class="tab-button active" data-tab="chat">Chat</button>
+        <button type="button" class="tab-button" data-tab="changes">Changes</button>
+        <button type="button" class="tab-button" data-tab="context">Context</button>
+        <button type="button" class="tab-button" data-tab="usage">Usage</button>
+      </div>
+      <section class="section" data-panel="chat">
         <h2 class="section-header">Chat</h2>
         <div id="messages"></div>
       </section>
-      <section class="section">
+      <section class="section" data-panel="changes" hidden>
         <h2 class="section-header">Changes</h2>
         <div id="changes"></div>
       </section>
-      <section class="section">
+      <section class="section" data-panel="context" hidden>
         <h2 class="section-header">Context</h2>
         <div id="context"></div>
+      </section>
+      <section class="section" data-panel="usage" hidden>
+        <h2 class="section-header">Usage</h2>
+        <div id="usage"></div>
       </section>
     </main>
     <form class="composer" id="composer">
@@ -778,6 +870,7 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     let queueLength = 0;
     let progress = 'Thinking...';
     let modelInfo = undefined;
+    let activeTab = 'chat';
     let slashCompletionRequestId = 0;
     let slashCompletionItems = [];
     let slashCompletionActiveIndex = 0;
@@ -788,16 +881,25 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     const sessionsEl = document.getElementById('sessions');
     const contextEl = document.getElementById('context');
     const changesEl = document.getElementById('changes');
+    const usageEl = document.getElementById('usage');
     const inputEl = document.getElementById('input');
     const sendEl = document.getElementById('send');
     const modelInfoEl = document.getElementById('modelInfo');
     const errorEl = document.getElementById('error');
     const slashMenuEl = document.getElementById('slashMenu');
+    const tabButtons = Array.from(document.querySelectorAll('[data-tab]'));
+    const panels = Array.from(document.querySelectorAll('[data-panel]'));
 
     document.getElementById('configure').addEventListener('click', () => post({ type: 'config.open' }));
     modelInfoEl.addEventListener('click', () => post({ type: 'config.open' }));
     document.getElementById('clear').addEventListener('click', () => post({ type: 'session.clear' }));
     document.getElementById('newSession').addEventListener('click', () => post({ type: 'session.new' }));
+    tabButtons.forEach((buttonEl) => {
+      buttonEl.addEventListener('click', () => {
+        activeTab = buttonEl.dataset.tab || 'chat';
+        renderTabs();
+      });
+    });
 
     document.getElementById('composer').addEventListener('submit', (event) => {
       event.preventDefault();
@@ -898,10 +1000,12 @@ export function getWebviewHtml(webview: vscode.Webview): string {
 
     function render() {
       renderComposer();
+      renderTabs();
       renderMessages();
       renderSessions();
       renderChanges();
       renderContext();
+      renderUsage();
     }
 
     function renderComposer() {
@@ -937,7 +1041,8 @@ export function getWebviewHtml(webview: vscode.Webview): string {
         ? 'think:' + compactThinking(info.thinking)
         : 'effort:' + (info.reasoningEnabled === false ? 'off' : (info.effort || 'medium'));
       const context = 'ctx:' + formatContextUsage(info);
-      return [provider, model, thinking, context].filter(Boolean).join(' · ');
+      const usage = formatUsagePill(session?.usage?.totals);
+      return [provider, model, thinking, context, usage].filter(Boolean).join(' · ');
     }
 
     function formatModelTitle(info) {
@@ -953,8 +1058,18 @@ export function getWebviewHtml(webview: vscode.Webview): string {
         info.thinking ? 'Thinking: ' + info.thinking : undefined,
         'Cache optimization: ' + formatCacheOptimization(info),
         'Context window: ' + formatContextUsage(info) + ' (' + formatChars(info.contextUsedChars) + ' / ' + formatChars(info.contextMaxChars) + ')',
+        session?.usage?.totals ? 'Session usage: ' + formatUsageTooltip(session.usage.totals) : undefined,
       ].filter(Boolean);
       return rows.join('\\n');
+    }
+
+    function renderTabs() {
+      tabButtons.forEach((buttonEl) => {
+        buttonEl.classList.toggle('active', (buttonEl.dataset.tab || 'chat') === activeTab);
+      });
+      panels.forEach((panel) => {
+        panel.hidden = (panel.dataset.panel || 'chat') !== activeTab;
+      });
     }
 
     function compactProviderName(provider) {
@@ -1258,6 +1373,164 @@ export function getWebviewHtml(webview: vscode.Webview): string {
         wrapper.append(row, meta);
         contextEl.appendChild(wrapper);
       }
+    }
+
+    function renderUsage() {
+      const usage = session?.usage;
+      if (!usage || !Array.isArray(usage.records) || !usage.records.length) {
+        usageEl.innerHTML = '<div class="empty">Usage statistics will appear after model requests complete and return usage.</div>';
+        return;
+      }
+
+      usageEl.innerHTML = '';
+      usageEl.appendChild(usageTotalsCard(usage.totals));
+
+      const list = document.createElement('div');
+      list.className = 'usage-list';
+      for (const record of [...usage.records].slice(-20).reverse()) {
+        list.appendChild(usageRecordRow(record));
+      }
+      usageEl.appendChild(list);
+    }
+
+    function usageTotalsCard(totals) {
+      const card = document.createElement('div');
+      card.className = 'usage-card';
+      const row = document.createElement('div');
+      row.className = 'row';
+      const title = document.createElement('div');
+      title.className = 'label';
+      title.textContent = 'Session total';
+      row.appendChild(title);
+
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = [
+        totals.requestCount + ' req',
+        totals.completedRequestCount + ' done',
+        totals.interruptedRequestCount ? totals.interruptedRequestCount + ' interrupted' : '',
+        totals.errorRequestCount ? totals.errorRequestCount + ' error' : ''
+      ].filter(Boolean).join(' · ');
+
+      const grid = document.createElement('div');
+      grid.className = 'usage-grid';
+      grid.append(
+        usageMetric('Total tokens', formatCount(totals.totalTokens)),
+        usageMetric('Input', formatCount(totals.inputTokens)),
+        usageMetric('Output', formatCount(totals.outputTokens)),
+        usageMetric('Reasoning', formatCount(totals.reasoningOutputTokens)),
+        usageMetric('Cache', formatCount(totals.cachedInputTokens + totals.cacheReadInputTokens)),
+        usageMetric('Est. cost', formatUsd(totals.costUsd))
+      );
+
+      card.append(row, meta, grid);
+      return card;
+    }
+
+    function usageRecordRow(record) {
+      const row = document.createElement('div');
+      row.className = 'usage-row';
+      const header = document.createElement('div');
+      header.className = 'usage-row-header';
+      const title = document.createElement('div');
+      title.className = 'usage-row-title';
+      title.textContent = [record.provider, record.model, record.api].filter(Boolean).join(' · ');
+      const badge = document.createElement('div');
+      badge.className = 'usage-badge';
+      badge.textContent = record.status || 'complete';
+      header.append(title, badge);
+
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = [
+        record.step ? 'step ' + record.step : '',
+        record.stream ? 'stream' : 'non-stream',
+        record.source || '',
+        record.completedAt ? relativeTime(record.completedAt) : ''
+      ].filter(Boolean).join(' · ');
+
+      const grid = document.createElement('div');
+      grid.className = 'usage-grid';
+      grid.append(
+        usageMetric('Total', formatMaybeCount(record.totalTokens)),
+        usageMetric('Input', formatMaybeCount(record.inputTokens)),
+        usageMetric('Output', formatMaybeCount(record.outputTokens)),
+        usageMetric('Reasoning', formatMaybeCount(record.reasoningOutputTokens)),
+        usageMetric('Cache', formatMaybeCount((record.cachedInputTokens || 0) + (record.cacheReadInputTokens || 0) + (record.cacheCreationInputTokens || 0))),
+        usageMetric('Cost', formatMaybeUsd(record.costUsd))
+      );
+
+      row.append(header, meta, grid);
+      return row;
+    }
+
+    function usageMetric(labelText, valueText) {
+      const wrap = document.createElement('div');
+      const labelEl = document.createElement('div');
+      labelEl.className = 'usage-metric-label';
+      labelEl.textContent = labelText;
+      const valueEl = document.createElement('div');
+      valueEl.className = 'usage-metric-value';
+      valueEl.textContent = valueText;
+      wrap.append(labelEl, valueEl);
+      return wrap;
+    }
+
+    function formatUsagePill(totals) {
+      if (!totals || !Number.isFinite(Number(totals.totalTokens)) || Number(totals.totalTokens) <= 0) {
+        return '';
+      }
+      return 'usage:' + formatCompactCount(Number(totals.totalTokens));
+    }
+
+    function formatUsageTooltip(totals) {
+      return [
+        'requests ' + formatCount(totals.requestCount),
+        'total ' + formatCount(totals.totalTokens),
+        'input ' + formatCount(totals.inputTokens),
+        'output ' + formatCount(totals.outputTokens),
+        'reasoning ' + formatCount(totals.reasoningOutputTokens),
+        'cache ' + formatCount(totals.cachedInputTokens + totals.cacheReadInputTokens),
+        'cost ' + formatUsd(totals.costUsd),
+      ].join(' · ');
+    }
+
+    function formatCount(value) {
+      const number = Number(value || 0);
+      if (!Number.isFinite(number)) {
+        return '0';
+      }
+      return Math.round(number).toLocaleString();
+    }
+
+    function formatCompactCount(value) {
+      const number = Number(value || 0);
+      if (!Number.isFinite(number) || number <= 0) {
+        return '0';
+      }
+      if (number >= 1000000) {
+        return (number / 1000000).toFixed(1).replace(/\\.0$/, '') + 'M';
+      }
+      if (number >= 1000) {
+        return (number / 1000).toFixed(1).replace(/\\.0$/, '') + 'k';
+      }
+      return String(Math.round(number));
+    }
+
+    function formatMaybeCount(value) {
+      return Number.isFinite(Number(value)) && Number(value) > 0 ? formatCount(value) : 'unknown';
+    }
+
+    function formatUsd(value) {
+      const number = Number(value || 0);
+      if (!Number.isFinite(number)) {
+        return '$0.0000';
+      }
+      return '$' + number.toFixed(number >= 1 ? 2 : 4);
+    }
+
+    function formatMaybeUsd(value) {
+      return Number.isFinite(Number(value)) ? formatUsd(value) : 'unknown';
     }
 
     function renderChanges() {

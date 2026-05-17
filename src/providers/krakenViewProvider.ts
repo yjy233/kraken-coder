@@ -4,13 +4,17 @@ import { AgentRuntime } from '../agent/runtime';
 import { createId } from '../shared/id';
 import {
   AgentResult,
+  ChatSessionUsage,
   ChangeSet,
   ChatMessageStatus,
   ChatMessage,
   ChatSessionSummary,
   ChatSession,
   ContextItem,
+  ModelApiMode,
   ModelStatusInfo,
+  ModelUsageRecord,
+  UsageTotals,
   SlashCompletionItem,
   WebviewToExtensionMessage
 } from '../shared/types';
@@ -303,7 +307,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       this.availableSkills = availableSkills;
       this.streamingAssistantMessageId = undefined;
       this.streamingThinkingMessageId = undefined;
-      const result = await this.runtime.run({
+      const runtimeResult = await this.runtime.run({
         userText,
         sessionId: this.session.id,
         runId,
@@ -321,12 +325,14 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
         onProgress: (message) => this.handleAgentProgress(message),
         signal: abortController.signal,
       });
+      const { result, run } = runtimeResult;
 
       if (abortController.signal.aborted) {
         throw new AgentInterruptedError(runId);
       }
 
       await this.handleAgentResult(result);
+      this.appendRunUsage(run.usage);
       if (activeUserMessageId) {
         this.markMessageStatus(activeUserMessageId, 'complete');
       }
@@ -592,6 +598,25 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       }
     }
     await this.persistSession();
+  }
+
+  private appendRunUsage(records: Array<ModelUsageRecord | null>): void {
+    const normalized = records
+      .map((record) => normalizeUsageRecord(record))
+      .filter((record): record is ModelUsageRecord => Boolean(record))
+      .map((record) => ({
+        ...record,
+        sessionId: this.session.id,
+      }));
+
+    if (!normalized.length) {
+      return;
+    }
+
+    const usage = this.session.usage ?? createEmptySessionUsage();
+    usage.records = [...usage.records, ...normalized].slice(-500);
+    usage.totals = buildUsageTotals(usage.records);
+    this.session.usage = usage;
   }
 
   private async addChangeProposal(summary: string, changes: AgentResult['changes']): Promise<string> {
@@ -1088,6 +1113,156 @@ function parseProgressPayload(value: string): {
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function createEmptySessionUsage(): ChatSessionUsage {
+  return {
+    records: [],
+    totals: createEmptyUsageTotals(),
+  };
+}
+
+function createEmptyUsageTotals(): UsageTotals {
+  return {
+    requestCount: 0,
+    completedRequestCount: 0,
+    interruptedRequestCount: 0,
+    errorRequestCount: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    reasoningOutputTokens: 0,
+    visibleOutputTokens: 0,
+    cachedInputTokens: 0,
+    cacheReadInputTokens: 0,
+    cacheCreationInputTokens: 0,
+    costUsd: 0,
+  };
+}
+
+function buildUsageTotals(records: ModelUsageRecord[]): UsageTotals {
+  const totals = createEmptyUsageTotals();
+  for (const record of records) {
+    totals.requestCount += 1;
+    if (record.status === 'complete') {
+      totals.completedRequestCount += 1;
+    } else if (record.status === 'interrupted') {
+      totals.interruptedRequestCount += 1;
+    } else if (record.status === 'error') {
+      totals.errorRequestCount += 1;
+    }
+    totals.inputTokens += safeNumber(record.inputTokens);
+    totals.outputTokens += safeNumber(record.outputTokens);
+    totals.totalTokens += safeNumber(record.totalTokens);
+    totals.reasoningOutputTokens += safeNumber(record.reasoningOutputTokens);
+    totals.visibleOutputTokens += safeNumber(record.visibleOutputTokens);
+    totals.cachedInputTokens += safeNumber(record.cachedInputTokens);
+    totals.cacheReadInputTokens += safeNumber(record.cacheReadInputTokens);
+    totals.cacheCreationInputTokens += safeNumber(record.cacheCreationInputTokens);
+    totals.costUsd += safeNumber(record.costUsd);
+  }
+  return totals;
+}
+
+function safeNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function normalizeUsageRecord(value: ModelUsageRecord | null): ModelUsageRecord | undefined {
+  if (!value || typeof value.id !== 'string' || typeof value.provider !== 'string' || typeof value.api !== 'string' || typeof value.model !== 'string') {
+    return undefined;
+  }
+
+  const record: ModelUsageRecord = {
+    id: value.id,
+    sessionId: typeof value.sessionId === 'string' ? value.sessionId : undefined,
+    runId: typeof value.runId === 'string' ? value.runId : undefined,
+    step: asFiniteNumber(value.step),
+    provider: value.provider as ModelUsageRecord['provider'],
+    api: value.api as ModelApiMode,
+    model: value.model,
+    stream: value.stream === true,
+    status: value.status === 'interrupted' || value.status === 'error' ? value.status : 'complete',
+    source: value.source === 'missing' || value.source === 'provider-stream-final' ? value.source : 'provider-final',
+    startedAt: asFiniteNumber(value.startedAt) ?? Date.now(),
+    completedAt: asFiniteNumber(value.completedAt),
+    inputTokens: asFiniteNumber(value.inputTokens),
+    outputTokens: asFiniteNumber(value.outputTokens),
+    totalTokens: asFiniteNumber(value.totalTokens),
+    reasoningOutputTokens: asFiniteNumber(value.reasoningOutputTokens),
+    visibleOutputTokens: asFiniteNumber(value.visibleOutputTokens),
+    cachedInputTokens: asFiniteNumber(value.cachedInputTokens),
+    cacheReadInputTokens: asFiniteNumber(value.cacheReadInputTokens),
+    cacheCreationInputTokens: asFiniteNumber(value.cacheCreationInputTokens),
+    cacheCreationInputTokens5m: asFiniteNumber(value.cacheCreationInputTokens5m),
+    cacheCreationInputTokens1h: asFiniteNumber(value.cacheCreationInputTokens1h),
+    textInputTokens: asFiniteNumber(value.textInputTokens),
+    imageInputTokens: asFiniteNumber(value.imageInputTokens),
+    videoInputTokens: asFiniteNumber(value.videoInputTokens),
+    audioInputTokens: asFiniteNumber(value.audioInputTokens),
+    textOutputTokens: asFiniteNumber(value.textOutputTokens),
+    audioOutputTokens: asFiniteNumber(value.audioOutputTokens),
+    serverToolUse: isPlainRecord(value.serverToolUse) ? value.serverToolUse : undefined,
+    rawUsage: isPlainRecord(value.rawUsage) ? value.rawUsage : undefined,
+  };
+
+  record.costUsd = estimateUsageCostUsd(record);
+  return record;
+}
+
+function asFiniteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function estimateUsageCostUsd(record: ModelUsageRecord): number | undefined {
+  const pricing = getPricingProfile(record.provider, record.model);
+  if (!pricing) {
+    return undefined;
+  }
+
+  const inputCost = (safeNumber(record.inputTokens) / 1_000_000) * pricing.inputPerMillion;
+  const outputCost = (safeNumber(record.outputTokens) / 1_000_000) * pricing.outputPerMillion;
+  const cacheReadCost = pricing.cacheReadPerMillion !== undefined
+    ? (safeNumber(record.cacheReadInputTokens || record.cachedInputTokens) / 1_000_000) * pricing.cacheReadPerMillion
+    : 0;
+  const cacheWriteCost = pricing.cacheWritePerMillion !== undefined
+    ? (safeNumber(record.cacheCreationInputTokens) / 1_000_000) * pricing.cacheWritePerMillion
+    : 0;
+
+  return inputCost + outputCost + cacheReadCost + cacheWriteCost;
+}
+
+function getPricingProfile(provider: ModelUsageRecord['provider'], model: string): {
+  inputPerMillion: number;
+  outputPerMillion: number;
+  cacheReadPerMillion?: number;
+  cacheWritePerMillion?: number;
+} | undefined {
+  if (provider === 'openai' || provider === 'openrouter') {
+    if (model === 'openai/gpt-5.5') {
+      return { inputPerMillion: 1.25, outputPerMillion: 10 };
+    }
+    if (model === 'openai/gpt-5.4') {
+      return { inputPerMillion: 1.25, outputPerMillion: 10 };
+    }
+  }
+
+  if (provider === 'anthropic' || provider === 'openrouter') {
+    if (model === 'anthropic/claude-sonnet-4.6') {
+      return { inputPerMillion: 3, outputPerMillion: 15, cacheReadPerMillion: 0.3, cacheWritePerMillion: 3.75 };
+    }
+    if (model === 'anthropic/claude-opus-4.7-fast') {
+      return { inputPerMillion: 15, outputPerMillion: 75, cacheReadPerMillion: 1.5, cacheWritePerMillion: 18.75 };
+    }
+  }
+
+  if (provider === 'qwen' || provider === 'openrouter') {
+    if (model === 'qwen/qwen3.6-plus') {
+      return { inputPerMillion: 0.8, outputPerMillion: 8 };
+    }
+  }
+
+  return undefined;
 }
 
 function buildModelStatusInfo(config: ReturnType<typeof getKrakenConfig>, context: ContextItem[]): ModelStatusInfo {
