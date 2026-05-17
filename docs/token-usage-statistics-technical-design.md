@@ -482,8 +482,7 @@ Current implementation status:
   - stream raw SSE body for streaming requests
   - error message when the request fails
 - Trace file locations:
-  - workspace mode: `<workspace>/.kraken-coder/debug/model-api/*.json`
-  - no-workspace fallback: `~/kraken-coder/debug/model-api/*.json`
+  - `~/kraken-coder/debug/model-api/*.json`
 
 ### Phase 0: Provider Probe
 

@@ -311,9 +311,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
         context: this.session.context,
         settings,
         apiKey,
-        debugLogDir: workspaceRoot
-          ? path.join(workspaceRoot, '.kraken-coder', 'debug', 'model-api')
-          : path.join(config.paths.globalRoot, 'debug', 'model-api'),
+        debugLogDir: path.join(config.paths.globalRoot, 'debug', 'model-api'),
         maxContextChars: config.context.maxChars,
         maxSteps: config.agent.maxSteps,
         tools,

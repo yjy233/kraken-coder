@@ -1239,7 +1239,15 @@ async function parseJsonResponse<T>(response: Response, trace?: HttpTrace, reque
     throw new Error(`Model provider returned non-JSON response (${response.status}).`);
   }
   if (trace && request) {
-    await finalizeTrace(trace, request, undefined, body, parsedJson);
+    await finalizeTrace(
+      trace,
+      request,
+      response.ok ? undefined : {
+        message: extractErrorMessage(body) ?? `Model request failed with HTTP ${response.status}.`
+      },
+      body,
+      parsedJson
+    );
   }
   return parsedJson as T;
 }
@@ -1274,6 +1282,15 @@ async function readServerSentEventStream(
 ): Promise<string> {
   let currentBuffer = buffer;
   let rawBody = '';
+  const appendChunk = (text: string) => {
+    if (!text) {
+      return;
+    }
+    rawBody += text;
+    if (trace?.response) {
+      trace.response.bodyText += text;
+    }
+  };
   while (true) {
     const { value, done } = await reader.read();
     if (done) {
@@ -1281,7 +1298,7 @@ async function readServerSentEventStream(
     }
 
     const chunk = decoder.decode(value, { stream: true });
-    rawBody += chunk;
+    appendChunk(chunk);
     currentBuffer += chunk;
     const events = currentBuffer.split(/\r?\n\r?\n/);
     currentBuffer = events.pop() ?? '';
@@ -1292,10 +1309,7 @@ async function readServerSentEventStream(
       }
     }
   }
-  rawBody += decoder.decode();
-  if (currentBuffer) {
-    rawBody += currentBuffer;
-  }
+  appendChunk(decoder.decode());
   if (trace && request) {
     await finalizeTrace(trace, request, undefined, rawBody);
   }

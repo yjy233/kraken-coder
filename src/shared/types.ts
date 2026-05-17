@@ -72,12 +72,68 @@ export interface ChangeSet {
   createdAt: number;
 }
 
+export interface ModelUsageRecord {
+  id: string;
+  sessionId?: string;
+  runId?: string;
+  step?: number;
+  provider: ModelProvider;
+  api: ModelApiMode;
+  model: string;
+  stream: boolean;
+  status: 'complete' | 'interrupted' | 'error';
+  source: 'provider-final' | 'provider-stream-final' | 'missing';
+  startedAt: number;
+  completedAt?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  reasoningOutputTokens?: number;
+  visibleOutputTokens?: number;
+  cachedInputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  cacheCreationInputTokens5m?: number;
+  cacheCreationInputTokens1h?: number;
+  textInputTokens?: number;
+  imageInputTokens?: number;
+  videoInputTokens?: number;
+  audioInputTokens?: number;
+  textOutputTokens?: number;
+  audioOutputTokens?: number;
+  serverToolUse?: Record<string, unknown>;
+  costUsd?: number;
+  rawUsage?: JsonRecord;
+}
+
+export interface UsageTotals {
+  requestCount: number;
+  completedRequestCount: number;
+  interruptedRequestCount: number;
+  errorRequestCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  reasoningOutputTokens: number;
+  visibleOutputTokens: number;
+  cachedInputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  costUsd: number;
+}
+
+export interface ChatSessionUsage {
+  records: ModelUsageRecord[];
+  totals: UsageTotals;
+}
+
 export interface ChatSession {
   id: string;
   title?: string;
   messages: ChatMessage[];
   context: ContextItem[];
   changeSets: ChangeSet[];
+  usage?: ChatSessionUsage;
   busy: boolean;
   activeRunId?: string;
   queueLength?: number;
@@ -233,6 +289,7 @@ export interface ModelResponse {
   thinking?: string;
   toolCalls: ModelToolCall[];
   finishReason?: string;
+  usage: ModelUsageRecord | null;
 }
 
 export interface ModelRequest {
@@ -241,8 +298,10 @@ export interface ModelRequest {
   messages: ModelMessage[];
   tools?: ModelToolDefinition[];
   maxOutputTokens?: number;
+  step?: number;
   onDelta?: (delta: string) => void;
   onThinkingDelta?: (delta: string) => void;
+  onUsage?: (usage: ModelUsageRecord) => void | Promise<void>;
   debug?: {
     logDir: string;
     sessionId?: string;
