@@ -1,0 +1,5 @@
+[context]
+maxChars = 60000
+
+[agent]
+autoApply = false
