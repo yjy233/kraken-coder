@@ -501,7 +501,7 @@ export class OpenAICompatibleModelClient {
         handleData(data);
       }
 
-      const parsedFinal = finalResponse ? parseOpenAIResponsesResponse(finalResponse) : undefined;
+      const parsedFinal = finalResponse ? parseOpenAIResponsesResponse(finalResponse, false) : undefined;
       const toolCalls = parsedFinal?.toolCalls.length ? parsedFinal.toolCalls : toolCallPartsToModelToolCalls(toolCallParts);
       const responseContent = parsedFinal?.content || content;
       const responseThinking = parsedFinal?.thinking || thinking;
@@ -800,7 +800,7 @@ function isOpenAIThinkingDeltaEvent(type: string): boolean {
     || type === 'response.reasoning_text.delta';
 }
 
-function parseOpenAIResponsesResponse(parsed: ResponsesResponse): ModelResponse {
+function parseOpenAIResponsesResponse(parsed: ResponsesResponse, requireOutput = true): ModelResponse {
   const content = parsed.output_text || (parsed.output ?? [])
     .filter((item) => item.type === 'message')
     .flatMap((item) => item.content ?? [])
@@ -829,7 +829,9 @@ function parseOpenAIResponsesResponse(parsed: ResponsesResponse): ModelResponse 
     })
     .filter((toolCall) => toolCall.id && toolCall.name);
 
-  assertHasModelOutput(content, toolCalls.length);
+  if (requireOutput) {
+    assertHasModelOutput(content, toolCalls.length);
+  }
 
   return {
     content,
