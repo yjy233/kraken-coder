@@ -33,7 +33,8 @@ export const todoTool: Tool = {
   },
   execute: async (input, ctx) => {
     const action = String(input.action || '').trim()
-    const storePath = path.join(ctx.sandboxPolicy.workspaceRoot, '.todos.json')
+    const storePath = getTodoStorePath(ctx)
+    await migrateLegacyTodos(ctx, storePath)
 
     const todos = await loadTodos(storePath)
 
@@ -93,6 +94,29 @@ export const todoTool: Tool = {
   },
 }
 
+function getTodoStorePath(ctx: ToolContext): string {
+  return path.join(ctx.sandboxPolicy.workspaceRoot, '.kraken-coder', '.todo.json')
+}
+
+async function migrateLegacyTodos(ctx: ToolContext, storePath: string): Promise<void> {
+  const legacyPath = path.join(ctx.sandboxPolicy.workspaceRoot, '.todos.json')
+  try {
+    await fs.access(storePath)
+    return
+  } catch {
+    // Continue only when the new store does not exist yet.
+  }
+
+  try {
+    await fs.access(legacyPath)
+  } catch {
+    return
+  }
+
+  await fs.mkdir(path.dirname(storePath), { recursive: true })
+  await fs.rename(legacyPath, storePath)
+}
+
 async function loadTodos(storePath: string): Promise<TodoItem[]> {
   try {
     const raw = await fs.readFile(storePath, 'utf8')
@@ -105,5 +129,6 @@ async function loadTodos(storePath: string): Promise<TodoItem[]> {
 }
 
 async function saveTodos(storePath: string, todos: TodoItem[]) {
+  await fs.mkdir(path.dirname(storePath), { recursive: true })
   await fs.writeFile(storePath, JSON.stringify(todos, null, 2), 'utf8')
 }
