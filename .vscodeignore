@@ -1,0 +1,17 @@
+.git/**
+.gitignore
+.vscode/**
+.kraken-coder/**
+kraken-coder/**
+src/**
+docs/**
+node_modules/**
+out/**/*.map
+*.vsix
+*.tsbuildinfo
+tsconfig.json
+config.example.toml
+resources/logo-from-original.svg
+resources/logo.svg
+npm-debug.log
+yarn-error.log

@@ -1,7 +1,7 @@
 {
   "name": "kraken-coder",
   "displayName": "Kraken Coder",
-  "description": "A pragmatic coding assistant for VS Code with reviewable code changes.",
+  "description": "AI coding assistant for VS Code with chat, context, and reviewable edits.",
   "version": "0.1.0",
   "publisher": "bill-yan233",
   "license": "MIT",
@@ -9,6 +9,8 @@
     "vscode": "^1.90.0"
   },
   "categories": [
+    "Programming Languages",
+    "Machine Learning",
     "Other"
   ],
   "activationEvents": [
@@ -23,9 +25,13 @@
   ],
   "main": "./out/extension.js",
   "scripts": {
+    "clean": "rimraf out",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "check": "tsc -p ./ --noEmit"
+    "check": "tsc -p ./ --noEmit",
+    "prepackage": "npm run clean && npm run compile",
+    "vscode:package": "npm run prepackage && vsce package",
+    "vscode:publish": "npm run prepackage && vsce publish"
   },
   "contributes": {
     "viewsContainers": {
@@ -33,7 +39,7 @@
         {
           "id": "krakenCoder",
           "title": "Kraken Coder",
-          "icon": "resources/logo.svg"
+          "icon": "$(hubot)"
         }
       ]
     },
@@ -129,13 +135,6 @@
         "kraken.model.provider": {
           "type": "string",
           "default": "openrouter",
-          "enum": [
-            "openrouter",
-            "openai",
-            "anthropic",
-            "qwen",
-            "openai-compatible"
-          ],
           "description": "Model provider adapter."
         },
         "kraken.model.api": {
@@ -151,13 +150,6 @@
         "kraken.model.name": {
           "type": "string",
           "default": "qwen/qwen3.6-plus",
-          "enum": [
-            "qwen/qwen3.6-plus",
-            "openai/gpt-5.4",
-            "openai/gpt-5.5",
-            "anthropic/claude-opus-4.7-fast",
-            "anthropic/claude-sonnet-4.6"
-          ],
           "description": "Model name to use."
         },
         "kraken.model.reasoning.enabled": {
@@ -470,6 +462,28 @@
   "devDependencies": {
     "@types/node": "^20.12.12",
     "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.9.1",
+    "rimraf": "^6.1.3",
     "typescript": "^5.4.5"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yjy233/kraken-coder.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yjy233/kraken-coder/issues"
+  },
+  "homepage": "https://github.com/yjy233/kraken-coder#readme",
+  "keywords": [
+    "ai",
+    "agent",
+    "assistant",
+    "coding",
+    "chat"
+  ],
+  "icon": "resources/icon.png",
+  "galleryBanner": {
+    "color": "#0f172a",
+    "theme": "dark"
   }
 }
