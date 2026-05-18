@@ -4,7 +4,7 @@
 # - <workspace>/kraken-coder/config/config.toml
 #
 # Workspace config overrides global config.
-# API keys are stored in VS Code SecretStorage, not in this file.
+# Provider API keys can be stored in this file under [providers.*].apiKey.
 
 [model]
 # Provider adapter. The supported model presets use OpenRouter.
@@ -40,13 +40,18 @@ enabled = true
 strategy = "auto"
 retention = "in_memory"
 
+[providers.openrouter]
+apiKey = ""
+
 [providers.openai]
+apiKey = ""
 api = "responses"
 effort = "medium"
 promptCacheKey = "workspace"
 promptCacheRetention = "in_memory"
 
 [providers.anthropic]
+apiKey = ""
 api = "messages"
 thinking = "adaptive" # auto, adaptive, enabled, disabled
 effort = "medium"
@@ -56,11 +61,15 @@ preserveThinking = true
 cacheTtl = "5m" # 5m or 1h
 
 [providers.qwen]
+apiKey = ""
 api = "chat-completions"
 enableThinking = true
 thinkingBudget = 8192
 preserveThinking = false
 cacheMode = "auto"
+
+[providers.aicodemirror]
+apiKey = ""
 
 [context]
 # Maximum approximate context characters sent to the model.

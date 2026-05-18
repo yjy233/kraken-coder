@@ -8,6 +8,8 @@ import type {
 } from '../shared/types';
 import { KrakenFileConfig, getKrakenConfig, normalizeBaseUrl, updateGlobalKrakenConfig } from './krakenConfig';
 
+type ManagedProvider = Exclude<ModelProvider, 'openai-compatible'>;
+
 export function getModelSettings(): ModelSettings {
   const config = getKrakenConfig();
   return {
@@ -50,9 +52,10 @@ export async function ensureModelConfigured(): Promise<ModelSettings | undefined
   }
 
   if (!current.apiKey) {
+    const providerLabel = getProviderLabel(current.provider);
     const apiKey = await vscode.window.showInputBox({
-      title: 'Kraken API key',
-      prompt: 'Enter the API key for your configured model provider.',
+      title: `Kraken ${providerLabel} API key`,
+      prompt: `Enter the API key for ${providerLabel}.`,
       password: true,
       ignoreFocusOut: true,
       placeHolder: 'sk-...'
@@ -63,9 +66,7 @@ export async function ensureModelConfigured(): Promise<ModelSettings | undefined
     }
 
     await updateGlobalKrakenConfig({
-      model: {
-        apiKey: apiKey.trim()
-      }
+      ...buildProviderApiKeyPatch(current.provider, apiKey.trim())
     });
 
     current = {
@@ -143,7 +144,11 @@ interface ConfigFormValues {
   modelProvider: string;
   modelBaseUrl: string;
   modelName: string;
-  modelApiKey: string;
+  openrouterApiKey: string;
+  openaiApiKey: string;
+  anthropicApiKey: string;
+  qwenApiKey: string;
+  aicodemirrorApiKey: string;
   modelProxy: string;
   modelReasoningEnabled: boolean;
   modelReasoningEffort: string;
@@ -203,7 +208,7 @@ interface SupportedModelOption {
 }
 
 interface ProviderOption {
-  id: Exclude<ModelProvider, 'openai-compatible'>;
+  id: ManagedProvider;
   label: string;
   baseUrl: string;
   api: ModelApiMode;
@@ -299,7 +304,11 @@ function configToForm(config: ReturnType<typeof getKrakenConfig>): ConfigFormVal
     modelProvider: config.model.provider,
     modelBaseUrl: selectedModel.matched ? config.model.baseUrl : selectedModel.option.baseUrl,
     modelName: config.model.name,
-    modelApiKey: config.model.apiKey,
+    openrouterApiKey: getProviderApiKeyForForm(config, 'openrouter'),
+    openaiApiKey: getProviderApiKeyForForm(config, 'openai'),
+    anthropicApiKey: getProviderApiKeyForForm(config, 'anthropic'),
+    qwenApiKey: getProviderApiKeyForForm(config, 'qwen'),
+    aicodemirrorApiKey: getProviderApiKeyForForm(config, 'aicodemirror'),
     modelProxy: config.model.proxy ?? '',
     modelReasoningEnabled: config.model.reasoning.enabled,
     modelReasoningEffort: config.model.reasoning.effort,
@@ -357,7 +366,6 @@ function formToConfig(values: Record<string, unknown>): KrakenFileConfig {
       provider: selectedProvider.id,
       api: selectedProvider.api,
       name: selectedModel.model,
-      apiKey: stringValue(values.modelApiKey, ''),
       proxy: stringValue(values.modelProxy, ''),
       reasoning: {
         enabled: booleanValue(values.modelReasoningEnabled),
@@ -382,7 +390,11 @@ function formToConfig(values: Record<string, unknown>): KrakenFileConfig {
       },
     },
     providers: {
+      openrouter: {
+        apiKey: stringValue(values.openrouterApiKey, ''),
+      },
       openai: {
+        apiKey: stringValue(values.openaiApiKey, ''),
         api: enumValue<'responses' | 'chat-completions'>(
           values.openaiApi,
           ['responses', 'chat-completions'],
@@ -397,6 +409,7 @@ function formToConfig(values: Record<string, unknown>): KrakenFileConfig {
         promptCacheRetention: stringValue(values.openaiPromptCacheRetention, 'in_memory'),
       },
       anthropic: {
+        apiKey: stringValue(values.anthropicApiKey, ''),
         api: 'messages',
         thinking: enumValue<'auto' | 'adaptive' | 'enabled' | 'disabled'>(
           values.anthropicThinking,
@@ -414,11 +427,15 @@ function formToConfig(values: Record<string, unknown>): KrakenFileConfig {
         cacheTtl: enumValue<'5m' | '1h'>(values.anthropicCacheTtl, ['5m', '1h'], '5m'),
       },
       qwen: {
+        apiKey: stringValue(values.qwenApiKey, ''),
         api: 'chat-completions',
         enableThinking: booleanValue(values.qwenEnableThinking),
         thinkingBudget: Math.max(0, Math.floor(numberValue(values.qwenThinkingBudget, 8192))),
         preserveThinking: booleanValue(values.qwenPreserveThinking),
         cacheMode: 'auto',
+      },
+      aicodemirror: {
+        apiKey: stringValue(values.aicodemirrorApiKey, ''),
       },
     },
     context: {
@@ -578,8 +595,14 @@ function getConfigHtml(webview: vscode.Webview, values: ConfigFormValues): strin
         select('modelSelection', 'Model', supportedModelOptions.map((option) => [option.id, option.label])),
         select('modelProvider', 'Request provider', providerOptions.map((option) => [option.id, option.label])),
         text('modelBaseUrl', 'Base URL'),
-        password('modelApiKey', 'API key'),
         text('modelProxy', 'HTTP proxy'),
+      ])}
+      ${section('Provider API Keys', [
+        password('openrouterApiKey', 'OpenRouter API key'),
+        password('openaiApiKey', 'OpenAI API key'),
+        password('anthropicApiKey', 'Anthropic API key'),
+        password('qwenApiKey', 'Qwen API key'),
+        password('aicodemirrorApiKey', 'AICodeMirror API key'),
       ])}
       ${section('Reasoning / Thinking', [
         checkbox('modelReasoningEnabled', 'Enable reasoning'),
@@ -846,6 +869,53 @@ function resolveSupportedModel(value: string): SupportedModelOption {
 
 function resolveProviderOption(value: string): ProviderOption {
   return providerOptions.find((option) => option.id === value) ?? providerOptions[0];
+}
+
+function getProviderApiKeyForForm(
+  config: ReturnType<typeof getKrakenConfig>,
+  provider: ManagedProvider
+): string {
+  const configured = config.providers[provider].apiKey;
+  if (configured) {
+    return configured;
+  }
+  return config.model.provider === provider ? config.model.apiKey : '';
+}
+
+function buildProviderApiKeyPatch(provider: ModelProvider, apiKey: string): KrakenFileConfig {
+  switch (provider) {
+    case 'openrouter':
+      return { providers: { openrouter: { apiKey } } };
+    case 'openai':
+      return { providers: { openai: { apiKey } } };
+    case 'anthropic':
+      return { providers: { anthropic: { apiKey } } };
+    case 'qwen':
+      return { providers: { qwen: { apiKey } } };
+    case 'aicodemirror':
+      return { providers: { aicodemirror: { apiKey } } };
+    case 'openai-compatible':
+    default:
+      return { model: { apiKey } };
+  }
+}
+
+function getProviderLabel(provider: ModelProvider): string {
+  switch (provider) {
+    case 'openrouter':
+      return 'OpenRouter';
+    case 'openai':
+      return 'OpenAI';
+    case 'anthropic':
+      return 'Anthropic';
+    case 'qwen':
+      return 'Qwen';
+    case 'aicodemirror':
+      return 'AICodeMirror';
+    case 'openai-compatible':
+    default:
+      return 'provider';
+  }
 }
 
 function stripProviderPrefix(value: string): string {

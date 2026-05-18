@@ -84,13 +84,18 @@ export interface KrakenModelCacheConfig {
 }
 
 export interface KrakenProviderFileConfig {
+  openrouter: {
+    apiKey?: string;
+  };
   openai: {
+    apiKey?: string;
     api?: 'responses' | 'chat-completions';
     effort?: ModelReasoningEffort;
     promptCacheKey?: string;
     promptCacheRetention?: string;
   };
   anthropic: {
+    apiKey?: string;
     api?: 'messages';
     thinking?: 'auto' | 'adaptive' | 'enabled' | 'disabled';
     effort?: ModelReasoningEffort;
@@ -100,11 +105,15 @@ export interface KrakenProviderFileConfig {
     cacheTtl?: string;
   };
   qwen: {
+    apiKey?: string;
     api?: 'chat-completions';
     enableThinking?: boolean;
     thinkingBudget?: number;
     preserveThinking?: boolean;
     cacheMode?: 'auto' | 'explicit' | 'implicit' | 'disabled';
+  };
+  aicodemirror: {
+    apiKey?: string;
   };
 }
 
@@ -120,9 +129,11 @@ export interface KrakenConfig {
     cache: KrakenModelCacheConfig;
   };
   providers: {
+    openrouter: Required<KrakenProviderFileConfig['openrouter']>;
     openai: Required<KrakenProviderFileConfig['openai']>;
     anthropic: Required<KrakenProviderFileConfig['anthropic']>;
     qwen: Required<KrakenProviderFileConfig['qwen']>;
+    aicodemirror: Required<KrakenProviderFileConfig['aicodemirror']>;
   };
   context: {
     maxChars: number;
@@ -239,9 +250,11 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
   const reasoning = model.reasoning ?? {};
   const cache = model.cache ?? {};
   const providers = fileConfig.providers ?? {};
+  const openrouter = providers.openrouter ?? {};
   const openai = providers.openai ?? {};
   const anthropic = providers.anthropic ?? {};
   const qwen = providers.qwen ?? {};
+  const aicodemirror = providers.aicodemirror ?? {};
   const skills = fileConfig.skills ?? {};
   const lsp = fileConfig.lsp ?? {};
   const memory = fileConfig.memory ?? {};
@@ -261,6 +274,41 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
     process.env.AGENT_BROWSER_ALLOWED_DOMAINS
   ));
 
+  const provider = normalizeModelProvider(stringValue(
+    model.provider,
+    getVSCodeConfigValue<string>(vscodeConfig, 'model.provider'),
+    'openrouter'
+  ));
+  const resolvedApiKey = resolveProviderApiKey(
+    provider,
+    {
+      openrouter: normalizeOptionalString(firstNonEmptyString(
+        openrouter.apiKey,
+        getVSCodeConfigValue<string>(vscodeConfig, 'providers.openrouter.apiKey')
+      )),
+      openai: normalizeOptionalString(firstNonEmptyString(
+        openai.apiKey,
+        getVSCodeConfigValue<string>(vscodeConfig, 'providers.openai.apiKey')
+      )),
+      anthropic: normalizeOptionalString(firstNonEmptyString(
+        anthropic.apiKey,
+        getVSCodeConfigValue<string>(vscodeConfig, 'providers.anthropic.apiKey')
+      )),
+      qwen: normalizeOptionalString(firstNonEmptyString(
+        qwen.apiKey,
+        getVSCodeConfigValue<string>(vscodeConfig, 'providers.qwen.apiKey')
+      )),
+      aicodemirror: normalizeOptionalString(firstNonEmptyString(
+        aicodemirror.apiKey,
+        getVSCodeConfigValue<string>(vscodeConfig, 'providers.aicodemirror.apiKey')
+      )),
+    },
+    normalizeOptionalString(firstNonEmptyString(
+      model.apiKey,
+      getVSCodeConfigValue<string>(vscodeConfig, 'model.apiKey')
+    ))
+  );
+
   return {
     model: {
       baseUrl: normalizeBaseUrl(stringValue(
@@ -269,12 +317,8 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
         'https://openrouter.ai/api/v1'
       )),
       name: stringValue(model.name, getVSCodeConfigValue<string>(vscodeConfig, 'model.name'), 'qwen/qwen3.6-plus').trim(),
-      apiKey: stringValue(model.apiKey, ''),
-      provider: normalizeModelProvider(stringValue(
-        model.provider,
-        getVSCodeConfigValue<string>(vscodeConfig, 'model.provider'),
-        'openrouter'
-      )),
+      apiKey: resolvedApiKey,
+      provider,
       api: normalizeModelApi(stringValue(
         model.api,
         getVSCodeConfigValue<string>(vscodeConfig, 'model.api'),
@@ -326,7 +370,19 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
       ...(normalizeOptionalString(model.proxy) ? { proxy: normalizeOptionalString(model.proxy) } : {}),
     },
     providers: {
+      openrouter: {
+        apiKey: stringValue(
+          openrouter.apiKey,
+          getVSCodeConfigValue<string>(vscodeConfig, 'providers.openrouter.apiKey'),
+          ''
+        ),
+      },
       openai: {
+        apiKey: stringValue(
+          openai.apiKey,
+          getVSCodeConfigValue<string>(vscodeConfig, 'providers.openai.apiKey'),
+          ''
+        ),
         api: normalizeOpenAIApi(stringValue(openai.api, getVSCodeConfigValue<string>(vscodeConfig, 'providers.openai.api'), 'responses')),
         effort: normalizeReasoningEffort(stringValue(openai.effort, getVSCodeConfigValue<string>(vscodeConfig, 'providers.openai.effort'), 'medium')),
         promptCacheKey: stringValue(
@@ -341,6 +397,11 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
         ),
       },
       anthropic: {
+        apiKey: stringValue(
+          anthropic.apiKey,
+          getVSCodeConfigValue<string>(vscodeConfig, 'providers.anthropic.apiKey'),
+          ''
+        ),
         api: 'messages',
         thinking: normalizeAnthropicThinking(stringValue(
           anthropic.thinking,
@@ -380,6 +441,11 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
         )),
       },
       qwen: {
+        apiKey: stringValue(
+          qwen.apiKey,
+          getVSCodeConfigValue<string>(vscodeConfig, 'providers.qwen.apiKey'),
+          ''
+        ),
         api: 'chat-completions',
         enableThinking: booleanValue(
           qwen.enableThinking,
@@ -404,6 +470,13 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
           getVSCodeConfigValue<string>(vscodeConfig, 'providers.qwen.cacheMode'),
           'auto'
         )),
+      },
+      aicodemirror: {
+        apiKey: stringValue(
+          aicodemirror.apiKey,
+          getVSCodeConfigValue<string>(vscodeConfig, 'providers.aicodemirror.apiKey'),
+          ''
+        ),
       },
     },
     context: {
@@ -593,13 +666,17 @@ function normalizeParsedConfig(parsed: ParsedToml): KrakenFileConfig {
   }
 
   if (providers) {
+    const openrouter = asRecord(providers.openrouter);
     const openai = asRecord(providers.openai);
     const anthropic = asRecord(providers.anthropic);
     const qwen = asRecord(providers.qwen);
+    const aicodemirror = asRecord(providers.aicodemirror);
     config.providers = {
+      ...(openrouter ? { openrouter: normalizeSimpleApiKeyProviderSection(openrouter) } : {}),
       ...(openai ? { openai: normalizeOpenAIProviderSection(openai) } : {}),
       ...(anthropic ? { anthropic: normalizeAnthropicProviderSection(anthropic) } : {}),
       ...(qwen ? { qwen: normalizeQwenProviderSection(qwen) } : {}),
+      ...(aicodemirror ? { aicodemirror: normalizeSimpleApiKeyProviderSection(aicodemirror) } : {}),
     };
   }
 
@@ -733,13 +810,17 @@ function mergeProvidersSection(
   base?: Partial<KrakenProviderFileConfig>,
   override?: Partial<KrakenProviderFileConfig>
 ): Partial<KrakenProviderFileConfig> | undefined {
+  const openrouter = mergeSection(base?.openrouter, override?.openrouter);
   const openai = mergeSection(base?.openai, override?.openai);
   const anthropic = mergeSection(base?.anthropic, override?.anthropic);
   const qwen = mergeSection(base?.qwen, override?.qwen);
+  const aicodemirror = mergeSection(base?.aicodemirror, override?.aicodemirror);
   const merged = {
+    ...(openrouter ? { openrouter } : {}),
     ...(openai ? { openai } : {}),
     ...(anthropic ? { anthropic } : {}),
     ...(qwen ? { qwen } : {}),
+    ...(aicodemirror ? { aicodemirror } : {}),
   };
   return Object.keys(merged).length ? merged : undefined;
 }
@@ -760,9 +841,11 @@ function serializeKrakenToml(config: KrakenFileConfig): string {
   pushSection(sections, 'model', model);
   pushSection(sections, 'model.reasoning', config.model?.reasoning);
   pushSection(sections, 'model.cache', config.model?.cache);
+  pushSection(sections, 'providers.openrouter', config.providers?.openrouter);
   pushSection(sections, 'providers.openai', config.providers?.openai);
   pushSection(sections, 'providers.anthropic', config.providers?.anthropic);
   pushSection(sections, 'providers.qwen', config.providers?.qwen);
+  pushSection(sections, 'providers.aicodemirror', config.providers?.aicodemirror);
   pushSection(sections, 'context', config.context);
   pushSection(sections, 'agent', config.agent);
   pushSection(sections, 'skills', config.skills);
@@ -1033,6 +1116,7 @@ function normalizeCacheSection(record: Record<string, unknown>): Partial<KrakenM
 function normalizeOpenAIProviderSection(
   record: Record<string, unknown>
 ): Partial<KrakenProviderFileConfig['openai']> {
+  const apiKey = firstDefined(getString(record, 'apiKey'), getString(record, 'api_key'));
   const api = getString(record, 'api');
   const effort = getString(record, 'effort');
   const promptCacheKey = firstDefined(getString(record, 'promptCacheKey'), getString(record, 'prompt_cache_key'));
@@ -1042,6 +1126,7 @@ function normalizeOpenAIProviderSection(
   );
 
   return {
+    ...(apiKey !== undefined ? { apiKey } : {}),
     ...(api !== undefined ? { api: normalizeOpenAIApi(api) } : {}),
     ...(effort !== undefined ? { effort: normalizeReasoningEffort(effort) } : {}),
     ...(promptCacheKey !== undefined ? { promptCacheKey } : {}),
@@ -1052,6 +1137,7 @@ function normalizeOpenAIProviderSection(
 function normalizeAnthropicProviderSection(
   record: Record<string, unknown>
 ): Partial<KrakenProviderFileConfig['anthropic']> {
+  const apiKey = firstDefined(getString(record, 'apiKey'), getString(record, 'api_key'));
   const api = getString(record, 'api');
   const thinking = getString(record, 'thinking');
   const effort = getString(record, 'effort');
@@ -1067,6 +1153,7 @@ function normalizeAnthropicProviderSection(
   const cacheTtl = firstDefined(getString(record, 'cacheTtl'), getString(record, 'cache_ttl'));
 
   return {
+    ...(apiKey !== undefined ? { apiKey } : {}),
     ...(api !== undefined ? { api: 'messages' } : {}),
     ...(thinking !== undefined ? { thinking: normalizeAnthropicThinking(thinking) } : {}),
     ...(effort !== undefined ? { effort: normalizeReasoningEffort(effort) } : {}),
@@ -1080,6 +1167,7 @@ function normalizeAnthropicProviderSection(
 function normalizeQwenProviderSection(
   record: Record<string, unknown>
 ): Partial<KrakenProviderFileConfig['qwen']> {
+  const apiKey = firstDefined(getString(record, 'apiKey'), getString(record, 'api_key'));
   const api = getString(record, 'api');
   const enableThinking = firstDefined(getBoolean(record, 'enableThinking'), getBoolean(record, 'enable_thinking'));
   const thinkingBudget = firstDefined(getNumber(record, 'thinkingBudget'), getNumber(record, 'thinking_budget'));
@@ -1090,12 +1178,48 @@ function normalizeQwenProviderSection(
   const cacheMode = firstDefined(getString(record, 'cacheMode'), getString(record, 'cache_mode'));
 
   return {
+    ...(apiKey !== undefined ? { apiKey } : {}),
     ...(api !== undefined ? { api: 'chat-completions' } : {}),
     ...(enableThinking !== undefined ? { enableThinking } : {}),
     ...(thinkingBudget !== undefined ? { thinkingBudget } : {}),
     ...(preserveThinking !== undefined ? { preserveThinking } : {}),
     ...(cacheMode !== undefined ? { cacheMode: normalizeQwenCacheMode(cacheMode) } : {}),
   };
+}
+
+function normalizeSimpleApiKeyProviderSection(
+  record: Record<string, unknown>
+): { apiKey?: string } {
+  const apiKey = firstDefined(getString(record, 'apiKey'), getString(record, 'api_key'));
+  return apiKey !== undefined ? { apiKey } : {};
+}
+
+function resolveProviderApiKey(
+  provider: ModelProvider,
+  providerKeys: {
+    openrouter?: string;
+    openai?: string;
+    anthropic?: string;
+    qwen?: string;
+    aicodemirror?: string;
+  },
+  legacyApiKey?: string
+): string {
+  switch (provider) {
+    case 'openrouter':
+      return providerKeys.openrouter ?? legacyApiKey ?? '';
+    case 'openai':
+      return providerKeys.openai ?? legacyApiKey ?? '';
+    case 'anthropic':
+      return providerKeys.anthropic ?? legacyApiKey ?? '';
+    case 'qwen':
+      return providerKeys.qwen ?? legacyApiKey ?? '';
+    case 'aicodemirror':
+      return providerKeys.aicodemirror ?? legacyApiKey ?? '';
+    case 'openai-compatible':
+    default:
+      return legacyApiKey ?? '';
+  }
 }
 
 function firstDefined<T>(...values: Array<T | undefined>): T | undefined {

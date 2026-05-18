@@ -216,13 +216,18 @@ export interface ModelCacheSettings {
 }
 
 export interface ModelProviderSettings {
+  openrouter: {
+    apiKey: string;
+  };
   openai: {
+    apiKey: string;
     api: 'responses' | 'chat-completions';
     effort: ModelReasoningEffort;
     promptCacheKey: string;
     promptCacheRetention: string;
   };
   anthropic: {
+    apiKey: string;
     api: 'messages';
     thinking: 'auto' | 'adaptive' | 'enabled' | 'disabled';
     effort: ModelReasoningEffort;
@@ -232,11 +237,15 @@ export interface ModelProviderSettings {
     cacheTtl: string;
   };
   qwen: {
+    apiKey: string;
     api: 'chat-completions';
     enableThinking: boolean;
     thinkingBudget: number;
     preserveThinking: boolean;
     cacheMode: 'auto' | 'explicit' | 'implicit' | 'disabled';
+  };
+  aicodemirror: {
+    apiKey: string;
   };
 }
 
