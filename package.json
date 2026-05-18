@@ -3,7 +3,7 @@
   "displayName": "Kraken Coder",
   "description": "A pragmatic coding assistant for VS Code with reviewable code changes.",
   "version": "0.1.0",
-  "publisher": "kraken",
+  "publisher": "bill-yan233",
   "license": "MIT",
   "engines": {
     "vscode": "^1.90.0"
