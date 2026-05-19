@@ -22,10 +22,18 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       --chat-bubble-border: #1f5a4c;
       --chat-user-bg: #17483d;
       --chat-tool-bg: var(--vscode-sideBarSectionHeader-background);
+      --composer-height: 0px;
     }
 
     * {
       box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
     }
 
     body {
@@ -38,9 +46,12 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     }
 
     .app {
-      min-height: 100vh;
-      display: grid;
-      grid-template-rows: auto 1fr auto;
+      position: fixed;
+      inset: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
     }
 
     .session-panel {
@@ -179,8 +190,13 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     }
 
     .main {
-      overflow: auto;
-      padding: 10px 8px 12px;
+      position: relative;
+      z-index: 1;
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: 10px 8px calc(var(--composer-height) + 12px);
     }
 
     .tabs {
@@ -649,6 +665,12 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     }
 
     .composer {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 2;
+      min-height: 0;
       border-top: 1px solid var(--border);
       padding: 8px;
       background: var(--vscode-sideBar-background);
@@ -974,6 +996,7 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     const modelInfoEl = document.getElementById('modelInfo');
     const errorEl = document.getElementById('error');
     const slashMenuEl = document.getElementById('slashMenu');
+    const composerEl = document.getElementById('composer');
     const tabButtons = Array.from(document.querySelectorAll('[data-tab]'));
     const panels = Array.from(document.querySelectorAll('[data-panel]'));
     let pendingAttachments = [];
@@ -1001,6 +1024,18 @@ export function getWebviewHtml(webview: vscode.Webview): string {
         renderTabs();
       });
     });
+
+    if (window.ResizeObserver && composerEl) {
+      const composerResizeObserver = new ResizeObserver(() => syncComposerHeight());
+      composerResizeObserver.observe(composerEl);
+      window.addEventListener('load', syncComposerHeight);
+      window.addEventListener('resize', syncComposerHeight);
+      syncComposerHeight();
+    } else {
+      window.addEventListener('load', syncComposerHeight);
+      window.addEventListener('resize', syncComposerHeight);
+      syncComposerHeight();
+    }
 
     document.getElementById('composer').addEventListener('submit', (event) => {
       event.preventDefault();
@@ -1250,6 +1285,14 @@ export function getWebviewHtml(webview: vscode.Webview): string {
 
     function post(message) {
       vscode.postMessage(message);
+    }
+
+    function syncComposerHeight() {
+      if (!composerEl) {
+        return;
+      }
+      const height = Math.ceil(composerEl.getBoundingClientRect().height);
+      document.documentElement.style.setProperty('--composer-height', Math.max(0, height) + 'px');
     }
 
     function render() {

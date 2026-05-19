@@ -2,7 +2,7 @@
   "name": "kraken-coder",
   "displayName": "Kraken Coder",
   "description": "AI coding assistant for VS Code with chat, context, and direct file editing.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "bill-yan233",
   "license": "MIT",
   "engines": {

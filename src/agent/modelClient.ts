@@ -241,7 +241,7 @@ export class OpenAICompatibleModelClient {
   ): Promise<ModelResponse> {
     const parsed = await parseJsonResponse<ChatCompletionsResponse>(response, trace, request);
     if (!response.ok) {
-      throw new Error(parsed.error?.message ?? `Model request failed with HTTP ${response.status}.`);
+      throw new Error(extractParsedErrorMessage(parsed) ?? `Model request failed with HTTP ${response.status}.`);
     }
 
     const choice = parsed.choices?.[0];
@@ -385,7 +385,7 @@ export class OpenAICompatibleModelClient {
   ): Promise<ModelResponse> {
     const parsed = await parseJsonResponse<ResponsesResponse>(response, trace, request);
     if (!response.ok) {
-      throw new Error(parsed.error?.message ?? `Model request failed with HTTP ${response.status}.`);
+      throw new Error(extractParsedErrorMessage(parsed) ?? `Model request failed with HTTP ${response.status}.`);
     }
 
     const modelResponse = parseOpenAIResponsesResponse(parsed);
@@ -533,7 +533,7 @@ export class OpenAICompatibleModelClient {
   ): Promise<ModelResponse> {
     const parsed = await parseJsonResponse<AnthropicMessageResponse>(response, trace, request);
     if (!response.ok) {
-      throw new Error(parsed.error?.message ?? `Model request failed with HTTP ${response.status}.`);
+      throw new Error(extractParsedErrorMessage(parsed) ?? `Model request failed with HTTP ${response.status}.`);
     }
 
     const modelResponse = parseAnthropicMessageResponse(parsed);
@@ -786,13 +786,40 @@ function isEventStream(response: Response): boolean {
 
 function extractErrorMessage(body: string): string | undefined {
   try {
-    const parsed = JSON.parse(body) as unknown;
-    const record = asRecord(parsed);
-    const error = asRecord(record?.error);
-    return typeof error?.message === 'string' ? error.message : undefined;
+    return extractParsedErrorMessage(JSON.parse(body) as unknown);
   } catch {
     return undefined;
   }
+}
+
+function extractParsedErrorMessage(parsed: unknown): string | undefined {
+  const record = asRecord(parsed);
+  if (!record) {
+    return undefined;
+  }
+
+  if (typeof record.message === 'string' && record.message.trim()) {
+    return record.message;
+  }
+
+  if (typeof record.error === 'string' && record.error.trim()) {
+    return record.error;
+  }
+
+  const error = asRecord(record.error);
+  if (typeof error?.message === 'string' && error.message.trim()) {
+    return error.message;
+  }
+
+  if (typeof error?.detail === 'string' && error.detail.trim()) {
+    return error.detail;
+  }
+
+  if (typeof record.detail === 'string' && record.detail.trim()) {
+    return record.detail;
+  }
+
+  return undefined;
 }
 
 function isOpenAIThinkingDeltaEvent(type: string): boolean {
@@ -1284,20 +1311,7 @@ async function postJson(
   const requestBody = JSON.stringify(body);
   const trace = createHttpTrace(request, url, 'POST', headers, body);
   try {
-    const response = request.settings.proxy
-      ? await requestViaProxy(url, {
-          method: 'POST',
-          headers,
-          body: requestBody,
-          signal: request.signal,
-          proxy: request.settings.proxy
-        })
-      : await fetch(url, {
-          method: 'POST',
-          headers,
-          body: requestBody,
-          signal: request.signal
-        });
+    const response = await fetchWithRetry(request, url, headers, requestBody);
     populateResponseMetadata(trace, response);
     return { response, trace };
   } catch (error) {
@@ -1306,6 +1320,51 @@ async function postJson(
     });
     throw error;
   }
+}
+
+async function fetchWithRetry(
+  request: ModelRequest,
+  url: string,
+  headers: Record<string, string>,
+  body: string
+): Promise<Response> {
+  const maxAttempts = 2;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = request.settings.proxy
+        ? await requestViaProxy(url, {
+            method: 'POST',
+            headers,
+            body,
+            signal: request.signal,
+            proxy: request.settings.proxy
+          })
+        : await fetch(url, {
+            method: 'POST',
+            headers,
+            body,
+            signal: request.signal
+          });
+
+      if (shouldRetryResponse(response) && attempt < maxAttempts) {
+        await response.body?.cancel().catch(() => undefined);
+        await sleep(300 * attempt);
+        continue;
+      }
+
+      return response;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= maxAttempts || !shouldRetryError(error)) {
+        throw error;
+      }
+      await sleep(300 * attempt);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Model request failed.');
 }
 
 function joinUrl(baseUrl: string, path: string): string {
@@ -1447,6 +1506,25 @@ async function assertOkStreamResponse(response: Response, trace?: HttpTrace, req
     }
     throw new Error('Model provider returned an empty streaming response.');
   }
+}
+
+function shouldRetryResponse(response: Response): boolean {
+  return response.status === 429
+    || response.status === 500
+    || response.status === 502
+    || response.status === 503
+    || response.status === 504;
+}
+
+function shouldRetryError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return /fetch failed|network|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN/i.test(error.message);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function readServerSentEventStream(
