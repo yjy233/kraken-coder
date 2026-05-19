@@ -33,7 +33,6 @@ export interface KrakenFileConfig {
     maxChars?: number;
   };
   agent?: {
-    autoApply?: boolean;
     browserBin?: string;
     browserMaxOutput?: number;
     browserDefaultTimeout?: number;
@@ -139,7 +138,6 @@ export interface KrakenConfig {
     maxChars: number;
   };
   agent: {
-    autoApply: boolean;
     browserBin: string;
     browserMaxOutput: number;
     browserDefaultTimeout: number;
@@ -483,7 +481,6 @@ export function getKrakenConfig(options: KrakenConfigOptions = {}): KrakenConfig
       maxChars: numberValue(context.maxChars, getVSCodeConfigValue<number>(vscodeConfig, 'context.maxChars'), 60000),
     },
     agent: {
-      autoApply: booleanValue(agent.autoApply, getVSCodeConfigValue<boolean>(vscodeConfig, 'agent.autoApply'), false),
       browserBin: stringValue(
         agent.browserBin,
         getVSCodeConfigValue<string>(vscodeConfig, 'agent.browserBin'),
@@ -688,7 +685,6 @@ function normalizeParsedConfig(parsed: ParsedToml): KrakenFileConfig {
   }
 
   if (agent) {
-    const autoApply = firstDefined(getBoolean(agent, 'autoApply'), getBoolean(agent, 'auto_apply'));
     const browserBin = firstDefined(getString(agent, 'browserBin'), getString(agent, 'browser_bin'));
     const browserMaxOutput = firstDefined(getNumber(agent, 'browserMaxOutput'), getNumber(agent, 'browser_max_output'));
     const browserDefaultTimeout = firstDefined(
@@ -702,7 +698,6 @@ function normalizeParsedConfig(parsed: ParsedToml): KrakenFileConfig {
     );
 
     config.agent = {
-      ...(autoApply !== undefined ? { autoApply } : {}),
       ...(browserBin !== undefined ? { browserBin } : {}),
       ...(browserMaxOutput !== undefined ? { browserMaxOutput } : {}),
       ...(browserDefaultTimeout !== undefined ? { browserDefaultTimeout } : {}),

@@ -14,7 +14,6 @@ export function createEmptyChatSession(title = 'New session'): ChatSession {
     title,
     messages: [],
     context: [],
-    changeSets: [],
     busy: false,
   };
 }

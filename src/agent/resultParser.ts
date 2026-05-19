@@ -34,13 +34,6 @@ function extractJson(raw: string): string | undefined {
 }
 
 function normalizeAgentResult(parsed: Partial<AgentResult>, fallback: string): AgentResult {
-  const changes = Array.isArray(parsed.changes)
-    ? parsed.changes.filter((change) => {
-        return typeof change?.path === 'string'
-          && (change.type === 'create' || change.type === 'modify' || change.type === 'delete');
-      })
-    : undefined;
-
   const commands = Array.isArray(parsed.commands)
     ? parsed.commands.filter((command) => typeof command?.command === 'string')
     : undefined;
@@ -51,9 +44,7 @@ function normalizeAgentResult(parsed: Partial<AgentResult>, fallback: string): A
 
   return {
     summary: typeof parsed.summary === 'string' && parsed.summary.trim() ? parsed.summary.trim() : fallback.trim(),
-    changes,
     commands,
     followUps
   };
 }
-

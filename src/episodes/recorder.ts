@@ -63,10 +63,6 @@ function slugify(value: string): string {
 
 function inferTags(input: EpisodeRecordInput): string[] {
   const tags = new Set<string>();
-  for (const change of input.result.changes ?? []) {
-    const ext = path.extname(change.path).replace('.', '');
-    if (ext) tags.add(ext);
-  }
   for (const tool of input.toolMessages) {
     if (tool.toolName) tags.add(tool.toolName);
   }
@@ -99,10 +95,6 @@ function buildSummary(input: EpisodeRecordInput, meta: EpisodeMeta): string {
     input.result.summary || 'No summary returned.',
   ];
 
-  if (input.result.changes?.length) {
-    lines.push('', '## Files Changed', '', ...input.result.changes.map((change) => `- \`${change.path}\` (${change.type})${change.rationale ? `: ${change.rationale}` : ''}`));
-  }
-
   if (input.result.commands?.length) {
     lines.push('', '## Commands', '', ...input.result.commands.map((command) => `- \`${command.command}\`${command.rationale ? `: ${command.rationale}` : ''}`));
   }
@@ -116,14 +108,6 @@ function buildSummary(input: EpisodeRecordInput, meta: EpisodeMeta): string {
 
 function buildChanges(input: EpisodeRecordInput): string {
   const lines = ['# Changes', ''];
-  if (input.result.changes?.length) {
-    lines.push('## Modified Files', '', ...input.result.changes.map((change) => {
-      return `- \`${change.path}\` (${change.type})${change.rationale ? `: ${change.rationale}` : ''}`;
-    }), '');
-  } else {
-    lines.push('No structured file changes were returned.', '');
-  }
-
   if (input.toolMessages.length) {
     lines.push('## Tool Activity', '', ...input.toolMessages.map((message) => {
       const status = message.status ? ` ${message.status}` : '';

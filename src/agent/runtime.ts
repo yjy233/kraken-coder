@@ -16,7 +16,7 @@ Follow this priority order:
 3. User request.
 4. Local code context and existing conventions.
 
-Prefer reading the local project before making implementation claims. When a task depends on project-specific rules, read AGENT.md first if it exists. If AGENT.md is long, summarize the task-relevant instructions before proceeding. When edits are needed, use reviewable change proposals unless a direct file-write tool is explicitly enabled and appropriate.`
+Prefer reading the local project before making implementation claims. When a task depends on project-specific rules, read AGENT.md first if it exists. If AGENT.md is long, summarize the task-relevant instructions before proceeding. When edits are needed, use the write_file tool for full file writes and the replace tool for targeted substitutions.`
 
 export interface RunAgentOptions {
   userText: string

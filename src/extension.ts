@@ -2,15 +2,12 @@ import * as vscode from 'vscode';
 import { KrakenCodeActionProvider } from './providers/codeActionProvider';
 import { KrakenViewProvider } from './providers/krakenViewProvider';
 import { configureModel } from './vscode/config';
-import { ChangeDocumentProvider } from './vscode/edits';
 
 export function activate(context: vscode.ExtensionContext): void {
   const krakenViewProvider = new KrakenViewProvider(context.extensionUri);
-  const changeDocumentProvider = new ChangeDocumentProvider();
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(KrakenViewProvider.viewType, krakenViewProvider),
-    vscode.workspace.registerTextDocumentContentProvider('kraken-change', changeDocumentProvider),
     vscode.languages.registerCodeActionsProvider(
       { scheme: 'file' },
       new KrakenCodeActionProvider(),

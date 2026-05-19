@@ -6,7 +6,6 @@ import {
   AgentResult,
   ChatSessionUsage,
   ChatAttachment,
-  ChangeSet,
   ChatMessageStatus,
   ChatMessage,
   ChatSessionSummary,
@@ -21,7 +20,6 @@ import {
 } from '../shared/types';
 import { createVSCodeToolRegistry } from '../vscode/agentTools';
 import { ensureModelConfigured } from '../vscode/config';
-import { applyChangeSet, buildChangeSet, openChangeDiff } from '../vscode/edits';
 import {
   getActiveSelectionContext,
   getDiagnosticsContext,
@@ -117,7 +115,6 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     this.pendingInputs.length = 0;
     this.session.messages = [];
     this.session.context = [];
-    this.session.changeSets = [];
     this.streamingAssistantMessageId = undefined;
     this.streamingThinkingMessageId = undefined;
     this.syncRuntimeState();
@@ -152,8 +149,8 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
 
     const prompt = {
       explain: 'Explain the selected code. Focus on behavior, dependencies, and edge cases.',
-      fix: 'Fix the selected code. Return a JSON change proposal if file edits are needed.',
-      tests: 'Generate useful tests for the current file or selection. Return a JSON change proposal with new or modified test files.'
+      fix: 'Fix the selected code. Use write_file or replace directly if file edits are needed.',
+      tests: 'Generate useful tests for the current file or selection. Use write_file or replace directly for any test file edits.'
     }[kind];
 
     await this.reveal();
@@ -170,17 +167,6 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
         break;
       case 'slash.completions':
         await this.postSlashCompletions(message.requestId, message.text, message.cursor);
-        break;
-      case 'change.apply':
-        await this.applyChange(message.changeSetId);
-        break;
-      case 'change.openDiff':
-        await this.openDiff(message.changeSetId, message.filePath);
-        break;
-      case 'change.reject':
-        this.session.changeSets = this.session.changeSets.filter((changeSet) => changeSet.id !== message.changeSetId);
-        await this.persistSession();
-        await this.postSession();
         break;
       case 'context.remove':
         this.session.context = this.session.context.filter((item) => item.id !== message.contextId);
@@ -304,10 +290,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
         query: userText,
         config: config.episodes,
       });
-      const { tools, availableSkills } = createVSCodeToolRegistry(
-        (summary, changes) => this.addChangeProposal(summary, changes),
-        { extensionRoot }
-      );
+      const { tools, availableSkills } = createVSCodeToolRegistry({ extensionRoot });
       this.availableSkills = availableSkills;
       this.streamingAssistantMessageId = undefined;
       this.streamingThinkingMessageId = undefined;
@@ -547,7 +530,6 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       postAssistantMessage: (content) => this.postAssistantMessage(content),
       postProgress: (message) => this.postProgress(message),
       clearSession: () => this.clearSession(),
-      addReviewableChangeProposal: (summary, changes) => this.addReviewableChangeProposal(summary, changes),
       openFile: async (filePath) => {
         const document = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
         await vscode.window.showTextDocument(document, { preview: false });
@@ -591,17 +573,6 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
         status: 'complete'
       });
     }
-
-    if (result.changes?.length) {
-      const changeSet = await buildChangeSet(result.summary || 'Kraken proposed changes', result.summary, result.changes);
-      this.session.changeSets.unshift(changeSet);
-
-      const autoApply = getKrakenConfig().agent.autoApply;
-      if (autoApply) {
-        await applyChangeSet(changeSet);
-        vscode.window.showInformationMessage(`Applied Kraken changes: ${changeSet.title}`);
-      }
-    }
     await this.persistSession();
   }
 
@@ -622,38 +593,6 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
     usage.records = [...usage.records, ...normalized].slice(-500);
     usage.totals = buildUsageTotals(usage.records);
     this.session.usage = usage;
-  }
-
-  private async addChangeProposal(summary: string, changes: AgentResult['changes']): Promise<string> {
-    if (!changes?.length) {
-      throw new Error('propose_changes requires at least one file change.');
-    }
-
-    const changeSet = await buildChangeSet(summary || 'Kraken proposed changes', summary, changes);
-    this.session.changeSets.unshift(changeSet);
-    await this.persistSession();
-    await this.postSession();
-
-    const autoApply = getKrakenConfig().agent.autoApply;
-    if (autoApply) {
-      await applyChangeSet(changeSet);
-      vscode.window.showInformationMessage(`Applied Kraken changes: ${changeSet.title}`);
-      return `Created and applied change proposal ${changeSet.id} (${changeSet.files.length} file(s)).`;
-    }
-
-    return `Created reviewable change proposal ${changeSet.id} (${changeSet.files.length} file(s)). The user can inspect the diff and apply it from the Kraken panel.`;
-  }
-
-  private async addReviewableChangeProposal(summary: string, changes: AgentResult['changes']): Promise<string> {
-    if (!changes?.length) {
-      throw new Error('A change proposal requires at least one file change.');
-    }
-
-    const changeSet = await buildChangeSet(summary || 'Kraken proposed changes', summary, changes);
-    this.session.changeSets.unshift(changeSet);
-    await this.persistSession();
-    await this.postSession();
-    return `Created reviewable change proposal ${changeSet.id} (${changeSet.files.length} file(s)). The user can inspect the diff and apply it from the Kraken panel.`;
   }
 
   private async addAutomaticContext(): Promise<void> {
@@ -762,28 +701,6 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
 
     this.session.context.unshift(context);
     this.session.context = this.session.context.slice(0, 20);
-  }
-
-  private async applyChange(changeSetId: string): Promise<void> {
-    const changeSet = this.findChangeSet(changeSetId);
-    await applyChangeSet(changeSet);
-    this.session.changeSets = this.session.changeSets.filter((item) => item.id !== changeSetId);
-    await this.persistSession();
-    await this.postSession();
-    vscode.window.showInformationMessage(`Applied Kraken changes: ${changeSet.title}`);
-  }
-
-  private async openDiff(changeSetId: string, filePath: string): Promise<void> {
-    await openChangeDiff(this.findChangeSet(changeSetId), filePath);
-  }
-
-  private findChangeSet(changeSetId: string): ChangeSet {
-    const changeSet = this.session.changeSets.find((item) => item.id === changeSetId);
-    if (!changeSet) {
-      throw new Error(`Change set not found: ${changeSetId}`);
-    }
-
-    return changeSet;
   }
 
   private async loadInitialSession(): Promise<void> {

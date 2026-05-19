@@ -1,7 +1,7 @@
 {
   "name": "kraken-coder",
   "displayName": "Kraken Coder",
-  "description": "AI coding assistant for VS Code with chat, context, and reviewable edits.",
+  "description": "AI coding assistant for VS Code with chat, context, and direct file editing.",
   "version": "0.1.0",
   "publisher": "bill-yan233",
   "license": "MIT",
@@ -331,11 +331,6 @@
           "default": 60000,
           "minimum": 2000,
           "description": "Maximum approximate context characters sent to the model."
-        },
-        "kraken.agent.autoApply": {
-          "type": "boolean",
-          "default": false,
-          "description": "Apply generated changes automatically. Off by default."
         },
         "kraken.agent.browserBin": {
           "type": "string",

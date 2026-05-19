@@ -1,4 +1,3 @@
-import type { FileChange } from '../shared/types';
 import type { Skill } from '../skills/types';
 
 export interface SlashCommandInvocation {
@@ -16,7 +15,6 @@ export interface SlashCommandContext {
   postAssistantMessage: (content: string) => void;
   postProgress: (message: string) => void;
   clearSession: () => Promise<void>;
-  addReviewableChangeProposal: (summary: string, changes: FileChange[]) => Promise<string>;
   openFile: (filePath: string) => Promise<void>;
   getAvailableSkills: () => Skill[];
   runAgent: (userText: string) => Promise<void>;

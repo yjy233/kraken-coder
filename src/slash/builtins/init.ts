@@ -30,7 +30,7 @@ const skillKeepPath = '.kraken-coder/skills/.gitkeep';
 
 export const initCommand: SlashCommand = {
   name: 'init',
-  description: 'Create a reviewable AGENT.md and workspace Kraken config proposal.',
+  description: 'Create or update AGENT.md and workspace Kraken config directly.',
   usage: '/init [--force] [--refresh] [--dry-run]',
   execute: async (invocation, context) => {
     if (!context.workspaceRoot) {
@@ -48,7 +48,7 @@ export const initCommand: SlashCommand = {
       context.postAssistantMessage([
         'AGENT.md already exists.',
         '',
-        'Use `/init --refresh` to propose updates, or `/init --force` to propose a replacement.',
+        'Use `/init --refresh` to update it, or `/init --force` to replace it.',
       ].join('\n'));
       return;
     }
@@ -56,7 +56,7 @@ export const initCommand: SlashCommand = {
     const changes = buildInitChanges(snapshot, { force, refresh });
     if (dryRun) {
       context.postAssistantMessage([
-        '/init dry run. The following files would be proposed:',
+        '/init dry run. The following files would be written:',
         '',
         ...changes.map((change) => `- ${change.path} (${change.type})`),
       ].join('\n'));
@@ -68,12 +68,10 @@ export const initCommand: SlashCommand = {
       return;
     }
 
-    context.postProgress('Creating /init change proposal...');
-    const result = await context.addReviewableChangeProposal('Initialize Kraken Coder workspace', changes);
+    context.postProgress('Writing /init files...');
+    await applyFileChanges(context.workspaceRoot, changes);
     context.postAssistantMessage([
       'Prepared Kraken Coder workspace initialization.',
-      '',
-      result,
       '',
       'Files:',
       ...changes.map((change) => `- ${change.path}`),
@@ -171,7 +169,7 @@ function buildAgentMd(snapshot: WorkspaceSnapshot, options: { force: boolean; re
     '',
     '- Keep changes scoped to the requested behavior.',
     '- Prefer existing project patterns before adding abstractions.',
-    '- Use reviewable change proposals for generated edits.',
+    '- Use write_file for full file writes and replace for targeted substitutions.',
     '- Update this file when project commands or conventions change.',
     '',
     '## Tool And Permission Notes',
@@ -237,9 +235,6 @@ function buildWorkspaceConfigToml(): string {
   return [
     '[context]',
     'maxChars = 60000',
-    '',
-    '[agent]',
-    'autoApply = false',
     '',
   ].join('\n');
 }
@@ -338,4 +333,24 @@ function asStringRecord(value: unknown): Record<string, string> {
 
 function hasFlag(invocation: SlashCommandInvocation, name: string): boolean {
   return invocation.flags[name] === true;
+}
+
+async function applyFileChanges(workspaceRoot: string | undefined, changes: FileChange[]): Promise<void> {
+  if (!workspaceRoot) {
+    throw new Error('Open a workspace folder before writing files.');
+  }
+
+  for (const change of changes) {
+    const filePath = path.isAbsolute(change.path)
+      ? change.path
+      : path.join(workspaceRoot, change.path);
+
+    if (change.type === 'delete') {
+      await fs.rm(filePath, { force: true });
+      continue;
+    }
+
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, change.fullText ?? '', 'utf8');
+  }
 }

@@ -2,7 +2,6 @@ import * as path from 'path'
 import { createToolRegistry } from '../tools/registry'
 import type { ToolDefinition } from '../agent/types'
 import { refreshSkills } from '../skills/manager'
-import { createProposeChangesTool, type ProposeChangesHandler } from '../tools/propose-changes'
 import { getWorkspaceRoot } from './workspace'
 import { getKrakenConfig } from './krakenConfig'
 import { configureSkillPaths } from '../skills/paths'
@@ -17,7 +16,6 @@ export interface VSCodeToolRegistry {
 }
 
 export function createVSCodeToolRegistry(
-  proposeChanges: ProposeChangesHandler,
   options: { extensionRoot?: string } = {}
 ): VSCodeToolRegistry {
   const root = getWorkspaceRoot()
@@ -51,7 +49,6 @@ export function createVSCodeToolRegistry(
     skillState: { loadedSkillNames: new Set<string>() },
   })
 
-  const proposeChangesTool = createProposeChangesTool(proposeChanges)
   tools.push(...createLspTools({
     workspaceRoot: root.fsPath,
     adapter: config.lsp.adapter === 'process'
@@ -59,12 +56,6 @@ export function createVSCodeToolRegistry(
       : new VSCodeLspAdapter(),
     config: config.lsp,
   }))
-  tools.push({
-    name: proposeChangesTool.name,
-    description: proposeChangesTool.description,
-    input_schema: proposeChangesTool.inputSchema,
-    execute: (input: Record<string, unknown>) => proposeChangesTool.execute(input, {} as never),
-  })
 
   return { tools, availableSkills }
 }

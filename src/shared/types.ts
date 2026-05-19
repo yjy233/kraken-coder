@@ -63,24 +63,8 @@ export interface SlashCompletionItem {
 
 export interface AgentResult {
   summary: string;
-  changes?: FileChange[];
   commands?: CommandSuggestion[];
   followUps?: string[];
-}
-
-export interface ChangeSetFile {
-  path: string;
-  beforeText: string | null;
-  afterText: string | null;
-  status: 'created' | 'modified' | 'deleted';
-}
-
-export interface ChangeSet {
-  id: string;
-  title: string;
-  description: string;
-  files: ChangeSetFile[];
-  createdAt: number;
 }
 
 export interface ModelUsageRecord {
@@ -143,7 +127,6 @@ export interface ChatSession {
   title?: string;
   messages: ChatMessage[];
   context: ContextItem[];
-  changeSets: ChangeSet[];
   usage?: ChatSessionUsage;
   busy: boolean;
   activeRunId?: string;
@@ -176,9 +159,6 @@ export type WebviewToExtensionMessage =
   | { type: 'chat.send'; text: string; attachments?: ChatAttachment[] }
   | { type: 'agent.stop'; runId?: string }
   | { type: 'slash.completions'; requestId: string; text: string; cursor: number }
-  | { type: 'change.apply'; changeSetId: string }
-  | { type: 'change.openDiff'; changeSetId: string; filePath: string }
-  | { type: 'change.reject'; changeSetId: string }
   | { type: 'context.remove'; contextId: string }
   | { type: 'config.open' }
   | { type: 'session.clear' }

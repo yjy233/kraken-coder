@@ -1,6 +1,6 @@
 # Kraken Coder
 
-Kraken Coder is a VS Code coding assistant extension focused on pragmatic coding help, tool use, and reviewable code changes.
+Kraken Coder is a VS Code coding assistant extension focused on pragmatic coding help, tool use, and direct code changes.
 
 See the [technical design](https://github.com/yjy233/kraken-coder/blob/main/docs/vscode-extension-technical-design.md) for implementation notes.
 
@@ -19,7 +19,7 @@ Open this folder in VS Code and run the `Run Extension` launch configuration.
 2. Choose a model/provider and set the provider API key.
 3. Open the Kraken Coder activity bar view and send a coding task.
 
-Kraken Coder supports chat, selection-aware prompts, diagnostics context, workspace file-list context, reviewable change proposals, diff preview, user-confirmed apply, attachments, thinking display, usage tracking, sessions, memory, and episode recall.
+Kraken Coder supports chat, selection-aware prompts, diagnostics context, workspace file-list context, direct file editing, attachments, thinking display, usage tracking, sessions, memory, and episode recall.
 
 ## Packaging
 

@@ -916,17 +916,12 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       <div id="error" class="error" hidden></div>
       <div class="tabs" id="tabs">
         <button type="button" class="tab-button active" data-tab="chat">Chat</button>
-        <button type="button" class="tab-button" data-tab="changes">Changes</button>
         <button type="button" class="tab-button" data-tab="context">Context</button>
         <button type="button" class="tab-button" data-tab="usage">Usage</button>
       </div>
       <section class="section" data-panel="chat">
         <h2 class="section-header">Chat</h2>
         <div id="messages"></div>
-      </section>
-      <section class="section" data-panel="changes" hidden>
-        <h2 class="section-header">Changes</h2>
-        <div id="changes"></div>
       </section>
       <section class="section" data-panel="context" hidden>
         <h2 class="section-header">Context</h2>
@@ -970,7 +965,6 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     const messagesEl = document.getElementById('messages');
     const sessionsEl = document.getElementById('sessions');
     const contextEl = document.getElementById('context');
-    const changesEl = document.getElementById('changes');
     const usageEl = document.getElementById('usage');
     const inputEl = document.getElementById('input');
     const sendEl = document.getElementById('send');
@@ -1263,7 +1257,6 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       renderTabs();
       renderMessages();
       renderSessions();
-      renderChanges();
       renderContext();
       renderUsage();
     }
@@ -1794,51 +1787,6 @@ export function getWebviewHtml(webview: vscode.Webview): string {
 
     function formatMaybeUsd(value) {
       return Number.isFinite(Number(value)) ? formatUsd(value) : 'unknown';
-    }
-
-    function renderChanges() {
-      const changes = session?.changeSets ?? [];
-      if (!changes.length) {
-        changesEl.innerHTML = '<div class="empty">Generated code changes will appear here for review before applying.</div>';
-        return;
-      }
-
-      changesEl.innerHTML = '';
-      for (const changeSet of changes) {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'change-set';
-        const row = document.createElement('div');
-        row.className = 'row';
-        const title = document.createElement('div');
-        title.className = 'label';
-        title.textContent = changeSet.title || 'Proposed changes';
-        const apply = button('Apply');
-        apply.addEventListener('click', () => post({ type: 'change.apply', changeSetId: changeSet.id }));
-        const reject = button('Reject', 'secondary');
-        reject.addEventListener('click', () => post({ type: 'change.reject', changeSetId: changeSet.id }));
-        row.append(title, apply, reject);
-
-        const meta = document.createElement('div');
-        meta.className = 'meta';
-        meta.textContent = changeSet.files.length + ' file(s)';
-
-        const files = document.createElement('div');
-        files.className = 'files';
-        for (const file of changeSet.files) {
-          const fileRow = document.createElement('div');
-          fileRow.className = 'file-row';
-          const filePath = document.createElement('div');
-          filePath.className = 'file-path';
-          filePath.textContent = file.status + ' · ' + file.path;
-          const diff = button('Diff', 'secondary');
-          diff.addEventListener('click', () => post({ type: 'change.openDiff', changeSetId: changeSet.id, filePath: file.path }));
-          fileRow.append(filePath, diff);
-          files.appendChild(fileRow);
-        }
-
-        wrapper.append(row, meta, files);
-        changesEl.appendChild(wrapper);
-      }
     }
 
     function label(value) {

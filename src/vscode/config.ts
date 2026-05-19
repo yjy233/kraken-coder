@@ -172,7 +172,6 @@ interface ConfigFormValues {
   qwenThinkingBudget: number;
   qwenPreserveThinking: boolean;
   contextMaxChars: number;
-  agentAutoApply: boolean;
   agentBrowserBin: string;
   agentBrowserMaxOutput: number;
   agentBrowserDefaultTimeout: number;
@@ -332,7 +331,6 @@ function configToForm(config: ReturnType<typeof getKrakenConfig>): ConfigFormVal
     qwenThinkingBudget: config.providers.qwen.thinkingBudget,
     qwenPreserveThinking: config.providers.qwen.preserveThinking,
     contextMaxChars: config.context.maxChars,
-    agentAutoApply: config.agent.autoApply,
     agentBrowserBin: config.agent.browserBin,
     agentBrowserMaxOutput: config.agent.browserMaxOutput,
     agentBrowserDefaultTimeout: config.agent.browserDefaultTimeout,
@@ -442,7 +440,6 @@ function formToConfig(values: Record<string, unknown>): KrakenFileConfig {
       maxChars: numberValue(values.contextMaxChars, 60000),
     },
     agent: {
-      autoApply: booleanValue(values.agentAutoApply),
       browserBin: stringValue(values.agentBrowserBin, 'agent-browser'),
       browserMaxOutput: numberValue(values.agentBrowserMaxOutput, 50000),
       browserDefaultTimeout: numberValue(values.agentBrowserDefaultTimeout, 25000),
@@ -654,7 +651,6 @@ function getConfigHtml(webview: vscode.Webview, values: ConfigFormValues): strin
         number('contextMaxChars', 'Max context chars'),
       ])}
       ${section('Agent Tools', [
-        checkbox('agentAutoApply', 'Auto apply change proposals'),
         text('agentBrowserBin', 'Browser tool executable'),
         number('agentBrowserMaxOutput', 'Browser max output chars'),
         number('agentBrowserDefaultTimeout', 'Browser timeout ms'),
