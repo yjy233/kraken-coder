@@ -128,6 +128,18 @@ export interface ChatSession {
   messages: ChatMessage[];
   context: ContextItem[];
   usage?: ChatSessionUsage;
+  contextWindow?: {
+    compressionMode: 'none' | 'partial' | 'full';
+    rawTokens: number;
+    effectiveTokens: number;
+    rawUsagePercent: number;
+    effectiveUsagePercent: number;
+    recentTurnsKept: number;
+    summarizedMessages: number;
+    originalMessageCount: number;
+    effectiveMessageCount: number;
+    summaryTokens: number;
+  };
   busy: boolean;
   activeRunId?: string;
   queueLength?: number;
@@ -153,6 +165,13 @@ export interface ModelStatusInfo {
   contextUsedChars: number;
   contextMaxChars: number;
   contextUsagePercent: number;
+  sessionCompression?: {
+    compressionMode: 'none' | 'partial' | 'full';
+    rawTokens: number;
+    effectiveTokens: number;
+    summarizedMessages: number;
+    recentTurnsKept: number;
+  };
 }
 
 export type WebviewToExtensionMessage =

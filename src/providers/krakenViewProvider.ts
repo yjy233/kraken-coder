@@ -321,6 +321,20 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
 
       await this.handleAgentResult(result);
       this.appendRunUsage(run.usage);
+      if (run.contextWindow) {
+        this.session.contextWindow = {
+          compressionMode: run.contextWindow.compressionMode,
+          rawTokens: run.contextWindow.rawTokens,
+          effectiveTokens: run.contextWindow.effectiveTokens,
+          rawUsagePercent: run.contextWindow.rawUsagePercent,
+          effectiveUsagePercent: run.contextWindow.effectiveUsagePercent,
+          recentTurnsKept: run.contextWindow.recentTurnsKept,
+          summarizedMessages: run.contextWindow.summarizedMessages,
+          originalMessageCount: run.contextWindow.originalMessageCount,
+          effectiveMessageCount: run.contextWindow.effectiveMessageCount,
+          summaryTokens: run.contextWindow.summaryTokens,
+        };
+      }
       if (activeUserMessageId) {
         this.markMessageStatus(activeUserMessageId, 'complete');
       }
@@ -511,9 +525,7 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
   }
 
   private buildRunHistory(options: { addUserMessage: boolean; userMessageId?: string }): ChatMessage[] {
-    let history = this.session.messages.filter(
-      (message) => message.status !== 'queued' && message.kind !== 'tool' && message.kind !== 'thinking'
-    );
+    let history = this.session.messages.filter((message) => message.status !== 'queued' && message.kind !== 'thinking');
     if (options.userMessageId) {
       history = history.filter((message) => message.id !== options.userMessageId);
     } else if (options.addUserMessage) {
@@ -784,7 +796,8 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
       sessions: this.sessionSummaries,
       modelInfo: buildModelStatusInfo(
         getKrakenConfig({ extensionRoot: this.extensionUri.fsPath }),
-        this.session.context
+        this.session.context,
+        this.session.contextWindow
       )
     });
   }
@@ -1187,7 +1200,11 @@ function getPricingProfile(provider: ModelUsageRecord['provider'], model: string
   return undefined;
 }
 
-function buildModelStatusInfo(config: ReturnType<typeof getKrakenConfig>, context: ContextItem[]): ModelStatusInfo {
+function buildModelStatusInfo(
+  config: ReturnType<typeof getKrakenConfig>,
+  context: ContextItem[],
+  sessionContextWindow?: ChatSession['contextWindow']
+): ModelStatusInfo {
   const provider = config.model.provider;
   const contextUsedChars = context.reduce((total, item) => {
     const header = `Context: ${item.label}${item.path ? ` (${item.path})` : ''}`;
@@ -1206,6 +1223,15 @@ function buildModelStatusInfo(config: ReturnType<typeof getKrakenConfig>, contex
     contextUsedChars,
     contextMaxChars,
     contextUsagePercent,
+    ...(sessionContextWindow ? {
+      sessionCompression: {
+        compressionMode: sessionContextWindow.compressionMode,
+        rawTokens: sessionContextWindow.rawTokens,
+        effectiveTokens: sessionContextWindow.effectiveTokens,
+        summarizedMessages: sessionContextWindow.summarizedMessages,
+        recentTurnsKept: sessionContextWindow.recentTurnsKept,
+      }
+    } : {}),
   };
 
   if (provider === 'anthropic') {

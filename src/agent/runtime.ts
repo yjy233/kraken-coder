@@ -4,6 +4,7 @@ import type { AgentMessage, EmitFn, RunResult, ToolDefinition } from './types'
 import { configureModelRequest } from './model'
 import { PromptBuilder } from './prompt-builder'
 import { parseAgentResult } from './resultParser'
+import { buildSessionMemoryMessages } from './session-memory'
 import type { Skill } from '../skills/types'
 
 const baseSystemPrompt = `You are Kraken Coder, a pragmatic coding agent running inside VS Code.
@@ -72,11 +73,12 @@ export class AgentRuntime {
       maxTokens: 4096,
       toolRegistry: options.tools,
     })
+    const sessionMemory = buildSessionMemoryMessages(options.history, options.maxContextChars)
 
     const result = await agent.run({
       messages: buildAgentMessages(
         options.userText,
-        options.history,
+        sessionMemory.messages,
         options.context,
         options.maxContextChars,
         options.attachments ?? []
@@ -90,29 +92,23 @@ export class AgentRuntime {
 
     return {
       result: parseAgentResult(result.reply),
-      run: result.run,
+      run: {
+        ...result.run,
+        contextWindow: sessionMemory.contextWindow,
+      },
     }
   }
 }
 
 function buildAgentMessages(
   userText: string,
-  history: ChatMessage[],
+  history: AgentMessage[],
   context: ContextItem[],
   maxChars: number,
   attachments: NonNullable<ChatMessage['attachments']>
 ): AgentMessage[] {
   const messages: AgentMessage[] = []
-  for (const message of history.slice(-10)) {
-    if (message.role === 'system') {
-      continue
-    }
-    messages.push({
-      role: message.role,
-      content: message.content,
-      ...(message.attachments?.length ? { attachments: message.attachments } : {}),
-    })
-  }
+  messages.push(...history)
 
   messages.push({
     role: 'user',

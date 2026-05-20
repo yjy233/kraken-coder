@@ -1337,8 +1337,9 @@ export function getWebviewHtml(webview: vscode.Webview): string {
         ? 'think:' + compactThinking(info.thinking)
         : 'effort:' + (info.reasoningEnabled === false ? 'off' : (info.effort || 'medium'));
       const context = 'ctx:' + formatContextUsage(info);
+      const memory = formatSessionMemoryLabel(info.sessionCompression);
       const usage = formatUsagePill(session?.usage?.totals);
-      return [provider, model, thinking, context, usage].filter(Boolean).join(' · ');
+      return [provider, model, thinking, context, memory, usage].filter(Boolean).join(' · ');
     }
 
     function formatModelTitle(info) {
@@ -1354,6 +1355,7 @@ export function getWebviewHtml(webview: vscode.Webview): string {
         info.thinking ? 'Thinking: ' + info.thinking : undefined,
         'Cache optimization: ' + formatCacheOptimization(info),
         'Context window: ' + formatContextUsage(info) + ' (' + formatChars(info.contextUsedChars) + ' / ' + formatChars(info.contextMaxChars) + ')',
+        formatSessionMemoryTitle(info.sessionCompression),
         session?.usage?.totals ? 'Session usage: ' + formatUsageTooltip(session.usage.totals) : undefined,
       ].filter(Boolean);
       return rows.join('\\n');
@@ -1404,6 +1406,26 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     function formatContextUsage(info) {
       const percent = Number(info?.contextUsagePercent);
       return Number.isFinite(percent) ? percent + '%' : '0%';
+    }
+
+    function formatSessionMemoryLabel(value) {
+      if (!value || value.compressionMode === 'none') {
+        return '';
+      }
+      return 'mem:' + formatCompactCount(value.rawTokens) + '→' + formatCompactCount(value.effectiveTokens);
+    }
+
+    function formatSessionMemoryTitle(value) {
+      if (!value) {
+        return undefined;
+      }
+      return [
+        'Session memory: ' + value.compressionMode,
+        'raw ' + formatCount(value.rawTokens) + ' tokens',
+        'effective ' + formatCount(value.effectiveTokens) + ' tokens',
+        'summarized ' + formatCount(value.summarizedMessages) + ' messages',
+        'recent kept ' + formatCount(value.recentTurnsKept) + ' messages',
+      ].join(' · ');
     }
 
     function formatChars(value) {
