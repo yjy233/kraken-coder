@@ -1057,6 +1057,22 @@ export function getWebviewHtml(webview: vscode.Webview): string {
       requestSlashCompletions();
     });
 
+    inputEl.addEventListener('paste', (event) => {
+      const files = getClipboardImageFiles(event.clipboardData);
+      if (!files.length) {
+        return;
+      }
+      if (!clipboardHasPlainText(event.clipboardData)) {
+        event.preventDefault();
+      }
+      ingestAttachments(files).then(() => {
+        inputEl.focus();
+      }).catch((error) => {
+        errorEl.hidden = false;
+        errorEl.textContent = error instanceof Error ? error.message : String(error);
+      });
+    });
+
     inputEl.addEventListener('click', () => {
       requestSlashCompletions();
     });
@@ -1104,6 +1120,79 @@ export function getWebviewHtml(webview: vscode.Webview): string {
         }
       }
       renderPendingAttachments();
+    }
+
+    function getClipboardImageFiles(clipboardData) {
+      if (!clipboardData) {
+        return [];
+      }
+
+      const files = [];
+      const seen = new Set();
+      const addFile = (file, index) => {
+        if (!file || !isImageFile(file)) {
+          return;
+        }
+        const normalized = normalizePastedImageFile(file, index);
+        const key = createAttachmentId(normalized);
+        if (seen.has(key)) {
+          return;
+        }
+        seen.add(key);
+        files.push(normalized);
+      };
+
+      const items = Array.from(clipboardData.items || []);
+      items.forEach((item, index) => {
+        if (item.kind !== 'file') {
+          return;
+        }
+        addFile(item.getAsFile(), index);
+      });
+
+      if (!files.length) {
+        Array.from(clipboardData.files || []).forEach(addFile);
+      }
+
+      return files;
+    }
+
+    function clipboardHasPlainText(clipboardData) {
+      return Array.from(clipboardData?.types || []).some((type) => String(type).toLowerCase() === 'text/plain');
+    }
+
+    function isImageFile(file) {
+      const mimeType = String(file.type || guessMimeType(file.name) || '');
+      return mimeType.startsWith('image/');
+    }
+
+    function normalizePastedImageFile(file, index) {
+      if (file.name) {
+        return file;
+      }
+      if (typeof File !== 'function') {
+        return file;
+      }
+      const mimeType = String(file.type || 'image/png');
+      const extension = imageExtensionForMimeType(mimeType);
+      const name = 'pasted-image-' + new Date().toISOString().replace(/[:.]/g, '-') + '-' + (index + 1) + extension;
+      try {
+        return new File([file], name, {
+          type: mimeType,
+          lastModified: file.lastModified || Date.now(),
+        });
+      } catch {
+        return file;
+      }
+    }
+
+    function imageExtensionForMimeType(mimeType) {
+      if (/jpe?g/i.test(mimeType)) return '.jpg';
+      if (/gif/i.test(mimeType)) return '.gif';
+      if (/webp/i.test(mimeType)) return '.webp';
+      if (/svg/i.test(mimeType)) return '.svg';
+      if (/png/i.test(mimeType)) return '.png';
+      return '';
     }
 
     async function fileToAttachment(file) {
@@ -1185,6 +1274,7 @@ export function getWebviewHtml(webview: vscode.Webview): string {
     function renderPendingAttachments() {
       attachmentsEl.innerHTML = '';
       if (!pendingAttachments.length) {
+        syncComposerHeight();
         return;
       }
       for (const attachment of pendingAttachments) {
@@ -1224,6 +1314,7 @@ export function getWebviewHtml(webview: vscode.Webview): string {
         chip.append(meta, remove);
         attachmentsEl.appendChild(chip);
       }
+      syncComposerHeight();
     }
 
     function formatBytes(value) {
