@@ -1469,10 +1469,11 @@ async function parseJsonResponse<T>(response: Response, trace?: HttpTrace, reque
   try {
     parsedJson = JSON.parse(body) as T;
   } catch {
+    const message = buildNonJsonResponseErrorMessage(response, body);
     if (trace && request) {
-      await finalizeTrace(trace, request, undefined, body);
+      await finalizeTrace(trace, request, { message }, body);
     }
-    throw new Error(`Model provider returned non-JSON response (${response.status}).`);
+    throw new Error(message);
   }
   if (trace && request) {
     await finalizeTrace(
@@ -1486,6 +1487,51 @@ async function parseJsonResponse<T>(response: Response, trace?: HttpTrace, reque
     );
   }
   return parsedJson as T;
+}
+
+function buildNonJsonResponseErrorMessage(response: Response, body: string): string {
+  const statusText = response.statusText ? ` ${response.statusText}` : '';
+  const detail = extractNonJsonErrorDetail(body);
+  if (!response.ok) {
+    return detail
+      ? `Model request failed with HTTP ${response.status}${statusText}: ${detail}.`
+      : `Model request failed with HTTP ${response.status}${statusText}.`;
+  }
+  return detail
+    ? `Model provider returned non-JSON response (${response.status}): ${detail}.`
+    : `Model provider returned non-JSON response (${response.status}).`;
+}
+
+function extractNonJsonErrorDetail(body: string): string | undefined {
+  const title = extractHtmlTagText(body, 'title');
+  if (title) {
+    return title;
+  }
+
+  const heading = extractHtmlTagText(body, 'h1');
+  if (heading) {
+    return heading;
+  }
+
+  const text = body
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text ? text.slice(0, 200) : undefined;
+}
+
+function extractHtmlTagText(body: string, tagName: string): string | undefined {
+  const match = new RegExp(`<${tagName}\\b[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'i').exec(body);
+  if (!match?.[1]) {
+    return undefined;
+  }
+  const text = match[1]
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text || undefined;
 }
 
 async function assertOkStreamResponse(response: Response, trace?: HttpTrace, request?: ModelRequest): Promise<void> {

@@ -16,7 +16,7 @@ export interface VSCodeToolRegistry {
 }
 
 export function createVSCodeToolRegistry(
-  options: { extensionRoot?: string } = {}
+  options: { extensionRoot?: string; sessionId?: string } = {}
 ): VSCodeToolRegistry {
   const root = getWorkspaceRoot()
   if (!root) {
@@ -44,7 +44,7 @@ export function createVSCodeToolRegistry(
     defaultWorkspaceRoot: root.fsPath,
     sensitivePaths: [],
   }, {
-    sessionId: 'vscode-session',
+    sessionId: options.sessionId || 'vscode-session',
     availableSkills,
     skillState: { loadedSkillNames: new Set<string>() },
   })

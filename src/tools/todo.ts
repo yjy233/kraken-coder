@@ -11,7 +11,7 @@ interface TodoItem {
 
 export const todoTool: Tool = {
   name: 'todo',
-  description: 'Manage a simple todo list: list, add, mark done, or delete tasks. Tasks are persisted per project.',
+  description: 'Manage a simple todo list: list, add, mark done, or delete tasks. Tasks are persisted per chat session.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -95,26 +95,46 @@ export const todoTool: Tool = {
 }
 
 function getTodoStorePath(ctx: ToolContext): string {
-  return path.join(ctx.sandboxPolicy.workspaceRoot, '.kraken-coder', '.todo.json')
+  return path.join(
+    ctx.sandboxPolicy.workspaceRoot,
+    '.kraken-coder',
+    'todos',
+    `${safeSessionId(ctx.sessionId)}.todo.json`
+  )
 }
 
 async function migrateLegacyTodos(ctx: ToolContext, storePath: string): Promise<void> {
-  const legacyPath = path.join(ctx.sandboxPolicy.workspaceRoot, '.todos.json')
   try {
     await fs.access(storePath)
     return
   } catch {
-    // Continue only when the new store does not exist yet.
+    // Continue only when the session store does not exist yet.
   }
 
-  try {
-    await fs.access(legacyPath)
-  } catch {
+  const legacyPaths = [
+    path.join(ctx.sandboxPolicy.workspaceRoot, '.kraken-coder', '.todo.json'),
+    path.join(ctx.sandboxPolicy.workspaceRoot, '.todos.json'),
+  ]
+
+  for (const legacyPath of legacyPaths) {
+    try {
+      await fs.access(legacyPath)
+    } catch {
+      continue
+    }
+
+    await fs.mkdir(path.dirname(storePath), { recursive: true })
+    await fs.copyFile(legacyPath, storePath)
     return
   }
+}
 
-  await fs.mkdir(path.dirname(storePath), { recursive: true })
-  await fs.rename(legacyPath, storePath)
+function safeSessionId(value: string): string {
+  const safe = String(value || 'ephemeral-session')
+    .replace(/[^a-zA-Z0-9_-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+  return safe || 'ephemeral-session'
 }
 
 async function loadTodos(storePath: string): Promise<TodoItem[]> {

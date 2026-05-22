@@ -290,7 +290,10 @@ export class KrakenViewProvider implements vscode.WebviewViewProvider {
         query: userText,
         config: config.episodes,
       });
-      const { tools, availableSkills } = createVSCodeToolRegistry({ extensionRoot });
+      const { tools, availableSkills } = createVSCodeToolRegistry({
+        extensionRoot,
+        sessionId: this.session.id,
+      });
       this.availableSkills = availableSkills;
       this.streamingAssistantMessageId = undefined;
       this.streamingThinkingMessageId = undefined;
