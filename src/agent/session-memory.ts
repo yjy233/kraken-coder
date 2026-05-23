@@ -79,8 +79,22 @@ function toAgentMessage(message: ChatMessage): AgentMessage {
   return {
     role: message.role === 'assistant' ? 'assistant' : 'user',
     content: message.content,
-    ...(message.attachments?.length ? { attachments: message.attachments } : {}),
+    ...(message.attachments?.length ? { attachments: summarizeHistoryAttachments(message.attachments) } : {}),
   }
+}
+
+function summarizeHistoryAttachments(attachments: ChatAttachment[]): ChatAttachment[] {
+  return attachments.map((attachment) => {
+    const summary = `[attachment from earlier session history] ${attachment.name || 'attachment'} (${attachment.mimeType || 'unknown'}, ${attachment.size || 0} bytes)`
+    return {
+      id: attachment.id,
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+      size: attachment.size,
+      ...(attachment.path ? { path: attachment.path } : {}),
+      textPreview: attachment.textPreview?.trim() || summary,
+    }
+  })
 }
 
 function buildToolContextMessage(message: ChatMessage): string {

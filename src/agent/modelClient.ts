@@ -113,6 +113,8 @@ interface ParsedToolArguments {
   error?: string;
 }
 
+type UserContentPart = Extract<ModelMessage, { role: 'user' }>['content'] extends string | Array<infer P> ? P : never;
+
 interface HttpTrace {
   id: string;
   provider: string;
@@ -659,13 +661,14 @@ export class OpenAICompatibleModelClient {
 
 function buildChatCompletionsBody(request: ModelRequest): JsonRecord {
   const provider = request.settings.provider;
+  const messages = convertMessagesToChatCompletionsMessages(request.messages);
   const body: JsonRecord = {
-      model: request.settings.model,
-    messages: provider === 'qwen' ? addQwenCacheControl(request.messages, request) : request.messages,
-      tools: request.tools?.length ? request.tools : undefined,
-      tool_choice: request.tools?.length ? 'auto' : undefined,
-      temperature: 0.2,
-      stream: Boolean(request.onDelta)
+    model: request.settings.model,
+    messages: provider === 'qwen' ? addQwenCacheControl(messages, request) : messages,
+    tools: request.tools?.length ? request.tools : undefined,
+    tool_choice: request.tools?.length ? 'auto' : undefined,
+    temperature: 0.2,
+    stream: Boolean(request.onDelta)
   };
 
   if (request.onDelta) {
@@ -731,7 +734,7 @@ function buildOpenAIResponsesBody(request: ModelRequest): JsonRecord {
 function buildAICodeMirrorResponsesBody(request: ModelRequest): JsonRecord {
   return {
     model: request.settings.model,
-    input: convertMessagesToResponsesInput(request.messages),
+    input: convertMessagesToAICodeMirrorResponsesInput(request.messages),
     tools: request.tools?.length ? convertToolsToResponsesTools(request.tools) : undefined,
     tool_choice: request.tools?.length ? 'auto' : undefined,
     stream: Boolean(request.onDelta),
@@ -1010,7 +1013,7 @@ function convertMessagesToResponsesInput(messages: ModelMessage[]): JsonRecord[]
       input.push({
         type: 'message',
         role: message.role,
-        content: message.content
+        content: message.role === 'user' ? convertUserContentToResponsesContent(message.content) : message.content
       });
       continue;
     }
@@ -1046,6 +1049,207 @@ function convertMessagesToResponsesInput(messages: ModelMessage[]): JsonRecord[]
   return input;
 }
 
+function convertMessagesToAICodeMirrorResponsesInput(messages: ModelMessage[]): JsonRecord[] {
+  // AICodeMirror's Responses-compatible endpoint currently returns Cloudflare
+  // 502 for `input` items with role "system". Keep system instructions, but
+  // fold them into user messages so the request matches the shape that endpoint accepts.
+  const input: JsonRecord[] = [];
+  let pendingSystem: string[] = [];
+
+  const takePendingSystem = (): string | undefined => {
+    if (!pendingSystem.length) {
+      return undefined;
+    }
+    const text = pendingSystem.join('\n\n');
+    pendingSystem = [];
+    return `System instructions:\n${text}`;
+  };
+
+  for (const message of messages) {
+    if (message.role === 'system') {
+      if (message.content.trim()) {
+        pendingSystem.push(message.content);
+      }
+      continue;
+    }
+
+    if (message.role === 'user') {
+      const systemText = takePendingSystem();
+      const content = systemText ? prependTextToUserContent(message.content, systemText) : message.content;
+      input.push({
+        type: 'message',
+        role: 'user',
+        content: convertUserContentToResponsesContent(content)
+      });
+      continue;
+    }
+
+    if (message.role === 'assistant') {
+      if (message.content) {
+        input.push({
+          type: 'message',
+          role: 'assistant',
+          content: message.content
+        });
+      }
+      for (const toolCall of message.tool_calls ?? []) {
+        input.push({
+          type: 'function_call',
+          call_id: toolCall.id,
+          name: toolCall.function.name,
+          arguments: toolCall.function.arguments,
+          status: 'completed'
+        });
+      }
+      continue;
+    }
+
+    if (message.role === 'tool') {
+      input.push({
+        type: 'function_call_output',
+        call_id: message.tool_call_id,
+        output: message.content
+      });
+    }
+  }
+
+  const trailingSystem = takePendingSystem();
+  if (trailingSystem) {
+    input.push({
+      type: 'message',
+      role: 'user',
+      content: trailingSystem
+    });
+  }
+
+  return input;
+}
+
+function prependTextToUserContent(
+  content: Extract<ModelMessage, { role: 'user' }>['content'],
+  text: string
+): Extract<ModelMessage, { role: 'user' }>['content'] {
+  if (typeof content === 'string') {
+    return `${text}\n\n${content}`;
+  }
+  return [
+    { type: 'text', text },
+    ...content
+  ];
+}
+
+function convertMessagesToChatCompletionsMessages(messages: ModelMessage[]): JsonRecord[] {
+  return messages.map((message) => {
+    if (message.role === 'user') {
+      return {
+        role: 'user',
+        content: convertUserContentToChatCompletionsContent(message.content)
+      };
+    }
+    return message as unknown as JsonRecord;
+  });
+}
+
+function convertUserContentToChatCompletionsContent(
+  content: Extract<ModelMessage, { role: 'user' }>['content']
+): string | JsonRecord[] {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  const converted = content.flatMap((part): JsonRecord[] => {
+    if (part.type === 'text') {
+      return part.text ? [{ type: 'text', text: part.text }] : [];
+    }
+    if (part.type === 'image' && part.dataUrl) {
+      return [{
+        type: 'image_url',
+        image_url: { url: part.dataUrl }
+      }];
+    }
+    return [{ type: 'text', text: formatAttachmentTextPart(part) }];
+  });
+
+  return converted.length ? converted : '';
+}
+
+function convertUserContentToResponsesContent(
+  content: Extract<ModelMessage, { role: 'user' }>['content']
+): string | JsonRecord[] {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  const converted = content.flatMap((part): JsonRecord[] => {
+    if (part.type === 'text') {
+      return part.text ? [{ type: 'input_text', text: part.text }] : [];
+    }
+    if (part.type === 'image' && part.dataUrl) {
+      return [{
+        type: 'input_image',
+        image_url: part.dataUrl
+      }];
+    }
+    return [{ type: 'input_text', text: formatAttachmentTextPart(part) }];
+  });
+
+  return converted.length ? converted : '';
+}
+
+function convertUserContentToAnthropicContent(
+  content: Extract<ModelMessage, { role: 'user' }>['content']
+): string | JsonRecord[] {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  const converted = content.flatMap((part): JsonRecord[] => {
+    if (part.type === 'text') {
+      return part.text ? [{ type: 'text', text: part.text }] : [];
+    }
+    if (part.type === 'image' && part.dataUrl) {
+      const image = parseDataUrlImage(part.dataUrl);
+      if (image) {
+        return [{
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: image.mimeType || part.mimeType,
+            data: image.base64
+          }
+        }];
+      }
+    }
+    return [{ type: 'text', text: formatAttachmentTextPart(part) }];
+  });
+
+  return converted.length ? converted : '';
+}
+
+function formatAttachmentTextPart(part: UserContentPart): string {
+  if (part.type === 'file') {
+    return [
+      `[file attachment] ${part.name} (${part.mimeType})`,
+      part.textPreview
+    ].filter(Boolean).join('\n');
+  }
+  if (part.type === 'image') {
+    return `[image attachment] ${part.name || 'image'} (${part.mimeType})`;
+  }
+  return part.text;
+}
+
+function parseDataUrlImage(dataUrl: string): { mimeType: string; base64: string } | undefined {
+  const match = /^data:([^;,]+);base64,(.*)$/s.exec(dataUrl);
+  if (!match?.[1] || !match[2]) {
+    return undefined;
+  }
+  return {
+    mimeType: match[1],
+    base64: match[2]
+  };
+}
+
 function convertMessagesToAnthropic(
   messages: ModelMessage[],
   request: ModelRequest
@@ -1062,7 +1266,7 @@ function convertMessagesToAnthropic(
     if (message.role === 'user') {
       converted.push({
         role: 'user',
-        content: message.content
+        content: convertUserContentToAnthropicContent(message.content)
       });
       continue;
     }
@@ -1144,9 +1348,9 @@ function convertToolsToAnthropicTools(tools: ModelToolDefinition[]): JsonRecord[
   }));
 }
 
-function addQwenCacheControl(messages: ModelMessage[], request: ModelRequest): JsonRecord[] {
+function addQwenCacheControl(messages: JsonRecord[], request: ModelRequest): JsonRecord[] {
   if (!isCacheEnabled(request)) {
-    return messages as unknown as JsonRecord[];
+    return messages;
   }
 
   let cacheApplied = false;
