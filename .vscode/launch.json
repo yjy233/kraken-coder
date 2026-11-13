@@ -2,17 +2,32 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Run Extension",
-      "type": "extensionHost",
-      "request": "launch",
-      "args": [
-        "--extensionDevelopmentPath=${workspaceFolder}"
-      ],
-      "outFiles": [
-        "${workspaceFolder}/out/**/*.js"
-      ],
-      "preLaunchTask": "npm: compile"
+      "name": "Kraken：阶段验收（离线）",
+      "type": "node", "request": "launch",
+      "runtimeExecutable": "node", "runtimeArgs": ["--import", "tsx"],
+      "program": "${workspaceFolder}/src/cli.ts",
+      "args": ["check", "--stage", "${input:stage}", "--mode", "${input:mode}", "--trace", "--debug"],
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "Kraken：完整修 Bug 演示（离线临时项目）",
+      "type": "node", "request": "launch",
+      "runtimeExecutable": "node", "runtimeArgs": ["--import", "tsx"],
+      "program": "${workspaceFolder}/src/cli.ts",
+      "args": ["demo", "--mode", "${input:mode}", "--trace", "--debug"],
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "Kraken：离线交互聊天（只读）",
+      "type": "node", "request": "launch",
+      "runtimeExecutable": "node", "runtimeArgs": ["--import", "tsx"],
+      "program": "${workspaceFolder}/src/cli.ts",
+      "args": ["chat", "--provider", "demo", "--approval", "read-only", "--mode", "${input:mode}", "--trace"],
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal", "skipFiles": ["<node_internals>/**"]
     }
+  ],
+  "inputs": [
+    { "id": "stage", "type": "pickString", "description": "选择学习阶段", "options": ["0", "1", "2", "3", "4", "5", "6"], "default": "1" },
+    { "id": "mode", "type": "pickString", "description": "选择学习版或参考版", "options": ["learner", "reference"], "default": "learner" }
   ]
 }
-

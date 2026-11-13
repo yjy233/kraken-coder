@@ -1,0 +1,11 @@
+{
+  "provider": "compatible",
+  "model": "YOUR_TOOL_CAPABLE_MODEL",
+  "baseUrl": "http://127.0.0.1:11434/v1",
+  "mode": "reference",
+  "approval": "ask",
+  "maxSteps": 16,
+  "contextChars": 120000,
+  "requestTimeoutMs": 60000,
+  "turnTimeoutMs": 300000
+}

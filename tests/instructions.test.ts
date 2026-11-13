@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Instructions } from '../src/context/instructions.js';
+import { Workspace } from '../src/tools/workspace.js';
+import { registerBuiltins } from '../src/tools/builtins.js';
+import { ToolRegistry } from '../src/tools/registry.js';
+import { reference } from '../src/learning/reference.js';
+test('Truncated read_file output does not grant instruction-read state for edits', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'kraken-instructions-')); t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, 'src')); await writeFile(join(root, 'src/AGENTS.md'), 'n'.repeat(11_000));
+  await writeFile(join(root, 'src/file.txt'), 'x'.repeat(25_000));
+  const workspace = await Workspace.open(root), instructions = new Instructions(workspace);
+  const registry = new ToolRegistry({ policy: 'workspace-write', shellEnabled: false, algorithms: reference, approve: async () => false, emit: () => {} });
+  registerBuiltins(registry, workspace, reference, instructions, [], () => {});
+  const result = await registry.execute({ id: 'read', name: 'read_file', arguments: '{"path":"src/file.txt"}' }, new AbortController().signal);
+  assert.equal(JSON.parse(result.content).result.truncated, true);
+  await assert.rejects(instructions.requireRead('src/file.txt'), /project_instructions/);
+  await registry.execute({ id: 'rules', name: 'project_instructions', arguments: '{"path":"src/file.txt"}' }, new AbortController().signal);
+  await instructions.requireRead('src/file.txt');
+});
+test('Changed nested instructions must be read again before editing', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'kraken-instructions-')); t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, 'src')); await writeFile(join(root, 'src/AGENTS.md'), 'old');
+  const instructions = new Instructions(await Workspace.open(root));
+  await instructions.forPath('src/file.ts'); await writeFile(join(root, 'src/AGENTS.md'), 'new');
+  await assert.rejects(instructions.requireRead('src/file.ts'), /new or changed/);
+  await instructions.forPath('src/file.ts'); await instructions.requireRead('src/file.ts');
+});

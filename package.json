@@ -1,0 +1,24 @@
+{
+  "name": "kraken-coder",
+  "version": "0.1.0",
+  "description": "A Codex-inspired coding agent learning lab in TypeScript",
+  "type": "module",
+  "engines": { "node": ">=24.0.0" },
+  "bin": { "kraken-coder": "dist/cli.js" },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist", "src", "docs", "examples", "README.md", "LICENSE", ".env.example"],
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "demo": "tsx src/cli.ts demo",
+    "check": "tsx src/cli.ts check",
+    "typecheck": "tsc -p tsconfig.check.json",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "build": "tsc -p tsconfig.json",
+    "verify": "npm run typecheck && npm test && npm run check -- --all --mode reference && npm run check -- --all --mode learner && npm run build",
+    "prepack": "npm run build"
+  },
+  "license": "MIT",
+  "devDependencies": { "@types/node": "^24.19.2", "tsx": "^4.23.15", "typescript": "^5.9.3" }
+}

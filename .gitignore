@@ -3,3 +3,9 @@ out/
 *.vsix
 .DS_Store
 .kraken-coder/
+dist/
+.env
+.env.*
+!.env.example
+coverage/
+*.tsbuildinfo

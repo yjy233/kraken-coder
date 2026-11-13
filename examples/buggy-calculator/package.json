@@ -1,0 +1,6 @@
+{
+  "name": "kraken-buggy-calculator",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test calculator.test.js" }
+}

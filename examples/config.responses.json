@@ -1,0 +1,11 @@
+{
+  "provider": "responses",
+  "model": "YOUR_TOOL_CAPABLE_MODEL",
+  "baseUrl": "https://api.openai.com/v1",
+  "mode": "reference",
+  "approval": "ask",
+  "maxSteps": 16,
+  "contextChars": 120000,
+  "requestTimeoutMs": 60000,
+  "turnTimeoutMs": 300000
+}
