@@ -32,10 +32,10 @@ export const reference: Algorithms = {
       r.signal.throwIfAborted(); validateReply(reply);
       const calls = reply.toolCalls ?? [];
       for (const call of calls) if (used.has(call.id)) throw new Error('Reused tool call ID');
-      // 最后一次模型请求不再启动副作用：必须留出一次请求来解释工具结果。
-      if (calls.length && step + 1 === r.maxSteps) throw new Error('Step limit reached before executing tools');
       const assistant: Message = { ...reply, role: 'assistant' };
       r.checkpoint(assistant); history.push(assistant);
+      // 最后一次模型请求不再启动副作用：必须留出一次请求来解释工具结果；意图已落盘，恢复按结果未知处理。
+      if (calls.length && step + 1 === r.maxSteps) throw new Error('Step limit reached before executing tools');
       r.emit({ type: 'model.end', step, toolCalls: calls.length });
       if (!calls.length) return reply.content;
       for (const call of calls) {
@@ -65,7 +65,8 @@ export const reference: Algorithms = {
     const next = [...messages];
     while (JSON.stringify(next).length > maxChars) {
       const users = next.flatMap((m, i) => m.role === 'user' ? [i] : []);
-      if (users.length < 2) throw new Error('Context budget exceeded by instructions or current turn; increase --context-chars');
+      if (users.length === 0) throw new Error('Context budget exceeded by instructions; increase --context-chars');
+      if (users.length === 1) throw new Error('Context budget exceeded by current turn; read smaller ranges or increase --context-chars');
       next.splice(users[0]!, users[1]! - users[0]!);
     }
     return next;

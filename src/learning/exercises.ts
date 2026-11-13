@@ -39,10 +39,11 @@ export const runLoop: Algorithms['runLoop'] = async (messages, runtime) => {
     validateReply(response);
     const calls = response.toolCalls ?? [];
     for (const call of calls) if (usedIds.has(call.id)) throw new Error('Reused tool call ID');
-    if (calls.length > 0 && step === runtime.maxSteps - 1) throw new Error('Step limit reached before executing tools');
     const assistant: Message = { role: 'assistant', ...response };
     runtime.checkpoint(assistant);
     history.push(assistant);
+    // 步数耗尽不启动副作用，但意图已落盘：恢复时按结果未知处理，而不是丢弃这次响应。
+    if (calls.length > 0 && step === runtime.maxSteps - 1) throw new Error('Step limit reached before executing tools');
     runtime.emit({ type: 'model.end', step, toolCalls: calls.length });
     if (calls.length === 0) return assistant.content;
     for (const call of calls) {
@@ -88,7 +89,8 @@ export const fitContext: Algorithms['fitContext'] = (messages, maxChars) => {
   while (JSON.stringify(context).length > maxChars) {
     const first = context.findIndex(m => m.role === 'user');
     const second = context.findIndex((m, i) => i > first && m.role === 'user');
-    if (first === -1 || second === -1) throw new Error('Context budget exceeded by instructions or current turn; increase --context-chars');
+    if (first === -1) throw new Error('Context budget exceeded by instructions; increase --context-chars');
+    if (second === -1) throw new Error('Context budget exceeded by current turn; read smaller ranges or increase --context-chars');
     context = [...context.slice(0, first), ...context.slice(second)];
   }
   return context;

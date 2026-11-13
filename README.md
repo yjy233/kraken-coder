@@ -69,7 +69,7 @@ flowchart TD
 ```bash
 npm run dev -- chat --provider demo --approval read-only --session study
 # 输入：/files、/read README.md、/search runLoop
-# /new 开启新会话；/quit 退出；/help 查看命令
+# /new 开启新会话；/quit 退出；/help 查看命令；Ctrl+C 取消当前回合，空闲时退出
 
 npm run dev -- exec --provider demo --message '/read package.json' --session study
 npm run dev -- sessions
@@ -170,6 +170,6 @@ src/
 
 本项目完整实现上述学习范围。Codex 上游更广泛的工程功能——原生 TUI、app-server 协议、OAuth 登录、OS 沙箱、远端 compaction、MCP、插件运行时、多 Agent、PTY 长任务——不在这个版本内。这里的 L4 是可检查的**整轮裁剪**，不是语义摘要；shell 是限时的一次性命令，不支持后台任务恢复。多文件补丁先做全量预检，但不提供跨文件崩溃事务。
 
-上游参考固定为本机 `/Users/bill/code/codex` 的提交 `5c3ff1dabf644169f4bd74b215719f381e4fdb3f`。具体源码路径、对应关系与差异见 [Codex 源码导读](docs/02-codex-reference.md)。
+上游参考固定为 openai/codex 的提交 `5c3ff1dabf644169f4bd74b215719f381e4fdb3f`；本地 checkout 位置因人而异，文档中以 `$CODEX_REPO` 指代。具体源码路径、对应关系与差异见 [Codex 源码导读](docs/02-codex-reference.md)。
 
 [文档导航](docs/README.md) · [架构](docs/01-architecture.md) · [学习路线](docs/03-learning-path.md) · [工具与权限](docs/04-tools-and-permissions.md) · [会话与上下文](docs/05-sessions-and-context.md) · [模型接入](docs/06-providers.md) · [调试与排错](docs/07-debugging.md)

@@ -1,6 +1,6 @@
 # 02 · 对照本地 Codex 源码
 
-本项目参考的是用户本地 `/Users/bill/code/codex`，固定提交：
+本项目参考的是 openai/codex 的本地 checkout（位置因人而异，下文以 `$CODEX_REPO` 指代），固定提交：
 
 ```text
 5c3ff1dabf644169f4bd74b215719f381e4fdb3f
@@ -37,7 +37,7 @@ Validate the issue labeler's API key before sending requests (#60964)
 可以在本机运行：
 
 ```bash
-cd /Users/bill/code/codex
+cd "$CODEX_REPO"  # 你的 codex 本地 checkout
 rg -n 'run_turn|needs_follow_up' codex-rs/core/src/session/turn.rs
 rg -n 'ToolOrchestrator|run_attempt' codex-rs/core/src/tools/orchestrator.rs
 rg -n 'enum Hunk|UpdateFileChunk' codex-rs/apply-patch/src/parser.rs

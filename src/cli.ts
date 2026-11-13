@@ -18,7 +18,7 @@ const help = `kraken-coder — Codex 风格 Coding Agent 教学项目（Node.js 
 
   demo                          在临时项目中实际复现、修复、验证 bug（离线）
   check --all                   离线验收 L0～L6；支持 --stage 0..6 --mode learner
-  chat                          交互聊天；/new /quit /help 为客户端命令
+  chat                          交互聊天；/new /quit /help 为客户端命令，Ctrl+C 取消当前回合
   exec --message TEXT           执行一次用户回合（chat --message 等价）
   sessions                      列出本地会话
   history SESSION_ID            输出持久化 JSONL 轨迹
@@ -108,8 +108,10 @@ async function main(): Promise<void> {
   const interactive = process.stdin.isTTY && !flags.json;
   const rl = interactive ? createInterface({ input: process.stdin, output: process.stderr }) : undefined;
   let session = flags.session ?? randomUUID(), controller = new AbortController();
-  let busy = false;
-  const cancel = (): void => { controller.abort(new Error('Cancelled by user')); if (!busy) rl?.close(); };
+  let busy = false, quit = false;
+  const idle = new AbortController();
+  // 忙时只取消当前回合；空闲时退出。close() 不会结束 pending 的 question，必须显式 abort。
+  const cancel = (): void => { if (busy) controller.abort(new Error('Cancelled by user')); else { quit = true; idle.abort(); rl?.close(); } };
   process.on('SIGINT', cancel); rl?.on('SIGINT', cancel);
   const oneTurn = async (message: string): Promise<void> => {
     controller = new AbortController(); busy = true;
@@ -127,9 +129,9 @@ async function main(): Promise<void> {
   };
   try {
     if (flags.message) await oneTurn(flags.message);
-    else while (!controller.signal.aborted) {
+    else while (!quit) {
       let line: string;
-      try { line = (await rl!.question('kraken> ')).trim(); } catch { break; }
+      try { line = (await rl!.question('kraken> ', { signal: idle.signal })).trim(); } catch { break; }
       if (line === '/quit') break;
       if (line === '/new') { session = randomUUID(); console.error(`新会话：${session}`); continue; }
       if (line === '/help') { console.log(help); continue; }
