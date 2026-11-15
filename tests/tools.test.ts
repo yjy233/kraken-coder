@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile, readFile, link } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, readFile, link, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Workspace } from '../src/tools/workspace.js';
@@ -8,6 +8,8 @@ import { preparePatch, applyChanges } from '../src/tools/patch.js';
 import { reference } from '../src/learning/reference.js';
 import { runShell } from '../src/tools/shell.js';
 import { ToolRegistry, params } from '../src/tools/registry.js';
+import { Instructions } from '../src/context/instructions.js';
+import { registerBuiltins } from '../src/tools/builtins.js';
 const signal = () => new AbortController().signal;
 test('Patch rejects ambiguous and partial-line matches, preserves newline convention, deletes files', async t => {
   const root = await mkdtemp(join(tmpdir(), 'kraken-patch-')); t.after(() => rm(root, { recursive: true, force: true }));
@@ -64,6 +66,34 @@ test('Protected path matching also rejects case variants on case-insensitive fil
   const workspace = await Workspace.open(root);
   for (const path of ['.GIT/config', '.Kraken-Coder/sessions/x', '.ENV', '.ENV.local', 'Node_Modules/x']) await assert.rejects(workspace.path(path), /Protected/);
 });
+test('Search ignore_case is optional, literal and scoped, and preserves original result text', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'kraken-search-')); t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, 'src')); await mkdir(join(root, 'other'));
+  await writeFile(join(root, 'src', 'sample.txt'), 'A.B\naxb\nReadMe\n');
+  await writeFile(join(root, 'other', 'sample.txt'), 'a.b\n');
+  const workspace = await Workspace.open(root);
+  const registry = new ToolRegistry({ policy: 'read-only', shellEnabled: false, algorithms: reference, approve: async () => false, emit: () => {} });
+  registerBuiltins(registry, workspace, reference, new Instructions(workspace), [], () => {});
+  const search = registry.schemas().find(tool => tool.name === 'search');
+  assert.deepEqual(search?.parameters.required, ['query']);
+  assert.deepEqual(search?.parameters.properties?.ignore_case, { type: 'boolean' });
+  assert.match(search?.description ?? '', /ignore_case/);
+  const execute = async (args: Record<string, unknown>) => JSON.parse((await registry.execute({ id: 'search', name: 'search', arguments: JSON.stringify(args) }, signal())).content);
+
+  const literal = await execute({ query: 'a.b', path: 'src', ignore_case: true });
+  assert.equal(literal.ok, true, literal.error);
+  assert.deepEqual(literal.result, { matches: [{ path: 'src/sample.txt', line: 1, text: 'A.B' }], truncated: false, skipped: 0 });
+  const original = await execute({ query: 'readme', path: 'src', ignore_case: true });
+  assert.equal(original.ok, true, original.error);
+  assert.deepEqual(original.result, { matches: [{ path: 'src/sample.txt', line: 3, text: 'ReadMe' }], truncated: false, skipped: 0 });
+  const empty = await execute({ query: '', ignore_case: true });
+  assert.equal(empty.ok, false); assert.match(empty.error, /Search query cannot be empty/);
+  for (const ignore_case of ['true', 1, null]) {
+    const invalid = await execute({ query: 'readme', ignore_case });
+    assert.equal(invalid.ok, false); assert.match(invalid.error, /ignore_case: invalid boolean/);
+  }
+});
+
 test('Schema rejects prototype-named extra keys rather than treating them as declared properties', async () => {
   const registry = new ToolRegistry({ policy: 'read-only', shellEnabled: false, algorithms: reference, approve: async () => false, emit: () => {} });
   let executed = 0;

@@ -16,7 +16,7 @@ Schema 校验器实现本项目需要的有限 JSON Schema 子集：object、str
 | --- | --- | --- |
 | list_files | read | 默认最多 1000 文件，目录深度 20、访问条目 10000；不读取 `.gitignore` |
 | read_file | read | 文本文件最大 256 KB；按行分页，每次最多 400 行 |
-| search | read | 字面搜索，不执行正则；最多 80 条匹配，单条显示前 400 字符 |
+| search | read | 字面搜索，不执行正则；可用 `ignore_case` 忽略大小写；最多 80 条匹配，单条显示前 400 字符 |
 | project_instructions | read | 获取目标文件作用域的 AGENTS.md，也支持尚不存在的目标 |
 | apply_patch | write | 一次 1～32 文件、参数上限、唯一完整行匹配 |
 | shell | shell | POSIX `/bin/sh`，默认 30 秒，最多 120 秒，输出上限 16000 字符 |
@@ -24,6 +24,8 @@ Schema 校验器实现本项目需要的有限 JSON Schema 子集：object、str
 | read_skill | read | 只能读已索引的工作区 Skill 名称 |
 
 所有工具输出最终还有一层 20000 字符限制；超长结果转成带 `truncated` 的头尾预览。读取大文件时缩小行数，搜索结果只作为定位依据。文件与搜索有明确扫描上限，空结果不等于大仓库绝对不存在目标。
+
+`search` 的 `ignore_case` 是可省略的布尔参数，默认为 `false`。设为 `true` 后按不区分大小写的字面子串匹配，返回的路径、行号和文本预览仍保持原样。字符串、数字和 `null` 等非布尔值会被 schema 拒绝；目录范围、结果上限和空关键词错误行为不变。
 
 ## 策略和 shell 开关
 

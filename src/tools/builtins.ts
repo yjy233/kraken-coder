@@ -21,22 +21,33 @@ export function registerBuiltins(registry: ToolRegistry, workspace: Workspace, a
       return result;
     } }; },
   });
-  registry.register({ name: 'search', effect: 'read', description: 'Search literal text (not regex) in up to 1000 workspace files; return at most 80 line matches.',
-    parameters: params({ query: str(500), path: str() }, ['query']),
+  // 搜索文件内容中的文字，不按文件名匹配。
+  // 例如 { query: 'runLoop', path: 'src' }：在 src 目录下查找包含 runLoop 的代码行。
+  // query 是必填关键词；path 是可选的搜索目录，省略时从工作区根目录开始。
+  registry.register({ name: 'search', effect: 'read', description: 'Search literal text (not regex) in up to 1000 workspace files; set ignore_case to true for case-insensitive matching; return at most 80 line matches.',
+    parameters: params({ query: str(500), path: str(), ignore_case: { type: 'boolean' } }, ['query']),
     async prepare(a) {
-      if (!(a.query as string).length) throw new Error('Search query cannot be empty');
-      return { preview: String(a.query), run: async signal => {
+      const query = a.query as string;
+      if (!query.length) throw new Error('Search query cannot be empty');
+      const ignoreCase = a.ignore_case === true, needle = ignoreCase ? query.toLowerCase() : query;
+      return { preview: query, run: async signal => {
+        // 先枚举候选文件（默认最多 1000 个，跳过受保护和生成目录等），此时还没有匹配关键词。
         const listing = await workspace.files(a.path as string ?? '.');
         const matches: unknown[] = []; let skipped = 0;
         for (const path of listing.files) {
           signal.throwIfAborted();
           let body: string;
+          // 再读取文件内容；读取失败（如文件过大或含 NUL）就跳过，skipped 记录这类文件数。
           try { body = await workspace.read(path); } catch { skipped++; continue; }
-          for (const [i, line] of body.split('\n').entries()) if (line.includes(a.query as string)) {
+          // 默认区分大小写；ignore_case 只规范化匹配副本，不修改返回的原文。始终不做正则匹配。
+          for (const [i, line] of body.split('\n').entries()) if ((ignoreCase ? line.toLowerCase() : line).includes(needle)) {
+            // 每个命中行返回文件路径、从 1 开始的行号、该行前 400 个字符，供模型继续 read_file。
             matches.push({ path, line: i + 1, text: line.slice(0, 400) });
+            // 达到 80 条命中行就提前返回；truncated 提醒模型结果可能不完整。
             if (matches.length === 80) return { matches, truncated: true, skipped };
           }
         }
+        // 即使命中很少，文件枚举也可能提前结束；空结果不能证明整个项目不存在该关键词。
         return { matches, truncated: listing.truncated, skipped };
       } };
     },

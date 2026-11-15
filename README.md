@@ -116,7 +116,7 @@ npm run dev -- chat --provider compatible --approval ask --allow-shell
 
 两种密钥独立读取，compatible 不自动使用 `OPENAI_API_KEY`。本地无鉴权服务可不填 `KRAKEN_API_KEY`。默认读取**启动目录**的 `.env`，可用 `--env-file PATH` 改变；已有 shell 环境优先。
 
-`doctor` 只报告配置与密钥是否存在。网络协议已通过本机 mock 回归，**没有使用真实密钥完成线上联调**。Responses 保存并回传 reasoning items，遵循 [OpenAI 工具调用协议](https://developers.openai.com/api/docs/guides/function-calling)；实现细节见 [模型接入](docs/06-providers.md)。
+`doctor` 只报告配置与密钥是否存在。网络协议已通过本机 mock 回归；2026-11-14，compatible 已通过 Kimi 官方 API 的 `kimi-k3.1-pro` 完成一次真实代码修改任务，实际轨迹与验证结果见 [学习记录](docs/08-learning-progress.md)。Responses 仍未完成线上联调。Responses 保存并回传 reasoning items，遵循 [OpenAI 工具调用协议](https://developers.openai.com/api/docs/guides/function-calling)；实现细节见 [模型接入](docs/06-providers.md)。
 
 ## 工具与审批
 
