@@ -1,0 +1,17 @@
+{
+ "instance_id": "pytest-dev__pytest-11148",
+ "repo": "pytest-dev/pytest",
+ "resolved": false,
+ "category": "empty_patch",
+ "gold_check_passed": true,
+ "patch_lines": 0,
+ "agent": {
+  "model_requests": 8,
+  "tool_calls": 24,
+  "tool_failures": 1,
+  "wall_seconds": 141.6,
+  "exit_code": 1,
+  "agent_error": "Context budget exceeded by current turn; read smaller ranges or increase --context-chars"
+ },
+ "answer_excerpt": ""
+}

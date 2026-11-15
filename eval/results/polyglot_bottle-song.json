@@ -1,0 +1,26 @@
+{
+ "slug": "bottle-song",
+ "pass": true,
+ "attempts_used": 1,
+ "attempts": [
+  {
+   "attempt": 1,
+   "agent": {
+    "model_requests": 9,
+    "tool_calls": 12,
+    "tool_failures": 0,
+    "wall_seconds": 57.8,
+    "exit_code": 0,
+    "agent_error": null
+   },
+   "answer_excerpt": "Implemented `recite` in `bottle_song.py` with:\n\n- Number-to-word conversion from zero through ten.\n- Correct singular/plural bottle wording.\n- Descending verses based on `start` and `take`.\n- Blank lines between verses.\n\nTest result: **7 passed** using `python -m pytest bottle_song_test.py -q`.",
+   "tests": {
+    "passed": 7,
+    "failed": 0,
+    "exit_code": 0,
+    "all_pass": true
+   },
+   "test_output_tail": ".......                                                                  [100%]\n7 passed in 0.01s\n"
+  }
+ ]
+}

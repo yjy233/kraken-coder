@@ -1,0 +1,105 @@
+[pallets__flask-4045] repo+venv ready
+[pallets__flask-4045] gold self-check FTP(2)=True P2P(50)=True
+[pallets__flask-4992] repo+venv ready
+[pallets__flask-4992] gold self-check FTP(1)=True P2P(18)=True
+[pallets__flask-5063] repo+venv ready
+[pallets__flask-5063] gold self-check FTP(2)=True P2P(55)=True
+[pylint-dev__pylint-7080] repo+venv ready
+[pylint-dev__pylint-7080] gold self-check FTP(1)=True P2P(120)=True
+[pylint-dev__pylint-7993] repo+venv ready
+[pylint-dev__pylint-7993] gold self-check FTP(1)=True P2P(10)=True
+[pylint-dev__pylint-6506] repo+venv ready
+[pylint-dev__pylint-6506] gold self-check FTP(2)=True P2P(6)=True
+[pylint-dev__pylint-5859] SETUP/RUN ERROR: cmd failed: ['/Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/pylint-dev__pylint-5859/venv/bin/python', '-m', 'pip', 'install', '-q', '-e', '/Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/pylint-dev__pylint-5859/repo', '-i', 'https://pypi.tuna.tsinghua.edu.cn/simple', '--no-build-isolation']
+
+ons)
+        File "/Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/pylint-dev__pylint-5859/venv/lib/python3.12/site-packages/setuptools/config/setupcfg.py", line 479, in parse_section
+          self[name] = value
+          ~~~~^^^^^^
+        File "/Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/pylint-dev__pylint-5859/venv/lib/python3.12/site-packages/setuptools/config/setupcfg.py", line 296, in __setitem__
+          parsed = self.parsers.get(option_name, lambda x: x)(value)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/pylint-dev__pylint-5859/venv/lib/python3.12/site-packages/setuptools/config/setupcfg.py", line 602, in _parse_version
+          return expand.version(self._parse_attr(value, self.package_dir, self.root_dir))
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/pylint-dev__pylint-5859/venv/lib/python3.12/site-packages/setuptools/config/setupcfg.py", line 421, in _parse_attr
+          return expand.read_attr(attr_desc, package_dir, root_dir)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/pylint-dev__pylint-5859/venv/lib/python3.12/site-packages/setuptools/config/expand.py", line 190, in read_attr
+          module = _load_spec(spec, module_name)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        File "/Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/pylint-dev__pylint-5859/venv/lib/python3.12/site-packages/setuptools/config/expand.py", line 211, in _load_spec
+          spec.loader.exec_module(module)
+        File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+        File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+        File "/private/var/folders/jr/w9wcmh153kzg1t0qs35v0n8m0000gn/T/pip-install-0s9p7pnh/wrapt_6b218fb28abe4229a9d8637783e25b83/src/wrapt/__init__.py", line 10, in <module>
+          from .decorators import (adapter_factory, AdapterFactory, decorator,
+        File "/private/var/folders/jr/w9wcmh153kzg1t0qs35v0n8m0000gn/T/pip-install-0s9p7pnh/wrapt_6b218fb28abe4229a9d8637783e25b83/src/wrapt/decorators.py", line 34, in <module>
+          from inspect import ismethod, isclass, formatargspec
+      ImportError: cannot import name 'formatargspec' from 'inspect' (/Users/bill/.pyenv/versions/3.12.11/lib/python3.12/inspect.py). Did you mean: 'formatargvalues'?
+      [end of output]
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+error: metadata-generation-failed
+
+× Encountered error while generating package metadata.
+╰─> wrapt
+
+note: This is an issue with the package mentioned above, not pip.
+hint: See above for details.
+
+[pylint-dev__pylint-7114] repo+venv ready
+[pylint-dev__pylint-7114] gold self-check FTP(1)=True P2P(56)=True
+[pylint-dev__pylint-7228] repo+venv ready
+[pylint-dev__pylint-7228] gold self-check FTP(2)=True P2P(10)=True
+[pytest-dev__pytest-11143] repo+venv ready
+[pytest-dev__pytest-11143] gold self-check FTP(1)=True P2P(115)=True
+[pytest-dev__pytest-11148] repo+venv ready
+[pytest-dev__pytest-11148] gold self-check FTP(2)=True P2P(129)=True
+[sphinx-doc__sphinx-7738] repo+venv ready
+[sphinx-doc__sphinx-7738] gold self-check FTP(0)=False P2P(0)=False
+[sphinx-doc__sphinx-7738] GOLD CHECK FAILED - inspect before agent run
+[sphinx-doc__sphinx-8595] repo+venv ready
+[sphinx-doc__sphinx-8595] gold self-check FTP(0)=False P2P(0)=True
+[sphinx-doc__sphinx-8595] GOLD CHECK FAILED - inspect before agent run
+[sphinx-doc__sphinx-8721] repo+venv ready
+[sphinx-doc__sphinx-8721] gold self-check FTP(0)=False P2P(0)=False
+[sphinx-doc__sphinx-8721] GOLD CHECK FAILED - inspect before agent run
+[sphinx-doc__sphinx-8474] repo+venv ready
+[sphinx-doc__sphinx-8474] gold self-check FTP(0)=False P2P(0)=False
+[sphinx-doc__sphinx-8474] GOLD CHECK FAILED - inspect before agent run
+[sphinx-doc__sphinx-8713] repo+venv ready
+[sphinx-doc__sphinx-8713] gold self-check FTP(0)=False P2P(0)=False
+[sphinx-doc__sphinx-8713] GOLD CHECK FAILED - inspect before agent run
+[sphinx-doc__sphinx-8435] repo+venv ready
+[sphinx-doc__sphinx-8435] gold self-check FTP(0)=False P2P(0)=False
+[sphinx-doc__sphinx-8435] GOLD CHECK FAILED - inspect before agent run
+[sphinx-doc__sphinx-8506] repo+venv ready
+[sphinx-doc__sphinx-8506] gold self-check FTP(0)=False P2P(0)=False
+[sphinx-doc__sphinx-8506] GOLD CHECK FAILED - inspect before agent run
+[sphinx-doc__sphinx-8627] repo+venv ready
+[sphinx-doc__sphinx-8627] gold self-check FTP(0)=False P2P(0)=False
+[sphinx-doc__sphinx-8627] GOLD CHECK FAILED - inspect before agent run
+[sphinx-doc__sphinx-10325] repo+venv ready
+[sphinx-doc__sphinx-10325] gold self-check FTP(1)=True P2P(5)=True
+[sphinx-doc__sphinx-7975] repo+venv ready
+[sphinx-doc__sphinx-7975] gold self-check FTP(0)=False P2P(0)=False
+[sphinx-doc__sphinx-7975] GOLD CHECK FAILED - inspect before agent run
+[sympy__sympy-24102] repo+venv ready
+[sympy__sympy-24102] gold self-check FTP(3)=True P2P(0)=True
+[sympy__sympy-24213] repo+venv ready
+[sympy__sympy-24213] gold self-check FTP(1)=True P2P(32)=True
+[sympy__sympy-23262] repo+venv ready
+[sympy__sympy-23262] gold self-check FTP(1)=True P2P(62)=True
+[sympy__sympy-24066] repo+venv ready
+[sympy__sympy-24066] gold self-check FTP(1)=True P2P(31)=True
+[sympy__sympy-24152] repo+venv ready
+[sympy__sympy-24152] gold self-check FTP(1)=True P2P(6)=True
+[sympy__sympy-22840] repo+venv ready
+[sympy__sympy-22840] gold self-check FTP(1)=True P2P(8)=True
+[sympy__sympy-24909] repo+venv ready
+[sympy__sympy-24909] gold self-check FTP(1)=True P2P(2)=True
+[sympy__sympy-23191] repo+venv ready
+[sympy__sympy-23191] gold self-check FTP(1)=True P2P(3)=True
+[sympy__sympy-23117] repo+venv ready
+[sympy__sympy-23117] gold self-check FTP(1)=True P2P(3)=True

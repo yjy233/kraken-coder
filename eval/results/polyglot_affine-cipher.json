@@ -1,0 +1,26 @@
+{
+ "slug": "affine-cipher",
+ "pass": true,
+ "attempts_used": 1,
+ "attempts": [
+  {
+   "attempt": 1,
+   "agent": {
+    "model_requests": 6,
+    "tool_calls": 9,
+    "tool_failures": 0,
+    "wall_seconds": 54.9,
+    "exit_code": 0,
+    "agent_error": null
+   },
+   "answer_excerpt": "Implemented `affine_cipher.py` with:\n\n- Affine encryption and decryption using the modular multiplicative inverse.\n- Coprime key validation with the required `ValueError` message.\n- Case-insensitive letter handling.\n- Digit preservation and removal of spaces/punctuation.\n- Five-character ciphertext grouping.\n\nTest result:\n\n```text\n16 passed in 0.01s\n```",
+   "tests": {
+    "passed": 16,
+    "failed": 0,
+    "exit_code": 0,
+    "all_pass": true
+   },
+   "test_output_tail": "................                                                         [100%]\n16 passed in 0.01s\n"
+  }
+ ]
+}

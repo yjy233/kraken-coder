@@ -1,0 +1,18 @@
+{
+ "instance_id": "pallets__flask-4992",
+ "repo": "pallets/flask",
+ "resolved": false,
+ "category": "empty_patch",
+ "run_tag": "r2",
+ "gold_check_passed": true,
+ "patch_lines": 0,
+ "agent": {
+  "model_requests": 18,
+  "tool_calls": 36,
+  "tool_failures": 2,
+  "wall_seconds": 232.5,
+  "exit_code": 1,
+  "agent_error": "Context budget exceeded by current turn; read smaller ranges or increase --context-chars"
+ },
+ "answer_excerpt": ""
+}

@@ -1,0 +1,27 @@
+{
+ "slug": "rest-api",
+ "pass": true,
+ "attempts_used": 1,
+ "attempts": [
+  {
+   "attempt": 1,
+   "agent": {
+    "model_requests": 10,
+    "tool_calls": 17,
+    "tool_failures": 5,
+    "wall_seconds": 121.1,
+    "exit_code": 0,
+    "agent_error": null
+   },
+   "answer_excerpt": "Implemented `RestAPI` in `rest_api.py` with:\n\n- `GET /users` for all or selected users, sorted by name.\n- `POST /add` for creating users.\n- `POST /iou` for recording loans, offsetting existing reciprocal debts, removing settled entries, and recalculating balances.\n- JSON request and response handling.\n\nTest result:\n\n```text\n9 passed in 0.01s\n```",
+   "tests": {
+    "passed": 9,
+    "failed": 0,
+    "exit_code": 0,
+    "all_pass": true
+   },
+   "test_output": ".........                                                                [100%]\n9 passed in 0.01s\n",
+   "test_output_tail": ".........                                                                [100%]\n9 passed in 0.01s\n"
+  }
+ ]
+}

@@ -1,0 +1,5 @@
+runs/
+data/exercism-python/
+__pycache__/
+*.pyc
+.DS_Store

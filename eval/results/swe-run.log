@@ -1,0 +1,15 @@
+[pallets__flask-4992] repo+venv ready
+[pallets__flask-4992] agent turn starting
+[pallets__flask-4992] resolved=True category=resolved steps=18 tools=31 wall=213.1s
+[pytest-dev__pytest-11143] repo+venv ready
+[pytest-dev__pytest-11143] agent turn starting
+[pytest-dev__pytest-11143] resolved=False category=ftp_failed steps=17 tools=36 wall=223.9s
+[pytest-dev__pytest-11148] repo+venv ready
+[pytest-dev__pytest-11148] agent turn starting
+[pytest-dev__pytest-11148] resolved=False category=empty_patch steps=8 tools=24 wall=141.6s
+[sympy__sympy-24102] repo+venv ready
+[sympy__sympy-24102] agent turn starting
+[sympy__sympy-24102] resolved=False category=ftp_failed steps=20 tools=19 wall=171.8s
+[sympy__sympy-24213] repo+venv ready
+[sympy__sympy-24213] agent turn starting
+[sympy__sympy-24213] resolved=True category=resolved steps=12 tools=22 wall=94.7s

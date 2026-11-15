@@ -1,0 +1,26 @@
+{
+ "slug": "connect",
+ "pass": true,
+ "attempts_used": 1,
+ "attempts": [
+  {
+   "attempt": 1,
+   "agent": {
+    "model_requests": 12,
+    "tool_calls": 11,
+    "tool_failures": 0,
+    "wall_seconds": 93.9,
+    "exit_code": 0,
+    "agent_error": null
+   },
+   "answer_excerpt": "Implemented `ConnectGame` in `connect.py` using breadth-first search:\n\n- Parses indented board rows into coordinates.\n- Traverses the six valid hexagonal neighbors.\n- Detects `O` connections from top to bottom and `X` connections from left to right.\n- Returns an empty string when neither player has won.\n\nTest result:\n\n```text\n12 passed in 0.01s\n```",
+   "tests": {
+    "passed": 12,
+    "failed": 0,
+    "exit_code": 0,
+    "all_pass": true
+   },
+   "test_output_tail": "............                                                             [100%]\n12 passed in 0.01s\n"
+  }
+ ]
+}

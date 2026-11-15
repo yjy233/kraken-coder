@@ -1,0 +1,27 @@
+{
+ "slug": "variable-length-quantity",
+ "pass": true,
+ "attempts_used": 1,
+ "attempts": [
+  {
+   "attempt": 1,
+   "agent": {
+    "model_requests": 13,
+    "tool_calls": 12,
+    "tool_failures": 0,
+    "wall_seconds": 107.6,
+    "exit_code": 0,
+    "agent_error": null
+   },
+   "answer_excerpt": "Implemented `variable_length_quantity.py` with:\n\n- VLQ encoding using 7-bit groups and continuation bits.\n- VLQ decoding for single and multiple values.\n- Unsigned 32-bit range validation.\n- `ValueError(\"incomplete sequence\")` for unterminated sequences.\n\nTest result:\n\n```text\n31 passed in 0.01s\n```\n\nThe test file was not modified.",
+   "tests": {
+    "passed": 31,
+    "failed": 0,
+    "exit_code": 0,
+    "all_pass": true
+   },
+   "test_output": "...............................                                          [100%]\n31 passed in 0.01s\n",
+   "test_output_tail": "...............................                                          [100%]\n31 passed in 0.01s\n"
+  }
+ ]
+}

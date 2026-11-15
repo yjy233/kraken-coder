@@ -1,0 +1,27 @@
+{
+ "slug": "sgf-parsing",
+ "pass": true,
+ "attempts_used": 1,
+ "attempts": [
+  {
+   "attempt": 1,
+   "agent": {
+    "model_requests": 11,
+    "tool_calls": 16,
+    "tool_failures": 3,
+    "wall_seconds": 152.0,
+    "exit_code": 0,
+    "agent_error": null
+   },
+   "answer_excerpt": "Implemented `parse()` in `sgf_parsing.py` with a recursive-descent parser supporting:\n\n- Node sequences and child variations\n- Multiple properties and values per property\n- Escaped brackets, backslashes, newlines, and whitespace normalization\n- Required `ValueError` messages for malformed trees, delimiters, and lowercase properties\n\nTest result:\n\n```text\n23 passed in 0.01s\n```",
+   "tests": {
+    "passed": 23,
+    "failed": 0,
+    "exit_code": 0,
+    "all_pass": true
+   },
+   "test_output": ".......................                                                  [100%]\n23 passed in 0.01s\n",
+   "test_output_tail": ".......................                                                  [100%]\n23 passed in 0.01s\n"
+  }
+ ]
+}

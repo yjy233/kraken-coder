@@ -1,0 +1,27 @@
+{
+ "slug": "react",
+ "pass": true,
+ "attempts_used": 1,
+ "attempts": [
+  {
+   "attempt": 1,
+   "agent": {
+    "model_requests": 12,
+    "tool_calls": 20,
+    "tool_failures": 5,
+    "wall_seconds": 170.4,
+    "exit_code": 0,
+    "agent_error": null
+   },
+   "answer_excerpt": "Implemented `react.py` with:\n\n- Settable input cells and computed cells with chained dependencies.\n- Topologically ordered propagation, including diamond-shaped dependency graphs.\n- Stable-state callbacks that fire only when a computed value changes.\n- Safe callback registration and repeated removal.\n\nTest result:\n\n```text\npython -m pytest react_test.py -q\n14 passed in 0.01s\n```",
+   "tests": {
+    "passed": 14,
+    "failed": 0,
+    "exit_code": 0,
+    "all_pass": true
+   },
+   "test_output": "..............                                                           [100%]\n14 passed in 0.01s\n",
+   "test_output_tail": "..............                                                           [100%]\n14 passed in 0.01s\n"
+  }
+ ]
+}

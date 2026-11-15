@@ -1,0 +1,12 @@
+[pallets__flask-4992] repo+venv ready
+[pallets__flask-4992] agent turn starting
+Traceback (most recent call last):
+  File "/Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/harness/swebench_eval.py", line 292, in <module>
+    main()
+  File "/Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/harness/swebench_eval.py", line 279, in main
+    patch_lines = extract_patch(repo, base / "model.patch")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/harness/swebench_eval.py", line 204, in extract_patch
+    restore_generated(inst, repo)
+                      ^^^^
+NameError: name 'inst' is not defined. Did you mean: 'int'?

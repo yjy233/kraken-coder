@@ -1,0 +1,27 @@
+{
+ "slug": "dot-dsl",
+ "pass": true,
+ "attempts_used": 1,
+ "attempts": [
+  {
+   "attempt": 1,
+   "agent": {
+    "model_requests": 12,
+    "tool_calls": 11,
+    "tool_failures": 0,
+    "wall_seconds": 62.9,
+    "exit_code": 0,
+    "agent_error": null
+   },
+   "answer_excerpt": "Implemented `Graph` in `dot_dsl.py` with:\n\n- Empty graph defaults for nodes, edges, and attributes.\n- Parsing of `NODE`, `EDGE`, and `ATTR` tuples while preserving order.\n- Required `TypeError` and `ValueError` exceptions with exact messages.\n- Validation for malformed graph data, incomplete items, incorrect arity, and unknown item types.\n\nTest result:\n\n```text\n12 passed in 0.01s\n```",
+   "tests": {
+    "passed": 12,
+    "failed": 0,
+    "exit_code": 0,
+    "all_pass": true
+   },
+   "test_output": "............                                                             [100%]\n12 passed in 0.01s\n",
+   "test_output_tail": "............                                                             [100%]\n12 passed in 0.01s\n"
+  }
+ ]
+}

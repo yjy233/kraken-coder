@@ -1,0 +1,27 @@
+{
+ "slug": "simple-linked-list",
+ "pass": true,
+ "attempts_used": 1,
+ "attempts": [
+  {
+   "attempt": 1,
+   "agent": {
+    "model_requests": 10,
+    "tool_calls": 17,
+    "tool_failures": 6,
+    "wall_seconds": 70.2,
+    "exit_code": 0,
+    "agent_error": null
+   },
+   "answer_excerpt": "Implemented `simple_linked_list.py` with:\n\n- Singly linked `Node` objects storing values and next-node references.\n- LIFO `push()` and `pop()` operations.\n- `head()`, iteration, and constant-time `len()` support.\n- `EmptyListException(\"The list is empty.\")` for empty-list operations.\n- Non-mutating `reversed()` returning a new linked list.\n\nTest result:\n\n```text\n20 passed in 0.01s\n```",
+   "tests": {
+    "passed": 20,
+    "failed": 0,
+    "exit_code": 0,
+    "all_pass": true
+   },
+   "test_output": "....................                                                     [100%]\n20 passed in 0.01s\n",
+   "test_output_tail": "....................                                                     [100%]\n20 passed in 0.01s\n"
+  }
+ ]
+}

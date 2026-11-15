@@ -1,0 +1,18 @@
+[affine-cipher] skipped: result exists
+[beer-song] attempt 1 starting
+[beer-song] pass=True attempts=1
+[book-store] attempt 1 starting
+[book-store] pass=True attempts=1
+[bottle-song] attempt 1 starting
+[bottle-song] pass=True attempts=1
+[bowling] skipped: result exists
+[connect] attempt 1 starting
+[connect] pass=True attempts=1
+[dominoes] attempt 1 starting
+Traceback (most recent call last):
+  File "/Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/harness/polyglot_eval.py", line 180, in <module>
+    main()
+  File "/Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/harness/polyglot_eval.py", line 159, in main
+    message = RETRY_TEMPLATE.format(output=attempts[-1]["tests"]["output"], module=module)
+                                           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+KeyError: 'output'

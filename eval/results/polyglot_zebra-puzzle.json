@@ -1,0 +1,47 @@
+{
+ "slug": "zebra-puzzle",
+ "pass": true,
+ "attempts_used": 2,
+ "attempts": [
+  {
+   "attempt": 1,
+   "agent": {
+    "model_requests": 2,
+    "tool_calls": 1,
+    "tool_failures": 0,
+    "wall_seconds": 490.2,
+    "exit_code": 1,
+    "agent_error": "The operation was aborted due to timeout"
+   },
+   "answer_excerpt": "",
+   "tests": {
+    "passed": 0,
+    "failed": 2,
+    "exit_code": 1,
+    "all_pass": false
+   },
+   "test_output": "FF                                                                       [100%]\n=================================== FAILURES ===================================\n________________ ZebraPuzzleTest.test_resident_who_drinks_water ________________\nzebra_puzzle_test.py:15: in test_resident_who_drinks_water\n    self.assertEqual(drinks_water(), \"Norwegian\")\nE   AssertionError: None != 'Norwegian'\n_________________ ZebraPuzzleTest.test_resident_who_owns_zebra _________________\nzebra_puzzle_test.py:18: in test_resident_who_owns_zebra\n    self.assertEqual(owns_zebra(), \"Japanese\")\nE   AssertionError: None != 'Japanese'\n=========================== short test summary info ============================\nFAILED zebra_puzzle_test.py::ZebraPuzzleTest::test_resident_who_drinks_water\nFAILED zebra_puzzle_test.py::ZebraPuzzleTest::test_resident_who_owns_zebra - ...\n2 failed in 0.03s\n",
+   "test_output_tail": "FF                                                                       [100%]\n=================================== FAILURES ===================================\n________________ ZebraPuzzleTest.test_resident_who_drinks_water ________________\nzebra_puzzle_test.py:15: in test_resident_who_drinks_water\n    self.assertEqual(drinks_water(), \"Norwegian\")\nE   AssertionError: None != 'Norwegian'\n_________________ ZebraPuzzleTest.test_resident_who_owns_zebra _________________\nzebra_puzzle_test.py:18: in test_resident_who_owns_zebra\n    self.assertEqual(owns_zebra(), \"Japanese\")\nE   AssertionError: None != 'Japanese'\n=========================== short test summary info ============================\nFAILED zebra_puzzle_test.py::ZebraPuzzleTest::test_resident_who_drinks_water\nFAILED zebra_puzzle_test.py::ZebraPuzzleTest::test_resident_who_owns_zebra - ...\n2 failed in 0.03s\n"
+  },
+  {
+   "attempt": 2,
+   "agent": {
+    "model_requests": 7,
+    "tool_calls": 10,
+    "tool_failures": 0,
+    "wall_seconds": 135.2,
+    "exit_code": 0,
+    "agent_error": null
+   },
+   "answer_excerpt": "Implemented `zebra_puzzle.py` with a cached, permutation-based constraint solver covering all 15 clues.\n\n- `drinks_water()` returns **\"Norwegian\"**\n- `owns_zebra()` returns **\"Japanese\"**\n- Test file was not modified.\n\nTest result:\n\n```text\n2 passed in 0.00s\n```",
+   "tests": {
+    "passed": 2,
+    "failed": 0,
+    "exit_code": 0,
+    "all_pass": true
+   },
+   "test_output": "..                                                                       [100%]\n2 passed in 0.00s\n",
+   "test_output_tail": "..                                                                       [100%]\n2 passed in 0.00s\n"
+  }
+ ]
+}

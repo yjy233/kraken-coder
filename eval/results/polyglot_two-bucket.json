@@ -1,0 +1,27 @@
+{
+ "slug": "two-bucket",
+ "pass": true,
+ "attempts_used": 1,
+ "attempts": [
+  {
+   "attempt": 1,
+   "agent": {
+    "model_requests": 8,
+    "tool_calls": 10,
+    "tool_failures": 0,
+    "wall_seconds": 87.7,
+    "exit_code": 0,
+    "agent_error": null
+   },
+   "answer_excerpt": "Implemented `measure` in `two_bucket.py` using breadth-first search to find the shortest valid action sequence.\n\n- Supports filling, emptying, and pouring in either direction.\n- Enforces the forbidden-state rule.\n- Returns the action count, goal bucket, and remaining liters.\n- Raises `ValueError` with meaningful messages for invalid or impossible goals.\n\nTest result:\n\n```text\n11 passed in 0.01s\n```",
+   "tests": {
+    "passed": 11,
+    "failed": 0,
+    "exit_code": 0,
+    "all_pass": true
+   },
+   "test_output": "...........                                                              [100%]\n11 passed in 0.01s\n",
+   "test_output_tail": "...........                                                              [100%]\n11 passed in 0.01s\n"
+  }
+ ]
+}

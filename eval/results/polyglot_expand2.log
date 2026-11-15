@@ -1,0 +1,59 @@
+[affine-cipher] skipped: result exists
+[beer-song] skipped: result exists
+[book-store] skipped: result exists
+[bottle-song] skipped: result exists
+[bowling] skipped: result exists
+[connect] skipped: result exists
+[dominoes] attempt 1 starting
+[dominoes] pass=True attempts=1
+[dot-dsl] attempt 1 starting
+[dot-dsl] pass=True attempts=1
+[food-chain] skipped: result exists
+[forth] attempt 1 starting
+[forth] pass=True attempts=1
+[go-counting] attempt 1 starting
+[go-counting] attempt 2 starting
+[go-counting] pass=True attempts=2
+[grade-school] skipped: result exists
+[grep] attempt 1 starting
+[grep] pass=True attempts=1
+[hangman] attempt 1 starting
+[hangman] pass=True attempts=1
+[list-ops] attempt 1 starting
+[list-ops] pass=True attempts=1
+[paasio] skipped: result exists
+[phone-number] attempt 1 starting
+[phone-number] pass=True attempts=1
+[pig-latin] attempt 1 starting
+[pig-latin] pass=True attempts=1
+[poker] skipped: result exists
+[pov] attempt 1 starting
+[pov] pass=True attempts=1
+[proverb] attempt 1 starting
+[proverb] pass=True attempts=1
+[react] attempt 1 starting
+[react] pass=True attempts=1
+[rest-api] attempt 1 starting
+[rest-api] pass=True attempts=1
+[robot-name] attempt 1 starting
+[robot-name] pass=True attempts=1
+[scale-generator] skipped: result exists
+[sgf-parsing] attempt 1 starting
+[sgf-parsing] pass=True attempts=1
+[simple-linked-list] attempt 1 starting
+[simple-linked-list] pass=True attempts=1
+[transpose] attempt 1 starting
+[transpose] pass=True attempts=1
+[tree-building] attempt 1 starting
+[tree-building] pass=True attempts=1
+[two-bucket] attempt 1 starting
+[two-bucket] pass=True attempts=1
+[variable-length-quantity] attempt 1 starting
+[variable-length-quantity] pass=True attempts=1
+[wordy] skipped: result exists
+[zebra-puzzle] attempt 1 starting
+[zebra-puzzle] attempt 2 starting
+[zebra-puzzle] pass=True attempts=2
+[zipper] attempt 1 starting
+[zipper] attempt 2 starting
+[zipper] pass=False attempts=2

@@ -1,0 +1,29 @@
+{
+ "instance_id": "sympy__sympy-24102",
+ "repo": "sympy/sympy",
+ "resolved": false,
+ "category": "ftp_failed",
+ "ftp": {
+  "exit_code": 1,
+  "tests": {
+   "sympy.parsing.tests.test_mathematica::test_mathematica": "failed",
+   "sympy.parsing.tests.test_mathematica::test_parser_mathematica_tokenizer": "passed",
+   "sympy.parsing.tests.test_mathematica::test_parser_mathematica_exp_alt": "passed"
+  },
+  "tail": "F..                                                                      [100%]\n=================================== FAILURES ===================================\n_______________________________ test_mathematica _______________________________\nsympy/parsing/tests/test_mathematica.py:74: in test_mathematica\n    assert parse_mathematica(e) == sympify(d[e])\nE   AssertionError: assert Cos*π/2 == Cos(π/2)\nE    +  where Cos*π/2 = parse_mathematica('Cos(1/2 * π)')\nE    +  and   Cos(π/2) = sympify('Cos(π/2)')\n=============================== warnings summary ===============================\n../venv/lib/python3.12/site-packages/mpmath/ctx_mp.py:35\n  /Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/sympy__sympy-24102/venv/lib/python3.12/site-packages/mpmath/ctx_mp.py:35: DeprecationWarning: mpnumeric is deprecated\n    warnings.warn(f\"{name} is deprecated\", DeprecationWarning)\n\n../venv/lib/python3.12/site-packages/mpmath/rational.py:4\n../venv/lib/python3.12/site-packages/mpmath/rational.py:4\n../venv/lib/python3.12/site-packages/mpmath/rational.py:4\n  /Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/sympy__sympy-24102/venv/lib/python3.12/site-packages/mpmath/rational.py:4: DeprecationWarning: the rational private module is deprecated\n    warnings.warn(\"the rational private module is deprecated\",\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n                                DO *NOT* COMMIT!                                \n=========================== short test summary info ============================\nFAILED sympy/parsing/tests/test_mathematica.py::test_mathematica - AssertionE...\n1 failed, 2 passed, 4 warnings in 0.35s\n"
+ },
+ "p2p": {
+  "tests": {}
+ },
+ "gold_check_passed": true,
+ "patch_lines": 13,
+ "agent": {
+  "model_requests": 20,
+  "tool_calls": 19,
+  "tool_failures": 1,
+  "wall_seconds": 171.8,
+  "exit_code": 1,
+  "agent_error": "Context budget exceeded by current turn; read smaller ranges or increase --context-chars"
+ },
+ "answer_excerpt": ""
+}

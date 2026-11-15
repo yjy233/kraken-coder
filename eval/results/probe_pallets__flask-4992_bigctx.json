@@ -1,0 +1,51 @@
+{
+ "instance_id": "pallets__flask-4992",
+ "repo": "pallets/flask",
+ "resolved": false,
+ "category": "ftp_failed",
+ "ftp": {
+  "exit_code": 1,
+  "tests": {
+   "tests.test_config::test_config_from_file_toml": "failed"
+  },
+  "tail": "F                                                                        [100%]\n=================================== FAILURES ===================================\n__________________________ test_config_from_file_toml __________________________\ntests/test_config.py:43: in test_config_from_file_toml\n    app.config.from_file(\nE   TypeError: Config.from_file() got an unexpected keyword argument 'text'\n- generated xml file: /Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/pallets__flask-4992/ftp-junit.xml -\n=========================== short test summary info ============================\nFAILED tests/test_config.py::test_config_from_file_toml - TypeError: Config.f...\n1 failed in 0.03s\n"
+ },
+ "p2p": {
+  "exit_code": 0,
+  "tests": {
+   "tests.test_config::test_config_from_pyfile": "passed",
+   "tests.test_config::test_config_from_object": "passed",
+   "tests.test_config::test_config_from_file_json": "passed",
+   "tests.test_config::test_from_prefixed_env": "passed",
+   "tests.test_config::test_from_prefixed_env_custom_prefix": "passed",
+   "tests.test_config::test_from_prefixed_env_nested": "passed",
+   "tests.test_config::test_config_from_mapping": "passed",
+   "tests.test_config::test_config_from_class": "passed",
+   "tests.test_config::test_config_from_envvar": "passed",
+   "tests.test_config::test_config_from_envvar_missing": "passed",
+   "tests.test_config::test_config_missing": "passed",
+   "tests.test_config::test_config_missing_file": "passed",
+   "tests.test_config::test_custom_config_class": "passed",
+   "tests.test_config::test_session_lifetime": "passed",
+   "tests.test_config::test_get_namespace": "passed",
+   "tests.test_config::test_from_pyfile_weird_encoding[utf-8]": "passed",
+   "tests.test_config::test_from_pyfile_weird_encoding[iso-8859-15]": "passed",
+   "tests.test_config::test_from_pyfile_weird_encoding[latin-1]": "passed"
+  },
+  "tail": "..................                                                       [100%]\n- generated xml file: /Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/pallets__flask-4992/p2p-junit.xml -\n18 passed in 0.03s\n"
+ },
+ "p2p_env_excluded": [],
+ "run_tag": "probe400000",
+ "context_chars": 400000,
+ "gold_check_passed": true,
+ "patch_lines": 45,
+ "agent": {
+  "model_requests": 11,
+  "tool_calls": 22,
+  "tool_failures": 3,
+  "wall_seconds": 144.7,
+  "exit_code": 0,
+  "agent_error": null
+ },
+ "answer_excerpt": "Implemented binary-mode support for `flask.Config.from_file()`.\n\n### Changes\n- Added `mode: str = \"r\"` after `silent`, preserving existing calls.\n- Passed `mode` directly to `open()`, enabling:\n  ```python\n  app.config.from_file(\"config.toml\", tomllib.load, mode=\"rb\")\n  ```\n- Documented the parameter and added a changelog entry.\n\n### Verification\n- `../venv/bin/python -m pytest tests/test_config.py -q` — **18 passed**\n- Confirmed TOML loading with `tomllib` in binary mode and existing JSON loading in default text mode.\n- `git diff --check` passed."
+}

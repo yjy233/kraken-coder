@@ -1,0 +1,27 @@
+{
+ "slug": "tree-building",
+ "pass": true,
+ "attempts_used": 1,
+ "attempts": [
+  {
+   "attempt": 1,
+   "agent": {
+    "model_requests": 9,
+    "tool_calls": 12,
+    "tool_failures": 0,
+    "wall_seconds": 105.9,
+    "exit_code": 0,
+    "agent_error": null
+   },
+   "answer_excerpt": "Implemented `BuildTree` in `tree_building.py` with:\n\n- Validation for missing, duplicate, non-contiguous, and out-of-order record IDs.\n- Meaningful `ValueError` messages for invalid root, parent, and cycle relationships.\n- Sorted, non-mutating input handling.\n- Efficient node lookup and child construction while preserving ID order.\n- `None` returned for empty input.\n\nTest result:\n\n```text\n13 passed in 0.01s\n```",
+   "tests": {
+    "passed": 13,
+    "failed": 0,
+    "exit_code": 0,
+    "all_pass": true
+   },
+   "test_output": ".............                                                            [100%]\n13 passed in 0.01s\n",
+   "test_output_tail": ".............                                                            [100%]\n13 passed in 0.01s\n"
+  }
+ ]
+}

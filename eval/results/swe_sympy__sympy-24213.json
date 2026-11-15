@@ -1,0 +1,65 @@
+{
+ "instance_id": "sympy__sympy-24213",
+ "repo": "sympy/sympy",
+ "resolved": true,
+ "category": "resolved",
+ "ftp": {
+  "exit_code": 0,
+  "tests": {
+   "sympy.physics.units.tests.test_quantities::test_issue_24211": "passed"
+  },
+  "tail": ".                                                                        [100%]\n=============================== warnings summary ===============================\n../venv/lib/python3.12/site-packages/mpmath/ctx_mp.py:35\n  /Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/sympy__sympy-24213/venv/lib/python3.12/site-packages/mpmath/ctx_mp.py:35: DeprecationWarning: mpnumeric is deprecated\n    warnings.warn(f\"{name} is deprecated\", DeprecationWarning)\n\n../venv/lib/python3.12/site-packages/mpmath/rational.py:4\n../venv/lib/python3.12/site-packages/mpmath/rational.py:4\n../venv/lib/python3.12/site-packages/mpmath/rational.py:4\n  /Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/sympy__sympy-24213/venv/lib/python3.12/site-packages/mpmath/rational.py:4: DeprecationWarning: the rational private module is deprecated\n    warnings.warn(\"the rational private module is deprecated\",\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n1 passed, 33 deselected, 4 warnings in 0.39s\n"
+ },
+ "p2p": {
+  "exit_code": 0,
+  "tests": {
+   "sympy.physics.units.tests.test_quantities::test_str_repr": "passed",
+   "sympy.physics.units.tests.test_quantities::test_eq": "passed",
+   "sympy.physics.units.tests.test_quantities::test_convert_to": "passed",
+   "sympy.physics.units.tests.test_quantities::test_Quantity_definition": "passed",
+   "sympy.physics.units.tests.test_quantities::test_abbrev": "passed",
+   "sympy.physics.units.tests.test_quantities::test_print": "passed",
+   "sympy.physics.units.tests.test_quantities::test_Quantity_eq": "passed",
+   "sympy.physics.units.tests.test_quantities::test_add_sub": "passed",
+   "sympy.physics.units.tests.test_quantities::test_quantity_abs": "passed",
+   "sympy.physics.units.tests.test_quantities::test_check_unit_consistency": "passed",
+   "sympy.physics.units.tests.test_quantities::test_mul_div": "passed",
+   "sympy.physics.units.tests.test_quantities::test_units": "passed",
+   "sympy.physics.units.tests.test_quantities::test_issue_quart": "passed",
+   "sympy.physics.units.tests.test_quantities::test_issue_5565": "passed",
+   "sympy.physics.units.tests.test_quantities::test_find_unit": "passed",
+   "sympy.physics.units.tests.test_quantities::test_Quantity_derivative": "passed",
+   "sympy.physics.units.tests.test_quantities::test_quantity_postprocessing": "passed",
+   "sympy.physics.units.tests.test_quantities::test_factor_and_dimension": "passed",
+   "sympy.physics.units.tests.test_quantities::test_factor_and_dimension_with_Abs": "skipped",
+   "sympy.physics.units.tests.test_quantities::test_dimensional_expr_of_derivative": "passed",
+   "sympy.physics.units.tests.test_quantities::test_get_dimensional_expr_with_function": "passed",
+   "sympy.physics.units.tests.test_quantities::test_binary_information": "passed",
+   "sympy.physics.units.tests.test_quantities::test_conversion_with_2_nonstandard_dimensions": "passed",
+   "sympy.physics.units.tests.test_quantities::test_eval_subs": "passed",
+   "sympy.physics.units.tests.test_quantities::test_issue_14932": "passed",
+   "sympy.physics.units.tests.test_quantities::test_issue_14547": "passed",
+   "sympy.physics.units.tests.test_quantities::test_deprecated_quantity_methods": "passed",
+   "sympy.physics.units.tests.test_quantities::test_issue_22164": "passed",
+   "sympy.physics.units.tests.test_quantities::test_issue_22819": "passed",
+   "sympy.physics.units.tests.test_quantities::test_issue_20288": "passed",
+   "sympy.physics.units.tests.test_quantities::test_issue_24062": "passed",
+   "sympy.physics.units.tests.test_quantities::test_prefixed_property": "passed"
+  },
+  "tail": "..................x.............                                         [100%]\n=============================== warnings summary ===============================\n../venv/lib/python3.12/site-packages/mpmath/ctx_mp.py:35\n  /Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/sympy__sympy-24213/venv/lib/python3.12/site-packages/mpmath/ctx_mp.py:35: DeprecationWarning: mpnumeric is deprecated\n    warnings.warn(f\"{name} is deprecated\", DeprecationWarning)\n\n../venv/lib/python3.12/site-packages/mpmath/rational.py:4\n../venv/lib/python3.12/site-packages/mpmath/rational.py:4\n../venv/lib/python3.12/site-packages/mpmath/rational.py:4\n  /Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/sympy__sympy-24213/venv/lib/python3.12/site-packages/mpmath/rational.py:4: DeprecationWarning: the rational private module is deprecated\n    warnings.warn(\"the rational private module is deprecated\",\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n31 passed, 2 deselected, 1 xfailed, 4 warnings in 0.83s\n"
+ },
+ "p2p_env_excluded": [],
+ "run_tag": "r2",
+ "context_chars": 120000,
+ "gold_check_passed": true,
+ "patch_lines": 13,
+ "agent": {
+  "model_requests": 19,
+  "tool_calls": 19,
+  "tool_failures": 0,
+  "wall_seconds": 97.0,
+  "exit_code": 0,
+  "agent_error": null
+ },
+ "answer_excerpt": "Fixed `UnitSystem._collect_factor_and_dimension` in `sympy/physics/units/unitsystem.py`.\n\n- Addition now compares dimensions using `DimensionSystem.equivalent_dims()` instead of structural equality, so equivalent expressions such as `acceleration*time` and `velocity` are accepted.\n- Incompatible dimensions still raise `ValueError`.\n\nVerification:\n- The reported reproduction now returns `(-47.0, Dimension(acceleration*time))`.\n- Full units test suite: **71 passed, 1 xfailed**.\n- `git diff --check` passed."
+}

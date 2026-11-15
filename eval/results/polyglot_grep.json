@@ -1,0 +1,27 @@
+{
+ "slug": "grep",
+ "pass": true,
+ "attempts_used": 1,
+ "attempts": [
+  {
+   "attempt": 1,
+   "agent": {
+    "model_requests": 8,
+    "tool_calls": 13,
+    "tool_failures": 2,
+    "wall_seconds": 56.3,
+    "exit_code": 0,
+    "agent_error": null
+   },
+   "answer_excerpt": "Implemented `grep.py` with:\n\n- Fixed-string matching in file order\n- `-n` line numbers and multi-file filename prefixes\n- `-l` filename-only output with precedence over other output flags\n- `-i` case-insensitive matching\n- `-v` inverted matching\n- `-x` whole-line matching\n- Combinations of all supported flags\n\nTest result:\n\n```text\n25 passed in 0.04s\n```\n\nRan with `python -m pytest grep_test.py -q`.",
+   "tests": {
+    "passed": 25,
+    "failed": 0,
+    "exit_code": 0,
+    "all_pass": true
+   },
+   "test_output": ".........................                                                [100%]\n25 passed in 0.03s\n",
+   "test_output_tail": ".........................                                                [100%]\n25 passed in 0.03s\n"
+  }
+ ]
+}

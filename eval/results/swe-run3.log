@@ -1,0 +1,12 @@
+[pytest-dev__pytest-11143] repo+venv ready
+[pytest-dev__pytest-11143] agent turn starting
+[pytest-dev__pytest-11143] resolved=True category=resolved steps=15 tools=27 wall=151.5s
+[pytest-dev__pytest-11148] repo+venv ready
+[pytest-dev__pytest-11148] agent turn starting
+[pytest-dev__pytest-11148] resolved=False category=empty_patch steps=5 tools=15 wall=37.0s
+[sympy__sympy-24102] repo+venv ready
+[sympy__sympy-24102] agent turn starting
+[sympy__sympy-24102] resolved=False category=ftp_failed steps=11 tools=23 wall=131.1s
+[sympy__sympy-24213] repo+venv ready
+[sympy__sympy-24213] agent turn starting
+[sympy__sympy-24213] resolved=True category=resolved steps=19 tools=19 wall=97.0s

@@ -1,0 +1,26 @@
+{
+ "slug": "grade-school",
+ "pass": true,
+ "attempts_used": 1,
+ "attempts": [
+  {
+   "attempt": 1,
+   "agent": {
+    "model_requests": 11,
+    "tool_calls": 13,
+    "tool_failures": 1,
+    "wall_seconds": 43.8,
+    "exit_code": 0,
+    "agent_error": null
+   },
+   "answer_excerpt": "Implemented `School` in `grade_school.py` with:\n\n- Student enrollment by grade.\n- Duplicate rejection across all grades.\n- Addition status tracking through `added()`.\n- Alphabetically sorted grade lists.\n- Full rosters sorted by grade, then student name.\n\nTest result:\n\n```text\n20 passed in 0.01s\n```",
+   "tests": {
+    "passed": 20,
+    "failed": 0,
+    "exit_code": 0,
+    "all_pass": true
+   },
+   "test_output_tail": "....................                                                     [100%]\n20 passed in 0.01s\n"
+  }
+ ]
+}

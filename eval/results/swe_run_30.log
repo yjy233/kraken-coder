@@ -1,0 +1,80 @@
+[pallets__flask-4045] repo+venv ready
+[pallets__flask-4045] agent turn starting
+[pallets__flask-4045] resolved=False category=ftp_failed steps=11 tools=34 wall=113.7s
+[pallets__flask-4992] skipped: result exists
+[pallets__flask-5063] repo+venv ready
+[pallets__flask-5063] agent turn starting
+[pallets__flask-5063] resolved=True category=resolved steps=35 tools=34 wall=398.1s
+[pylint-dev__pylint-7080] repo+venv ready
+[pylint-dev__pylint-7080] agent turn starting
+[pylint-dev__pylint-7080] resolved=False category=empty_patch steps=6 tools=23 wall=40.5s
+[pylint-dev__pylint-7993] repo+venv ready
+[pylint-dev__pylint-7993] agent turn starting
+[pylint-dev__pylint-7993] resolved=True category=resolved steps=25 tools=24 wall=205.5s
+[pylint-dev__pylint-6506] repo+venv ready
+[pylint-dev__pylint-6506] agent turn starting
+[pylint-dev__pylint-6506] resolved=False category=empty_patch steps=9 tools=25 wall=100.5s
+[pylint-dev__pylint-7114] repo+venv ready
+[pylint-dev__pylint-7114] agent turn starting
+[pylint-dev__pylint-7114] resolved=False category=empty_patch steps=10 tools=30 wall=140.2s
+[pylint-dev__pylint-7228] repo+venv ready
+[pylint-dev__pylint-7228] agent turn starting
+[pylint-dev__pylint-7228] resolved=False category=empty_patch steps=6 tools=24 wall=53.6s
+[pytest-dev__pytest-11143] skipped: result exists
+[pytest-dev__pytest-11148] skipped: result exists
+[sphinx-doc__sphinx-7738] repo+venv ready
+[sphinx-doc__sphinx-7738] agent turn starting
+[sphinx-doc__sphinx-7738] resolved=False category=empty_patch steps=15 tools=14 wall=58.1s
+[sphinx-doc__sphinx-8595] repo+venv ready
+[sphinx-doc__sphinx-8595] agent turn starting
+[sphinx-doc__sphinx-8595] resolved=False category=empty_patch steps=9 tools=31 wall=86.1s
+[sphinx-doc__sphinx-8721] repo+venv ready
+[sphinx-doc__sphinx-8721] agent turn starting
+[sphinx-doc__sphinx-8721] resolved=False category=empty_patch steps=1 tools=0 wall=0.3s
+[sphinx-doc__sphinx-8474] repo+venv ready
+[sphinx-doc__sphinx-8474] agent turn starting
+[sphinx-doc__sphinx-8474] resolved=False category=empty_patch steps=1 tools=0 wall=0.3s
+[sphinx-doc__sphinx-8713] repo+venv ready
+[sphinx-doc__sphinx-8713] agent turn starting
+[sphinx-doc__sphinx-8713] resolved=False category=empty_patch steps=1 tools=0 wall=0.3s
+[sphinx-doc__sphinx-8506] repo+venv ready
+[sphinx-doc__sphinx-8506] agent turn starting
+[sphinx-doc__sphinx-8506] resolved=False category=empty_patch steps=1 tools=0 wall=0.5s
+[sphinx-doc__sphinx-10325] repo+venv ready
+[sphinx-doc__sphinx-10325] agent turn starting
+[sphinx-doc__sphinx-10325] resolved=False category=empty_patch steps=1 tools=0 wall=0.3s
+[sphinx-doc__sphinx-7975] repo+venv ready
+[sphinx-doc__sphinx-7975] agent turn starting
+[sphinx-doc__sphinx-7975] resolved=False category=empty_patch steps=1 tools=0 wall=0.4s
+[sphinx-doc__sphinx-8273] repo+venv ready
+[sphinx-doc__sphinx-8273] agent turn starting
+[sphinx-doc__sphinx-8273] resolved=False category=empty_patch steps=1 tools=0 wall=0.4s
+[sphinx-doc__sphinx-8282] repo+venv ready
+[sphinx-doc__sphinx-8282] agent turn starting
+[sphinx-doc__sphinx-8282] resolved=False category=empty_patch steps=1 tools=0 wall=0.5s
+[sphinx-doc__sphinx-10451] repo+venv ready
+[sphinx-doc__sphinx-10451] agent turn starting
+[sphinx-doc__sphinx-10451] resolved=False category=empty_patch steps=1 tools=0 wall=0.4s
+[sympy__sympy-24102] skipped: result exists
+[sympy__sympy-24213] skipped: result exists
+[sympy__sympy-23262] repo+venv ready
+[sympy__sympy-23262] agent turn starting
+[sympy__sympy-23262] resolved=False category=empty_patch steps=1 tools=0 wall=0.3s
+[sympy__sympy-24066] repo+venv ready
+[sympy__sympy-24066] agent turn starting
+[sympy__sympy-24066] resolved=False category=empty_patch steps=1 tools=0 wall=0.3s
+[sympy__sympy-24152] repo+venv ready
+[sympy__sympy-24152] agent turn starting
+[sympy__sympy-24152] resolved=False category=empty_patch steps=1 tools=0 wall=0.4s
+[sympy__sympy-22840] repo+venv ready
+[sympy__sympy-22840] agent turn starting
+[sympy__sympy-22840] resolved=False category=empty_patch steps=1 tools=0 wall=0.4s
+[sympy__sympy-24909] repo+venv ready
+[sympy__sympy-24909] agent turn starting
+[sympy__sympy-24909] resolved=False category=empty_patch steps=1 tools=0 wall=0.4s
+[sympy__sympy-23191] repo+venv ready
+[sympy__sympy-23191] agent turn starting
+[sympy__sympy-23191] resolved=False category=empty_patch steps=1 tools=0 wall=0.3s
+[sympy__sympy-23117] repo+venv ready
+[sympy__sympy-23117] agent turn starting
+[sympy__sympy-23117] resolved=False category=empty_patch steps=1 tools=0 wall=0.4s

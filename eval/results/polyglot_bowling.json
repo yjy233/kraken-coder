@@ -1,0 +1,26 @@
+{
+ "slug": "bowling",
+ "pass": true,
+ "attempts_used": 1,
+ "attempts": [
+  {
+   "attempt": 1,
+   "agent": {
+    "model_requests": 10,
+    "tool_calls": 9,
+    "tool_failures": 0,
+    "wall_seconds": 117.3,
+    "exit_code": 0,
+    "agent_error": null
+   },
+   "answer_excerpt": "Implemented `BowlingGame` in `bowling.py` with:\n\n- Open-frame, spare, and strike scoring.\n- Correct tenth-frame and fill-ball handling.\n- Validation for invalid pin counts, excessive frame totals, extra rolls, and incomplete-game scoring.\n- Meaningful exception messages for all validation errors.\n\nTest result: **31 passed in 0.01s** using `python -m pytest bowling_test.py -q`.",
+   "tests": {
+    "passed": 31,
+    "failed": 0,
+    "exit_code": 0,
+    "all_pass": true
+   },
+   "test_output_tail": "...............................                                          [100%]\n31 passed in 0.01s\n"
+  }
+ ]
+}

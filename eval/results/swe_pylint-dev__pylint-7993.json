@@ -1,0 +1,43 @@
+{
+ "instance_id": "pylint-dev__pylint-7993",
+ "repo": "pylint-dev/pylint",
+ "resolved": true,
+ "category": "resolved",
+ "ftp": {
+  "exit_code": 0,
+  "tests": {
+   "tests.reporters.unittest_reporting::test_template_option_with_header": "passed"
+  },
+  "tail": ".                                                                        [100%]\n- generated xml file: /Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/pylint-dev__pylint-7993/ftp-junit.xml -\n1 passed in 0.03s\n"
+ },
+ "p2p": {
+  "exit_code": 0,
+  "tests": {
+   "tests.reporters.unittest_reporting::test_template_option": "passed",
+   "tests.reporters.unittest_reporting::test_template_option_default": "passed",
+   "tests.reporters.unittest_reporting::test_template_option_end_line": "passed",
+   "tests.reporters.unittest_reporting::test_template_option_non_existing": "passed",
+   "tests.reporters.unittest_reporting::test_deprecation_set_output": "passed",
+   "tests.reporters.unittest_reporting::test_parseable_output_deprecated": "passed",
+   "tests.reporters.unittest_reporting::test_parseable_output_regression": "passed",
+   "tests.reporters.unittest_reporting::test_multi_format_output": "passed",
+   "tests.reporters.unittest_reporting::test_multi_reporter_independant_messages": "passed",
+   "tests.reporters.unittest_reporting::test_display_results_is_renamed": "passed"
+  },
+  "tail": "..........                                                               [100%]\n- generated xml file: /Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/pylint-dev__pylint-7993/p2p-junit.xml -\n10 passed in 0.08s\n"
+ },
+ "p2p_env_excluded": [],
+ "run_tag": "r3",
+ "context_chars": 120000,
+ "gold_check_passed": true,
+ "patch_lines": 60,
+ "agent": {
+  "model_requests": 25,
+  "tool_calls": 24,
+  "tool_failures": 1,
+  "wall_seconds": 205.5,
+  "exit_code": 0,
+  "agent_error": null
+ },
+ "answer_excerpt": "Implemented the message-template brace fix.\n\n### Changes\n- Replaced regex-based template field detection with `string.Formatter().parse()` in `pylint/reporters/text.py`, so escaped `{{` and `}}` are treated as literal braces.\n- Added a regression test covering `--msg-template='{{ \"Category\": \"{category}\" }}'`, including verification that no warning is emitted.\n\n### Verification\n- Direct reproduction now outputs:\n  ```text\n  { \"Category\": \"convention\" }\n  ```\n  with no warnings.\n- `../venv/bin/python -m pytest tests/reporters -q` — **14 passed**.\n- `git diff --check` — clean."
+}

@@ -1,0 +1,19 @@
+{
+ "instance_id": "pytest-dev__pytest-11148",
+ "repo": "pytest-dev/pytest",
+ "resolved": false,
+ "category": "empty_patch",
+ "run_tag": "probe400000",
+ "context_chars": 400000,
+ "gold_check_passed": true,
+ "patch_lines": 0,
+ "agent": {
+  "model_requests": 6,
+  "tool_calls": 17,
+  "tool_failures": 0,
+  "wall_seconds": 1066.6,
+  "exit_code": 1,
+  "agent_error": "The operation was aborted due to timeout"
+ },
+ "answer_excerpt": ""
+}

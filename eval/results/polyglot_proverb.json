@@ -1,0 +1,27 @@
+{
+ "slug": "proverb",
+ "pass": true,
+ "attempts_used": 1,
+ "attempts": [
+  {
+   "attempt": 1,
+   "agent": {
+    "model_requests": 6,
+    "tool_calls": 9,
+    "tool_failures": 2,
+    "wall_seconds": 36.5,
+    "exit_code": 0,
+    "agent_error": null
+   },
+   "answer_excerpt": "Implemented `proverb.py` to:\n\n- Accept any number of pieces using `*pieces`.\n- Generate each consequence line from consecutive pairs.\n- Return `[]` for no input.\n- Add the optional `qualifier` to the final line.\n\nTests: **8 passed** using `python -m pytest proverb_test.py -q`.",
+   "tests": {
+    "passed": 8,
+    "failed": 0,
+    "exit_code": 0,
+    "all_pass": true
+   },
+   "test_output": "........                                                                 [100%]\n8 passed in 0.01s\n",
+   "test_output_tail": "........                                                                 [100%]\n8 passed in 0.01s\n"
+  }
+ ]
+}

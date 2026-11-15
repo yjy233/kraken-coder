@@ -1,0 +1,19 @@
+{
+ "instance_id": "sympy__sympy-22840",
+ "repo": "sympy/sympy",
+ "resolved": false,
+ "category": "empty_patch",
+ "run_tag": "r3",
+ "context_chars": 120000,
+ "gold_check_passed": true,
+ "patch_lines": 0,
+ "agent": {
+  "model_requests": 1,
+  "tool_calls": 0,
+  "tool_failures": 0,
+  "wall_seconds": 0.4,
+  "exit_code": 1,
+  "agent_error": "Provider HTTP 429"
+ },
+ "answer_excerpt": ""
+}

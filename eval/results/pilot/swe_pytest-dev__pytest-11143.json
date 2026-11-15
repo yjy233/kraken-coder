@@ -1,0 +1,27 @@
+{
+ "instance_id": "pytest-dev__pytest-11143",
+ "repo": "pytest-dev/pytest",
+ "resolved": false,
+ "category": "ftp_failed",
+ "ftp": {
+  "exit_code": 1,
+  "tests": {},
+  "tail": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 189, in _run_module_as_main\n  File \"<frozen runpy>\", line 148, in _get_module_details\n  File \"<frozen runpy>\", line 112, in _get_module_details\n  File \"/Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/pytest-dev__pytest-11143/repo/src/pytest/__init__.py\", line 6, in <module>\n    from _pytest.assertion import register_assert_rewrite\n  File \"/Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/pytest-dev__pytest-11143/repo/src/_pytest/assertion/__init__.py\", line 9, in <module>\n    from _pytest.assertion import rewrite\n  File \"/Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/pytest-dev__pytest-11143/repo/src/_pytest/assertion/rewrite.py\", line 33, in <module>\n    from _pytest._version import version\nModuleNotFoundError: No module named '_pytest._version'\n"
+ },
+ "p2p": {
+  "exit_code": 1,
+  "tests": {},
+  "tail": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 189, in _run_module_as_main\n  File \"<frozen runpy>\", line 148, in _get_module_details\n  File \"<frozen runpy>\", line 112, in _get_module_details\n  File \"/Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/pytest-dev__pytest-11143/repo/src/pytest/__init__.py\", line 6, in <module>\n    from _pytest.assertion import register_assert_rewrite\n  File \"/Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/pytest-dev__pytest-11143/repo/src/_pytest/assertion/__init__.py\", line 9, in <module>\n    from _pytest.assertion import rewrite\n  File \"/Users/bill/Documents/Qoder/2026-11-15/d08e7984/kraken-eval/runs/swebench/pytest-dev__pytest-11143/repo/src/_pytest/assertion/rewrite.py\", line 33, in <module>\n    from _pytest._version import version\nModuleNotFoundError: No module named '_pytest._version'\n"
+ },
+ "gold_check_passed": true,
+ "patch_lines": 12,
+ "agent": {
+  "model_requests": 17,
+  "tool_calls": 36,
+  "tool_failures": 2,
+  "wall_seconds": 223.9,
+  "exit_code": 0,
+  "agent_error": null
+ },
+ "answer_excerpt": "Implemented the fix in `src/_pytest/assertion/rewrite.py:679`.\n\n### Change\nLeading expressions are now treated as module docstrings only when their constant value is a string. Numeric and other non-string constants no longer reach the `\"PYTEST_DONT_REWRITE\" in docstring` check.\n\n### Verification\n- Reproduced the original `TypeError` before the fix.\n- Confirmed rewriting works for integers, floats, booleans, bytes, `None`, and ellipsis.\n- Confirmed normal docstrings and `PYTEST_DONT_REWRITE` behavior remain intact.\n- Collected and ran a module beginning with `1`: **1 passed**.\n- Ran relevant existing assertion-rewrite tests: **2 passed**.\n- `git diff --check` passed."
+}

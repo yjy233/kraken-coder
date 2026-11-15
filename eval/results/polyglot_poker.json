@@ -1,0 +1,26 @@
+{
+ "slug": "poker",
+ "pass": true,
+ "attempts_used": 1,
+ "attempts": [
+  {
+   "attempt": 1,
+   "agent": {
+    "model_requests": 11,
+    "tool_calls": 13,
+    "tool_failures": 1,
+    "wall_seconds": 78.3,
+    "exit_code": 0,
+    "agent_error": null
+   },
+   "answer_excerpt": "Implemented `best_hands` in `poker.py` with:\n\n- Full five-card poker hand ranking, from high card through straight flush.\n- Correct tie-breaking using pairs, triplets, quads, and kickers.\n- Ace-high and ace-low straight/straight-flush handling.\n- Stable ordering of multiple tied winning hands.\n- Empty-input handling.\n\nTest result:\n\n```text\n37 passed in 0.01s\n```",
+   "tests": {
+    "passed": 37,
+    "failed": 0,
+    "exit_code": 0,
+    "all_pass": true
+   },
+   "test_output_tail": ".....................................                                    [100%]\n37 passed in 0.01s\n"
+  }
+ ]
+}

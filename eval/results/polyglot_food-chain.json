@@ -1,0 +1,26 @@
+{
+ "slug": "food-chain",
+ "pass": true,
+ "attempts_used": 1,
+ "attempts": [
+  {
+   "attempt": 1,
+   "agent": {
+    "model_requests": 9,
+    "tool_calls": 12,
+    "tool_failures": 0,
+    "wall_seconds": 56.6,
+    "exit_code": 0,
+    "agent_error": null
+   },
+   "answer_excerpt": "Implemented `recite()` in `food_chain.py` with:\n\n- Data-driven animal and verse-comment definitions.\n- Algorithmic generation of cumulative “to catch” lines.\n- Special handling for the fly and horse verses.\n- Blank lines between multiple verses.\n\nTest result:\n\n```text\n10 passed in 0.00s\n```",
+   "tests": {
+    "passed": 10,
+    "failed": 0,
+    "exit_code": 0,
+    "all_pass": true
+   },
+   "test_output_tail": "..........                                                               [100%]\n10 passed in 0.01s\n"
+  }
+ ]
+}

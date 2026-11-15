@@ -1,0 +1,27 @@
+{
+ "slug": "phone-number",
+ "pass": true,
+ "attempts_used": 1,
+ "attempts": [
+  {
+   "attempt": 1,
+   "agent": {
+    "model_requests": 10,
+    "tool_calls": 17,
+    "tool_failures": 5,
+    "wall_seconds": 82.7,
+    "exit_code": 0,
+    "agent_error": null
+   },
+   "answer_excerpt": "Implemented `PhoneNumber` in `phone_number.py` with:\n\n- Removal of supported punctuation and whitespace\n- Optional `1`/`+1` country-code handling\n- Validation for letters, invalid punctuation, digit count, area codes, and exchange codes\n- Required `ValueError` messages\n- `number`, `area_code`, and `pretty()` functionality\n\nTest result:\n\n```text\n21 passed in 0.01s\n```\n\nRan with `python -m pytest phone_number_test.py -q`.",
+   "tests": {
+    "passed": 21,
+    "failed": 0,
+    "exit_code": 0,
+    "all_pass": true
+   },
+   "test_output": ".....................                                                    [100%]\n21 passed in 0.01s\n",
+   "test_output_tail": ".....................                                                    [100%]\n21 passed in 0.01s\n"
+  }
+ ]
+}

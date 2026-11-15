@@ -1,0 +1,10 @@
+[pallets__flask-4992] repo+venv ready
+[pallets__flask-4992] gold self-check FTP(1)=True P2P(18)=True
+[pytest-dev__pytest-11143] repo+venv ready
+[pytest-dev__pytest-11143] gold self-check FTP(1)=True P2P(115)=True
+[pytest-dev__pytest-11148] repo+venv ready
+[pytest-dev__pytest-11148] gold self-check FTP(2)=True P2P(129)=True
+[sympy__sympy-24102] repo+venv ready
+[sympy__sympy-24102] gold self-check FTP(3)=True P2P(0)=True
+[sympy__sympy-24213] repo+venv ready
+[sympy__sympy-24213] gold self-check FTP(1)=True P2P(32)=True
