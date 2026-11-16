@@ -12,5 +12,6 @@
 | [06 模型接入](06-providers.md) | Responses 与 Chat Completions 怎样归一化？如何处理半截流？ |
 | [07 调试与排错](07-debugging.md) | 如何跑完整命令、定位失败、恢复陈旧锁和接入自己的工具？ |
 | [08 学习进度与接续说明](08-learning-progress.md) | 已经学过什么、用户有哪些基础、下一次从哪里继续？ |
+| [09 Harness 面试问题清单](09-interview-questions.md) | 面试 Coding Agent harness 工程师时，本项目可能被问什么、怎么答？ |
 
 所有阶段默认离线；文档中的在线聊天命令只有在读者主动执行时才访问配置的模型服务。
