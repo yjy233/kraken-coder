@@ -3,13 +3,15 @@
 Does not import or modify any agent code.
 """
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
 
-NODE = "node"
-CLI = "/Users/bill/code/kraken-coder/dist/cli.js"
-ENV_FILE = "/Users/bill/code/kraken-coder/.env"
+PROJECT = Path(__file__).resolve().parents[2]
+NODE = os.environ.get("KRAKEN_EVAL_NODE", "node")
+CLI = str(Path(os.environ.get("KRAKEN_EVAL_CLI", str(PROJECT / "dist" / "cli.js"))).resolve())
+ENV_FILE = str(Path(os.environ.get("KRAKEN_EVAL_ENV_FILE", str(PROJECT / ".env"))).resolve())
 
 
 def run_agent(message, cwd, home, session, *, max_steps=40,

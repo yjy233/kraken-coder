@@ -172,4 +172,4 @@ src/
 
 上游参考固定为 openai/codex 的提交 `5c3ff1dabf644169f4bd74b215719f381e4fdb3f`；本地 checkout 位置因人而异，文档中以 `$CODEX_REPO` 指代。具体源码路径、对应关系与差异见 [Codex 源码导读](docs/02-codex-reference.md)。
 
-[文档导航](docs/README.md) · [架构](docs/01-architecture.md) · [学习路线](docs/03-learning-path.md) · [工具与权限](docs/04-tools-and-permissions.md) · [会话与上下文](docs/05-sessions-and-context.md) · [模型接入](docs/06-providers.md) · [调试与排错](docs/07-debugging.md)
+[文档导航](docs/README.md) · [架构](docs/01-architecture.md) · [学习路线](docs/03-learning-path.md) · [工具与权限](docs/04-tools-and-permissions.md) · [会话与上下文](docs/05-sessions-and-context.md) · [模型接入](docs/06-providers.md) · [调试与排错](docs/07-debugging.md) · [Eval 与测评结果](eval/README.md)

@@ -1,10 +1,10 @@
 # kraken-coder 测评方案
 
-日期：2026-11-15 · 状态：扩展测评（30 SWE 实例 + 34 polyglot 题，pass@1）
+测量日期：2026-11-15 · 发布整理：2026-11-16 · 状态：扩展测评因额度耗尽中断（计划 30 SWE 实例 + 34 polyglot 题）
 
 ## 1. 目标与约束
 
-- **被测对象**：[kraken-coder](file:///Users/bill/code/kraken-coder)（Codex 风格教学 coding agent，TypeScript/Node 24+）。
+- **被测对象**：[kraken-coder](../README.md)（Codex 风格教学 coding agent，TypeScript/Node 24+）。
 - **硬约束**：不修改 agent 任何实现代码。测评只通过其公开 CLI（`dist/cli.js exec`）以黑盒方式驱动；harness 位于仓库 `eval/` 子目录（纯新增，不触碰 agent 实现与任何现有文件），`eval/runs/` 等运行产物已 gitignore。
 - **模型配置**：沿用项目 `.env` 的 compatible 协议（Kimi 中国站 `kimi-k3.1-pro`），这是项目文档中唯一完成过真实任务联调的配置。`--mode reference`（默认参考算法路径）、`--approval full-auto --allow-shell`（非交互测评必须全自动，否则审批会被自动拒绝）。
 - **规模**：首轮 pilot 为 SWE-bench Lite 5 实例 + polyglot Python 8 题；扩展轮为 **SWE-bench Lite 30 实例 + polyglot Python 全部 34 题**（含首轮 5+8，协议一致，结果合并）。结论只作方向性参考，不能外推为完整榜单分数。
@@ -49,12 +49,12 @@
 ### 4.1 统一调用
 
 ```bash
-node /Users/bill/code/kraken-coder/dist/cli.js exec \
+node dist/cli.js exec \
   --provider compatible --mode reference --approval full-auto --allow-shell \
   --cwd <任务工作区> --home <运行数据目录> --session <id> \
   --message <任务> --json \
   --max-steps 40 --turn-timeout-ms 1200000 --request-timeout-ms 120000 \
-  --env-file /Users/bill/code/kraken-coder/.env
+  --env-file .env
 ```
 
 - 每任务独立 `--home`（会话 JSONL 隔离）、独立工作区；venv 放在仓库目录之外，避免污染 git diff。
@@ -67,7 +67,7 @@ node /Users/bill/code/kraken-coder/dist/cli.js exec \
 2. **Gold 自检**：在副本上应用 gold patch + test_patch，跑 FAIL_TO_PASS。通过才证明环境可信；失败则先修环境，不浪费模型调用。
 3. **Agent 求解**：干净 base_commit 工作区，消息=problem_statement 原文+固定收尾指令+一行prepared环境说明（`../venv` 已装好仓库与测试依赖，用 `../venv/bin/python` 跑测试）。**不给** test_patch、gold patch、hints_text、FTP 测试名（防泄漏）。环境说明对齐官方 harness"环境已备好"的语义，避免把"自行 bootstrap Python 环境"的噪声计入 bug 修复能力（首轮无此说明的轨迹保留在 `results/pilot/` 作对照）。
 4. **补丁提取**：`git add -A && git diff --cached`（含新增文件）。
-5. **判分**：重置到 base → 应用 agent 补丁 → 应用 test_patch → 跑全部 FAIL_TO_PASS 与 PASS_TO_PASS。**resolved = 两组全过**（官方定义）。空补丁/应用失败直接计未解决。
+5. **判分**：重置到 base → 应用 agent 补丁 → 应用 test_patch → 跑 FAIL_TO_PASS 与 PASS_TO_PASS。**resolved = 经下文环境校准后的两组门均通过**；采用 FTP/P2P 框架，但不等同于官方容器及逐参数判分。空补丁/应用失败直接计未解决。
 6. sympy 的测试名是裸函数名：先 grep 定位测试文件，用 pytest 按函数名过滤执行。
 7. **环境钉版（gold 自检暴露后修复）**：flask 需 `werkzeug==2.3.8`（新版删除 `url_quote`）与 `pytest==7.4.4`（conftest 用 `monkeypatch.notset`）；flask 2.0 实例（4045）另钉 `werkzeug==2.0.3 / jinja2==3.0.3 / markupsafe<2.1`。pytest 仓库浅克隆无 tag，需 `SETUPTOOLS_SCM_PRETEND_VERSION=8.0.0` 否则触发自身 minversion 检查；pytest 仓库的 venv 不另装发行版 pytest（仓库本身即被测包）。sphinx 3.x 钉 `jinja2<3.1 / markupsafe<2.1 / docutils==0.16`，4.0 钉 `docutils<0.18`，5.0 钉 `docutils<0.20`，测试统一 `pytest==7.4.4 + html5lib`；pylint 测试需 `pytest==7.4.4 / pytest-benchmark==4.0.0 / pytest-timeout / coverage`；sympy 1.10/1.11 钉 `pytest==7.4.4`（测试助手早于 pytest 8）。gold 自检在**原仓库目录内**应用补丁（editable 安装指向原目录，副本不会被导入），跑完重置回 base。
 8. **判分环境二次修复（首轮测评暴露）**：`git clean -x` 会删掉 pytest 仓库 gitignore 的生成文件 `src/_pytest/_version.py`，导致仓库无法导入、agent 跑测试与判分全部失真——每次 clean 后必须重建该文件，受影响的 pytest 实例需重跑。sympy 裸测试名在全仓库重复出现，P2P 定位改为**锚定 FAIL_TO_PASS 所在测试文件**，避免 grep 首个命中落到错误文件（首轮 sympy-24213 的 31 个 P2P 只跑到 2 个）。gold 自检升级为 FTP+P2P 双门。
@@ -90,7 +90,7 @@ node /Users/bill/code/kraken-coder/dist/cli.js exec \
 
 1. **子集而非全集**：30/300 与 34/225（polyglot 官方 6 语言），且 SWE 子集偏向小补丁、纯 Python 仓库，分数不能与官方榜单直接比较。
 2. **无 Docker 官方镜像**：手工 venv + Python 3.12（官方按实例钉版本），环境差异可能影响个别测试；gold 自检用于兜底。
-3. **pass@1 单轨迹**：无多次采样，温度/随机性未控制。
+3. **单轨迹测量**：SWE 每实例一次求解，polyglot 按协议最多两次尝试；没有多次独立采样，温度/随机性未控制。
 4. **polyglot 仅 Python**：官方 6 语言 225 题，这里测 Python 全部 34 题；两次尝试协议保留，但反馈格式与 Aider 原版 prompt 不完全一致。
 5. **harness 本身未校准**：kraken-coder 是教学项目，上下文窗口 120k 字符、整轮裁剪，大仓库任务可能因上下文不足失败——这属于被测系统能力，不是测评 bug。
 6. 模型为单一 `kimi-k3.1-pro`，结果反映"agent 框架 × 该模型"的组合，不能单独归因于任一方。
@@ -98,7 +98,7 @@ node /Users/bill/code/kraken-coder/dist/cli.js exec \
 ## 7. 复现
 
 ```bash
-cd /Users/bill/code/kraken-coder/eval
+cd eval
 python3 harness/select_instances.py                  # 生成 30 实例清单（确定性）
 python3 harness/swebench_eval.py --stage setup --instances selected_instances_30.json
 python3 harness/swebench_eval.py --stage run --instances selected_instances_30.json --run-tag r3
@@ -127,7 +127,7 @@ harness 已加 120s 冷却 ×2 次重试（ fresh session 后缀 `-r429N`，避�
 - 充值后续跑（gold 自检与 venv 均已就绪，`--skip-existing` 只补缺失结果，新 run-tag 保证会话独立）：
 
 ```bash
-cd /Users/bill/code/kraken-coder/eval
+cd eval
 python3 harness/polyglot_eval.py --slugs-file data/polyglot_slugs_34.json --skip-existing --run-tag r4
 python3 harness/swebench_eval.py --stage run --instances selected_instances_30.json --skip-existing --run-tag r4
 python3 harness/report.py
@@ -135,4 +135,6 @@ python3 harness/report.py
 
 ## 9. 敏感性探针（不计入主分数）
 
-主协议固定默认 `--context-chars 120000`。对因 `Context budget exceeded` 失败的实例，用 `harness/probe.py <iid> 400000` 以 4 倍预算重跑一次（独立会话、归档并恢复主产物），结果存 `results/probe_*.json`。用途：区分"默认预算是瓶颈"与"模型修复能力不足"。探针只改预算一个变量，其余协议不变。
+主协议固定默认 `--context-chars 120000`。对因 `Context budget exceeded` 失败的实例，用 `harness/probe.py <iid> 400000` 以约 3.33 倍预算重跑一次（独立会话、归档并恢复主产物），结果存 `results/probe_*.json`。用途：区分"默认预算是瓶颈"与"模型修复能力不足"。探针只改预算一个变量，其余协议不变。
+
+2026-11-16 的发布整理仅补充结果覆盖范围、报告导航与路径可移植性，未重跑模型，也未修改 Agent 实现。当前有效结果为 SWE 13/30（resolved 4）、polyglot 33/34（≤2 次尝试通过 33，首次通过 31）；余下任务见 `results/summary.json`。harness 的原始硬编码路径已改为相对 checkout 定位，保留环境变量覆盖方式。历史测量没有记录精确 Agent 提交号。

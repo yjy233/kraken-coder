@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "status": "partial",
+  "model": "kimi-k3.1-pro",
+  "provider": "compatible",
+  "mode": "reference",
+  "context_chars": 120000,
+  "agent_revision_at_measurement": null,
+  "provenance_note": "Historical measurements from the saved per-task JSON files; exact agent revision was not recorded. Publishing this report does not rerun the model.",
+  "swebench_lite": {
+    "planned": 30,
+    "evaluated": 13,
+    "resolved": 4,
+    "resolved_rate_on_evaluated": 0.3076923076923077,
+    "missing": [
+      "sphinx-doc__sphinx-10325",
+      "sphinx-doc__sphinx-10451",
+      "sphinx-doc__sphinx-7975",
+      "sphinx-doc__sphinx-8273",
+      "sphinx-doc__sphinx-8282",
+      "sphinx-doc__sphinx-8474",
+      "sphinx-doc__sphinx-8506",
+      "sphinx-doc__sphinx-8595",
+      "sphinx-doc__sphinx-8713",
+      "sphinx-doc__sphinx-8721",
+      "sympy__sympy-22840",
+      "sympy__sympy-23117",
+      "sympy__sympy-23191",
+      "sympy__sympy-23262",
+      "sympy__sympy-24066",
+      "sympy__sympy-24152",
+      "sympy__sympy-24909"
+    ],
+    "categories": {
+      "empty_patch": 7,
+      "ftp_failed": 2,
+      "resolved": 4
+    },
+    "p2p_environment_exclusions": {
+      "pallets__flask-5063": [
+        "tests.test_cli::test_app_cli_has_app_context",
+        "tests.test_cli::test_appgroup_app_context",
+        "tests.test_cli::test_cli_blueprints",
+        "tests.test_cli::test_cli_empty",
+        "tests.test_cli::test_cli_name",
+        "tests.test_cli::test_find_best_app",
+        "tests.test_cli::test_flaskgroup_app_context",
+        "tests.test_cli::test_flaskgroup_debug",
+        "tests.test_cli::test_flaskgroup_nested",
+        "tests.test_cli::test_help_echo_exception",
+        "tests.test_cli::test_help_echo_loading_error",
+        "tests.test_cli::test_locate_app",
+        "tests.test_cli::test_locate_app_raises",
+        "tests.test_cli::test_no_command_echo_loading_error",
+        "tests.test_cli::test_scriptinfo",
+        "tests.test_cli::test_with_appcontext"
+      ]
+    }
+  },
+  "polyglot_python": {
+    "planned": 34,
+    "evaluated": 33,
+    "passed_within_two_attempts": 33,
+    "passed_on_first_attempt": 31,
+    "pass_rate_on_evaluated": 1.0,
+    "missing": [
+      "zipper"
+    ]
+  },
+  "excluded_from_primary_score": {
+    "quota_failure_records": 19,
+    "pilot_records": 5,
+    "sensitivity_probe_records": 2
+  },
+  "primary_attempt_totals": {
+    "model_requests": 495,
+    "tool_calls": 737,
+    "tool_failures": 50,
+    "wall_seconds_sum": 5622.3
+  }
+}
