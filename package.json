@@ -7,10 +7,15 @@
   "bin": { "kraken-coder": "dist/cli.js" },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "files": ["dist", "src", "docs", "examples", "README.md", "LICENSE", ".env.example"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./client": { "types": "./dist/client/client.d.ts", "import": "./dist/client/client.js" },
+    "./protocol": { "types": "./dist/server/protocol.d.ts", "import": "./dist/server/protocol.js" }
+  },
+  "files": ["dist", "src", "web", "docs", "examples", "README.md", "LICENSE", ".env.example"],
   "scripts": {
     "dev": "tsx src/cli.ts",
+    "serve": "tsx src/cli.ts serve",
     "demo": "tsx src/cli.ts demo",
     "check": "tsx src/cli.ts check",
     "typecheck": "tsc -p tsconfig.check.json",

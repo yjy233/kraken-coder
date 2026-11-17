@@ -13,12 +13,17 @@ import { listSessions, readSession } from './session/store.js';
 import { runChecks } from './lab.js';
 import { listSkills } from './context/instructions.js';
 import { Workspace } from './tools/workspace.js';
+import { startAgentServer } from './server/server.js';
+import { AgentClient } from './client/client.js';
+import { runRemoteTurn } from './client/remote-turn.js';
+import type { Approve } from './tools/registry.js';
 
 const help = `kraken-coder — Codex 风格 Coding Agent 教学项目（Node.js 24+）
 
   demo                          在临时项目中实际复现、修复、验证 bug（离线）
   check --all                   离线验收 L0～L6；支持 --stage 0..6 --mode learner
   chat                          交互聊天；/new /quit /help 为客户端命令，Ctrl+C 取消当前回合
+  serve                         启动本机 agent-server 与 Web 界面（默认端口 4317）
   exec --message TEXT           执行一次用户回合（chat --message 等价）
   sessions                      列出本地会话
   history SESSION_ID            输出持久化 JSONL 轨迹
@@ -37,6 +42,9 @@ const help = `kraken-coder — Codex 风格 Coding Agent 教学项目（Node.js 
   --max-steps N --context-chars N
   --request-timeout-ms N --turn-timeout-ms N
   --env-file PATH                .env 文件；已有 shell 环境优先
+  --port N                       serve 监听端口，固定绑定 127.0.0.1
+  --server URL                   chat/exec/sessions/doctor 连接已有服务，可含 #token=...
+                                 或通过 KRAKEN_SERVER_TOKEN 提供服务令牌
   --json                        stdout 输出 JSONL 事件；非交互审批自动拒绝
   --trace --debug                stderr 事件摘要 / 错误栈
 
@@ -49,7 +57,7 @@ async function main(): Promise<void> {
     'allow-shell': { type: 'boolean' }, cwd: { type: 'string' }, home: { type: 'string' }, session: { type: 'string' }, message: { type: 'string', short: 'm' },
     provider: { type: 'string' }, mode: { type: 'string' }, approval: { type: 'string' }, model: { type: 'string' }, 'base-url': { type: 'string' },
     'max-steps': { type: 'string' }, 'context-chars': { type: 'string' }, 'request-timeout-ms': { type: 'string' }, 'turn-timeout-ms': { type: 'string' },
-    'env-file': { type: 'string' }, stage: { type: 'string' },
+    'env-file': { type: 'string' }, stage: { type: 'string' }, port: { type: 'string' }, server: { type: 'string' },
   } });
   const command = positionals[0] ?? 'help';
   if (flags.help || command === 'help') { console.log(help); return; }
@@ -79,8 +87,16 @@ async function main(): Promise<void> {
   }
   if (flags['env-file'] && !existsSync(resolve(flags['env-file']))) throw new Error('Specified --env-file does not exist');
   loadEnv(resolve(flags['env-file'] ?? '.env'));
+  if (flags.port !== undefined && command !== 'serve') throw new Error('--port is only supported by serve');
+  if (flags.server && !['exec', 'chat', 'sessions', 'doctor'].includes(command)) throw new Error('--server supports chat, exec, sessions and doctor');
+  if (flags.server) {
+    for (const key of ['cwd', 'home', 'provider', 'model', 'mode', 'approval', 'base-url', 'allow-shell', 'max-steps', 'context-chars', 'request-timeout-ms', 'turn-timeout-ms'] as const) {
+      if (flags[key] !== undefined) throw new Error(`--${key} is owned by the server; set it when starting serve`);
+    }
+  }
+  const remote = flags.server ? new AgentClient(flags.server, process.env.KRAKEN_SERVER_TOKEN) : undefined;
   const workspace = resolve(flags.cwd ?? '.'), home = resolve(flags.home ?? process.env.KRAKEN_HOME ?? resolve(workspace, '.kraken-coder'));
-  if (command === 'sessions') { console.log(JSON.stringify(listSessions(home), null, 2)); return; }
+  if (command === 'sessions') { console.log(JSON.stringify(remote ? await remote.sessions() : listSessions(home), null, 2)); return; }
   if (command === 'history') {
     const id = positionals[1] ?? flags.session;
     if (!id) throw new Error('history requires SESSION_ID');
@@ -94,20 +110,34 @@ async function main(): Promise<void> {
     if (!existsSync(path)) writeFileSync(path, JSON.stringify(defaults, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
     console.log(`配置：${path}`); return;
   }
-  if (!['exec', 'chat', 'doctor'].includes(command)) throw new Error(`Unknown command: ${command}`);
+  if (!['exec', 'chat', 'doctor', 'serve'].includes(command)) throw new Error(`Unknown command: ${command}`);
   const overrides: Partial<Config> = {};
   for (const key of ['provider', 'mode', 'approval', 'model'] as const) if (flags[key] !== undefined) Object.assign(overrides, { [key]: flags[key] });
   if (flags['base-url'] !== undefined) overrides.baseUrl = flags['base-url'];
   for (const [flag, key] of [['max-steps', 'maxSteps'], ['context-chars', 'contextChars'], ['request-timeout-ms', 'requestTimeoutMs'], ['turn-timeout-ms', 'turnTimeoutMs']] as const) if (flags[flag] !== undefined) overrides[key] = Number(flags[flag]);
-  const config = loadConfig(home, overrides);
+  const config = remote ? undefined : loadConfig(home, overrides);
+  if (command === 'serve') {
+    const port = flags.port === undefined ? 4317 : Number(flags.port);
+    if (!Number.isSafeInteger(port) || port < 0 || port > 65535) throw new Error('--port must be an integer between 0 and 65535');
+    const server = await startAgentServer({ config: config!, workspace, home, allowShell: flags['allow-shell'], port, token: process.env.KRAKEN_SERVER_TOKEN });
+    console.error(`Kraken agent-server\n工作区：${workspace}\nWeb：${server.url}/#token=${encodeURIComponent(server.token)}\n服务令牌仅用于本机客户端连接；模型密钥保留在服务端。Ctrl+C 停止服务。`);
+    await new Promise<void>(resolveStopped => {
+      const stop = (): void => {
+        process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop);
+        void server.close().then(resolveStopped, error => { console.error(errorText(error)); process.exitCode = 1; resolveStopped(); });
+      };
+      process.on('SIGINT', stop); process.on('SIGTERM', stop);
+    });
+    return;
+  }
   if (command === 'doctor') {
-    console.log(JSON.stringify({ config, workspace, home, shellEnabled: !!flags['allow-shell'], apiKeyConfigured: !!(config.provider === 'responses' ? process.env.OPENAI_API_KEY : config.provider === 'compatible' ? process.env.KRAKEN_API_KEY : undefined) }, null, 2)); return;
+    console.log(JSON.stringify(remote ? await remote.info() : { config, workspace, home, shellEnabled: !!flags['allow-shell'], apiKeyConfigured: !!(config!.provider === 'responses' ? process.env.OPENAI_API_KEY : config!.provider === 'compatible' ? process.env.KRAKEN_API_KEY : undefined) }, null, 2)); return;
   }
   if (command === 'exec' && !flags.message) throw new Error('exec requires --message');
   if (!flags.message && (!process.stdin.isTTY || flags.json)) throw new Error('Interactive chat requires a terminal without --json; use exec --message');
   const interactive = process.stdin.isTTY && !flags.json;
   const rl = interactive ? createInterface({ input: process.stdin, output: process.stderr }) : undefined;
-  let session = flags.session ?? randomUUID(), controller = new AbortController();
+  let session = flags.session ?? (remote ? undefined : randomUUID()), controller = new AbortController();
   let busy = false, quit = false;
   const idle = new AbortController();
   // 忙时只取消当前回合；空闲时退出。close() 不会结束 pending 的 question，必须显式 abort。
@@ -116,15 +146,17 @@ async function main(): Promise<void> {
   const oneTurn = async (message: string): Promise<void> => {
     controller = new AbortController(); busy = true;
     try {
+      session ??= remote ? (await remote.createSession()).id : randomUUID();
       console.error(`session: ${session}`);
-      const result = await runTurn({ config, workspace, home, session, allowShell: flags['allow-shell'], emit,
-        approve: async (request, signal) => {
+      const approve: Approve = async (request, signal) => {
           if (!rl) return false;
           console.error(`\n${request.name} 申请执行：\n${request.preview}`);
           return (await rl.question('批准本次操作？[y/N] ', { signal })).trim().toLowerCase() === 'y';
-        },
-      }, message, controller.signal);
-      if (!flags.json) console.log(result.answer);
+      };
+      const answer = remote
+        ? await runRemoteTurn({ client: remote, session, message, emit, approve, signal: controller.signal })
+        : (await runTurn({ config: config!, workspace, home, session, allowShell: flags['allow-shell'], emit, approve }, message, controller.signal)).answer;
+      if (!flags.json) console.log(answer);
     } finally { busy = false; }
   };
   try {
@@ -133,7 +165,7 @@ async function main(): Promise<void> {
       let line: string;
       try { line = (await rl!.question('kraken> ', { signal: idle.signal })).trim(); } catch { break; }
       if (line === '/quit') break;
-      if (line === '/new') { session = randomUUID(); console.error(`新会话：${session}`); continue; }
+      if (line === '/new') { session = remote ? (await remote.createSession()).id : randomUUID(); console.error(`新会话：${session}`); continue; }
       if (line === '/help') { console.log(help); continue; }
       if (!line) continue;
       try { await oneTurn(line); } catch (error) { console.error(errorText(error)); }

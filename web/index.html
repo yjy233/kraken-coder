@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#172825">
+  <title>Kraken · Agent Workspace</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar" aria-label="会话导航">
+      <a class="brand" href="/" aria-label="Kraken 首页"><span class="brand-mark" aria-hidden="true">k<span>•</span></span><span>kraken<span class="brand-sub">AGENT WORKSPACE</span></span></a>
+      <button class="new-session" id="new-session" type="button"><span aria-hidden="true">＋</span> 新建会话 <kbd>⌘ K</kbd></button>
+      <div class="section-label">工作区 <span>01</span></div>
+      <div class="workspace-card"><span class="folder-icon" aria-hidden="true">⌑</span><div><strong id="workspace-name">本地工作区</strong><span id="workspace-location">等待连接 Agent Server</span></div><span class="workspace-dot" aria-hidden="true"></span></div>
+      <div class="section-label sessions-heading">最近会话 <span id="session-count">0</span></div>
+      <nav id="session-list" class="session-list" aria-label="最近会话"><p class="sidebar-empty">从一个问题开始。</p></nav>
+      <div class="sidebar-footer"><span class="server-icon" aria-hidden="true">▤</span><div><strong>Agent Server</strong><span id="server-label">正在连接本地服务</span></div><span class="connection-dot" id="sidebar-dot"></span></div>
+    </aside>
+    <div class="workspace-main">
+      <header class="topbar">
+        <div class="breadcrumb"><button id="menu-toggle" class="icon-button menu-toggle" type="button" aria-label="展开会话导航" aria-expanded="false">☰</button><span class="breadcrumb-root">工作空间</span><span class="slash">/</span><strong id="session-title">新会话</strong></div>
+        <div class="topbar-right"><span class="connection-badge" id="connection-badge"><span class="connection-dot"></span><span id="connection-text">连接中</span></span><button class="icon-button" id="inspector-toggle" type="button" aria-label="切换运行详情" aria-expanded="true">▥</button></div>
+      </header>
+      <div class="content-layout">
+        <main class="conversation" aria-label="Agent 对话">
+          <section class="connection-panel" id="connection-panel" hidden>
+            <span class="eyebrow">LOCAL CONNECTION</span><h2>连接你的 Agent Server</h2><p>打开服务启动时显示的完整链接，或在这里输入连接令牌。</p>
+            <form id="connect-form"><label class="sr-only" for="connection-token">连接令牌</label><input id="connection-token" type="password" autocomplete="off" placeholder="粘贴 Server 连接令牌" required><button class="primary-button" type="submit">连接</button></form>
+            <p class="connection-error" id="connection-error" role="alert"></p>
+          </section>
+          <div class="notice" id="notice" role="status" hidden></div>
+          <div class="messages-scroll" id="messages-scroll">
+            <section class="welcome" id="welcome">
+              <div class="welcome-symbol" aria-hidden="true">k<span>•</span></div>
+              <span class="eyebrow">YOUR LOCAL CODING AGENT</span>
+              <h1>让想法，开始运行。</h1>
+              <p class="welcome-description">一起读懂代码、定位问题、完成修改。<br>每一步工具调用，都在你的掌握之中。</p>
+              <div class="suggestions" id="suggestions">
+                <button class="suggestion" type="button" data-prompt="先查看项目文件结构，介绍主要模块，以及一个适合开始阅读的入口。"><span class="suggestion-icon" aria-hidden="true">⌘</span><strong>读懂这个项目</strong><span>从结构到关键调用路径</span><span class="suggestion-arrow" aria-hidden="true">↗</span></button>
+                <button class="suggestion" type="button" data-prompt="阅读项目现有的测试和运行命令，帮我分析验证流程以及可能遗漏的边界情况。先只分析，不修改文件。"><span class="suggestion-icon" aria-hidden="true">⌁</span><strong>检查测试与边界</strong><span>找到值得验证的假设</span><span class="suggestion-arrow" aria-hidden="true">↗</span></button>
+                <button class="suggestion" type="button" data-prompt="我想实现一个新功能。请先阅读项目说明，梳理修改前需要确认的信息，等我补充具体需求。"><span class="suggestion-icon" aria-hidden="true">＋</span><strong>一起实现功能</strong><span>把需求拆成可执行的步骤</span><span class="suggestion-arrow" aria-hidden="true">↗</span></button>
+              </div>
+              <div class="welcome-footnote"><span class="tiny-dot"></span> 本地工作区 <span>·</span> 会话可恢复 <span>·</span> 操作可审批</div>
+            </section>
+            <div class="message-list" id="message-list" aria-live="polite" aria-relevant="additions text"></div>
+          </div>
+          <div class="composer-region">
+            <div class="approval-list" id="approval-list" aria-live="polite"></div>
+            <form class="composer" id="composer-form">
+              <label class="sr-only" for="message-input">给 Kraken 发送消息</label>
+              <textarea id="message-input" placeholder="描述你的任务，或问一个关于代码的问题…" rows="2" disabled></textarea>
+              <div class="composer-toolbar"><div class="composer-settings"><span class="model-chip"><span class="tiny-dot"></span><span id="composer-model">尚未连接</span></span><span class="permission-chip" id="composer-permission">审批模式</span></div><div class="composer-actions"><span class="keyboard-hint">↵ 发送</span><button id="cancel-turn" class="stop-button" type="button" hidden><span aria-hidden="true">■</span> 停止</button><button id="send-message" class="send-button" type="submit" aria-label="发送消息" disabled>↑</button></div></div>
+            </form>
+            <p class="composer-caption" id="composer-caption">Shift + Enter 换行 <span>·</span> 工具在服务端配置的工作区中运行</p>
+          </div>
+        </main>
+        <aside class="inspector" id="inspector" aria-label="运行详情">
+          <div class="inspector-heading"><span>运行详情</span><span class="inspector-mark" aria-hidden="true">↗</span></div>
+          <div class="run-status-card"><div class="run-status-symbol" id="run-status-symbol" aria-hidden="true">◌</div><strong id="run-status">准备就绪</strong><p id="run-description">发送任务后，执行过程会显示在这里。</p><div class="run-metrics"><div><strong id="model-count">0</strong><span>模型步骤</span></div><div><strong id="tool-count">0</strong><span>工具调用</span></div></div></div>
+          <div class="inspector-section"><h2>执行过程</h2><ol class="activity-list" id="activity-list"><li class="activity-placeholder">还没有执行记录</li></ol></div>
+          <div class="inspector-section"><h2>运行配置 <span>SERVER</span></h2><dl class="config-list"><div><dt>Provider</dt><dd id="config-provider">—</dd></div><div><dt>算法</dt><dd id="config-mode">—</dd></div><div><dt>权限</dt><dd id="config-approval">—</dd></div><div><dt>Shell</dt><dd id="config-shell">—</dd></div><div><dt>连接</dt><dd id="config-protocol">HTTP + SSE</dd></div></dl><div class="session-reference"><div><span>会话 ID</span><button id="copy-session-id" type="button" aria-label="复制当前会话 ID" title="复制会话 ID，用于 CLI --session" disabled>复制</button></div><code id="current-session-id">尚未建立会话</code></div></div>
+          <div class="inspector-note"><span aria-hidden="true">◈</span><p>一个 Agent Server，<br>连接不同的工作方式。</p><span class="client-label">WEB CLIENT / V1</span></div>
+        </aside>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

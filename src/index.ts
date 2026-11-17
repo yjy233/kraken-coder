@@ -8,3 +8,6 @@ export { SessionStore, readSession, listSessions } from './session/store.js';
 export { DemoProvider } from './providers/demo.js';
 export { CompatibleProvider } from './providers/compatible.js';
 export { ResponsesProvider } from './providers/responses.js';
+export { startAgentServer } from './server/server.js';
+export { AgentClient, AgentClientError } from './client/client.js';
+export type * from './server/protocol.js';

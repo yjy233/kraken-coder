@@ -24,6 +24,25 @@ npm run verify
 
 临时项目会保留，便于查看修改和日志；验收与自动化测试产生的临时文件会清理。Demo 使用确定性脚本，**不是语言模型**；`demo/check` 不读取线上配置、不调用在线模型。`demo` 仅在它刚创建的项目内运行固定命令，自动启用 shell 与 `full-auto`。
 
+## Web 界面与 Agent Server
+
+配置好 `.env` 后，在项目根目录运行：
+
+```bash
+npm run serve -- --mode learner --allow-shell
+```
+
+打开终端打印的完整 URL，即可创建会话、聊天、查看工具轨迹、审批补丁/命令和取消任务。服务默认监听 `127.0.0.1:4317`，读取现有模型配置，默认使用 `ask` 审批。离线体验可运行 `npm run serve -- --provider demo --approval read-only`，再在页面输入 `/files`。
+
+CLI 也可以连接这个服务，复用相同会话与执行状态：
+
+```bash
+npm run dev -- chat --server 'http://127.0.0.1:4317/#token=终端打印的连接token'
+# 使用 --session SESSION_ID 加入已有会话
+```
+
+模型、工具与会话由服务端管理，Web 和 CLI 通过同一套 HTTP + SSE 接口交互。VS Code 扩展和桌面端可在此基础上增加，目前尚未实现。协议、重连行为与源码入口见 [Agent Server 与多客户端](docs/10-agent-server.md)。
+
 ## 像 my-hermes 一样学习
 
 [`src/learning/exercises.ts`](src/learning/exercises.ts) 是学习入口，六个核心算法都已实现并有中文注释，可以直接调试，也可以自己清空某个函数体重新写。[`reference.ts`](src/learning/reference.ts) 提供独立参考答案。
@@ -46,7 +65,10 @@ npm run verify
 
 ```mermaid
 flowchart TD
-    CLI[CLI / exec / chat] --> Agent[Agent 回合管理]
+    Web[Web 页面] --> Server[agent-server / HTTP + SSE]
+    Remote[CLI --server] --> Server
+    Server --> Agent[Agent 回合管理]
+    CLI[CLI 直接模式 / exec / chat] --> Agent
     Agent --> Instructions[AGENTS.md + Skill 元数据]
     Agent --> Loop[L1 模型工具循环]
     Loop --> Context[L4 完整轮次上下文窗口]
@@ -82,7 +104,7 @@ npm run dev -- history study
 npm run dev -- exec --provider demo --message /files --json
 ```
 
-`--json` 向 stdout 输出 JSONL 事件，适合后续接 UI；提示信息走 stderr。Responses 的文本增量用 `model.delta` 事件输出。普通终端模式显示最终答复，`--trace` 在 stderr 显示执行摘要。
+`--json` 向 stdout 输出 JSONL 事件，适合脚本消费；提示信息走 stderr。Responses 的文本增量用 `model.delta` 事件输出。普通终端模式显示最终答复，`--trace` 在 stderr 显示执行摘要。Web 使用服务端事件流，不依赖解析 CLI 输出。
 
 ## 接入真实模型
 
@@ -156,6 +178,8 @@ VS Code 按 F5 可选择阶段验收、完整演示或只读聊天；原先残�
 ```text
 src/
   cli.ts                 终端、配置选择、审批、取消
+  server/                本机 HTTP + SSE、会话/回合/审批协议
+  client/                浏览器与 CLI 共用 SDK、远程回合适配
   core/                  协议类型、验证、单回合编排
   providers/             Demo、Chat Completions、Responses、SSE
   tools/                 注册表、文件边界、补丁、本机命令
@@ -164,12 +188,13 @@ src/
   learning/              独立的 learner / reference 算法
   lab.ts                 L0～L6 离线阶段验收
   demo-project.ts        临时练习项目生成器
+web/                     聊天页面、工具轨迹、审批与连接状态
 ```
 
 ## 教学取舍
 
-本项目完整实现上述学习范围。Codex 上游更广泛的工程功能——原生 TUI、app-server 协议、OAuth 登录、OS 沙箱、远端 compaction、MCP、插件运行时、多 Agent、PTY 长任务——不在这个版本内。这里的 L4 是可检查的**整轮裁剪**，不是语义摘要；shell 是限时的一次性命令，不支持后台任务恢复。多文件补丁先做全量预检，但不提供跨文件崩溃事务。
+本项目完整实现上述学习范围，并提供自己的本机 Agent Server 与 Web/CLI 客户端协议。Codex 上游更广泛的工程功能——原生 TUI、上游 app-server 协议兼容、OAuth 登录、OS 沙箱、远端 compaction、MCP、插件运行时、多 Agent、PTY 长任务——不在这个版本内。这里的 L4 是可检查的**整轮裁剪**，不是语义摘要；shell 是限时的一次性命令，不支持后台任务恢复。多文件补丁先做全量预检，但不提供跨文件崩溃事务。
 
 上游参考固定为 openai/codex 的提交 `5c3ff1dabf644169f4bd74b215719f381e4fdb3f`；本地 checkout 位置因人而异，文档中以 `$CODEX_REPO` 指代。具体源码路径、对应关系与差异见 [Codex 源码导读](docs/02-codex-reference.md)。
 
-[文档导航](docs/README.md) · [架构](docs/01-architecture.md) · [学习路线](docs/03-learning-path.md) · [工具与权限](docs/04-tools-and-permissions.md) · [会话与上下文](docs/05-sessions-and-context.md) · [模型接入](docs/06-providers.md) · [调试与排错](docs/07-debugging.md) · [Eval 与测评结果](eval/README.md)
+[文档导航](docs/README.md) · [架构](docs/01-architecture.md) · [学习路线](docs/03-learning-path.md) · [工具与权限](docs/04-tools-and-permissions.md) · [会话与上下文](docs/05-sessions-and-context.md) · [模型接入](docs/06-providers.md) · [调试与排错](docs/07-debugging.md) · [Agent Server](docs/10-agent-server.md) · [Eval 与测评结果](eval/README.md)

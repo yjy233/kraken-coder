@@ -6,12 +6,14 @@
 
 | 层 | 文件 | 负责 | 不负责 |
 | --- | --- | --- | --- |
-| 交互层 | `src/cli.ts` | 参数、终端、用户审批、事件显示 | 模型循环和文件算法 |
+| 交互层 | `src/cli.ts`、`web/`、`src/client/` | 终端/页面、用户输入与审批、事件显示 | 模型循环和文件算法 |
 | 回合层 | `src/core/agent.ts` | 配置、指令、会话锁、恢复、预算、事件持久化 | HTTP 协议细节 |
 | 决策层 | `src/learning/*.ts` | 模型与工具循环、策略、上下文、恢复算法 | 直接操作 stdin/stdout |
 | 适配层 | `src/providers/`、`src/tools/` | HTTP/流解析、文件操作、进程 | 判断用户任务是否语义完成 |
 
-这个边界让同一个循环能够在没有模型密钥时使用 DemoProvider，在协议测试时使用 HTTP mock，在真实项目里使用 ResponsesProvider。`src/index.ts` 暴露 `runTurn`、Provider 和工具注册表，后续可以添加 UI 而不用重写核心。
+这个边界让同一个循环能够在没有模型密钥时使用 DemoProvider，在协议测试时使用 HTTP mock，在真实项目里使用 ResponsesProvider。`src/index.ts` 暴露 `runTurn`、Provider 和工具注册表，Web 页面与服务端继续复用这些核心能力。
+
+交互层与回合层之间新增 [`agent-server`](10-agent-server.md)：它通过 HTTP 接收任务、审批与取消请求，通过 SSE 推送会话快照和事件；模型连接、工作区、活动回合及审批等待由服务端持有。Web 和 `CLI --server` 共用 `AgentClient`。CLI 直接模式仍可调用 `runTurn`，不强制启动服务器。这个服务边界没有改变学习算法或工具执行逻辑。
 
 ## 三个时间尺度
 

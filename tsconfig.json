@@ -4,7 +4,7 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable", "DOM.AsyncIterable"], "types": ["node"],
     "strict": true, "noUncheckedIndexedAccess": true,
     "esModuleInterop": true, "forceConsistentCasingInFileNames": true, "skipLibCheck": true,
-    "declaration": true, "sourceMap": true, "rootDir": "src", "outDir": "dist", "noEmitOnError": true
+    "declaration": true, "sourceMap": true, "allowJs": true, "rootDir": "src", "outDir": "dist", "noEmitOnError": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.js"]
 }
