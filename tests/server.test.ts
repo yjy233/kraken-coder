@@ -141,14 +141,44 @@ test('agent-server: cancellation aborts pending approvals and releases the globa
 
 test('agent-server: a failed model leaves a recoverable session and reports failure', async t => {
   let first = true;
-  const provider: Provider = { name: 'test:fail', async complete() { if (first) { first = false; throw new Error('fixture failure'); } return { content: 'recovered', reasoningContent: 'private reasoning', responseItems: [{ encrypted_content: 'private encrypted item' }] }; } };
+  const provider: Provider = { name: 'test:fail', async complete() { if (first) { first = false; throw new Error('fixture failure'); } return { content: 'recovered', reasoningContent: 'returned reasoning text', responseItems: [{ encrypted_content: 'private encrypted item' }] }; } };
   const f = await fixture(t, { provider }), id = await f.create();
   await f.start(id, 'start');
   const failed = await f.settled(id); assert.equal(failed.turn?.status, 'failed'); assert.match(failed.turn?.error ?? '', /fixture failure/);
   await f.start(id, 'continue');
   const result = await f.settled(id); assert.equal(result.turn?.status, 'completed');
   const wire = JSON.stringify(result);
-  assert.doesNotMatch(wire, /private reasoning|private encrypted item|instructions\.snapshot/);
+  assert.match(wire, /returned reasoning text/);
+  assert.doesNotMatch(wire, /private encrypted item|responseItems|instructions\.snapshot/);
+});
+
+test('agent-server: returned reasoning accompanies tool calls and survives SSE reconnect and restart', async t => {
+  const reasoning = '<script>fixture</script>\nRead the file before answering.';
+  const provider: Provider = { name: 'test:reasoning', async complete(messages) {
+    if (messages.at(-1)?.role === 'tool') return { content: 'done', reasoningContent: '   ' };
+    return { content: '', reasoningContent: reasoning, responseItems: [{ type: 'reasoning', encrypted_content: 'opaque-state' }],
+      toolCalls: [{ id: 'reasoning-read', name: 'read_file', arguments: '{"path":"hello.txt"}' }] };
+  } };
+  const f = await fixture(t, { provider }), id = await f.create();
+  await writeFile(join(f.root, 'hello.txt'), 'hello');
+  const stream = await watch(f.server, id);
+  t.after(() => stream.close());
+  await f.start(id, 'read');
+  const result = await f.settled(id);
+  assert.equal(result.turn?.status, 'completed');
+  const thinking = result.events.filter(e => e.type === 'message' && (e.message as { reasoningContent?: string }).reasoningContent);
+  assert.equal(thinking.length, 1);
+  assert.deepEqual((thinking[0]!.message as { content: string; reasoningContent: string }).reasoningContent, reasoning);
+  await until(() => stream.frames, frames => frames.some(frame => frame.type === 'event' && frame.event.type === 'message' && (frame.event.message as { reasoningContent?: string }).reasoningContent === reasoning));
+  assert.doesNotMatch(JSON.stringify(result), /opaque-state|responseItems|instructions\.snapshot/);
+  await stream.close();
+  await f.restart();
+  const restored = await f.snapshot(id);
+  assert.deepEqual(restored.events, result.events);
+  const reconnect = await watch(f.server, id);
+  try {
+    assert.deepEqual((reconnect.frames[0] as Extract<ServerFrame, { type: 'snapshot' }>).snapshot.events, restored.events);
+  } finally { await reconnect.close(); }
 });
 
 test('agent-server: failures before runTurn emits are observable and do not leave a busy owner', async t => {
@@ -189,7 +219,7 @@ test('agent-server: token, Host, Origin, JSON validation and allowlisted assets 
   assert.equal((await fetch(f.server.url + '/.env')).status, 404);
   assert.equal((await fetch(f.server.url + '/src/server/server.ts')).status, 404);
   const info = await (await f.request('/info')).json();
-  assert.deepEqual(Object.keys(info).sort(), ['approval', 'mode', 'model', 'provider', 'shellEnabled', 'version', 'workspace']);
+  assert.deepEqual(Object.keys(info).sort(), ['approval', 'mode', 'model', 'provider', 'requestTimeoutMs', 'shellEnabled', 'turnTimeoutMs', 'version', 'workspace']);
   assert.doesNotMatch(JSON.stringify(info), new RegExp(f.server.token));
 });
 
@@ -198,4 +228,40 @@ test('agent-server: sessions from another workspace/provider are not exposed', a
   const other = SessionStore.open(f.options.home, { id: 'other', workspace: f.root, provider: 'different-model' }); other.close();
   assert.equal((await f.request('/sessions/other')).status, 409);
   assert.deepEqual((await (await f.request('/sessions')).json()).sessions.map((s: { id: string }) => s.id), [id]);
+});
+
+test('agent-server: timeout settings persist only allowed fields without exposing credentials', async t => {
+  const f = await fixture(t), path = join(f.root, '.env');
+  await writeFile(path, '# Keep provider settings\nKRAKEN_API_KEY=fixture-secret\nKRAKEN_MODEL=example\n');
+  assert.equal((await fetch(f.server.url + '/api/v1/settings')).status, 401);
+  const limits = { requestTimeoutMs: 180_000, turnTimeoutMs: 10_800_000 };
+  assert.deepEqual(await (await f.request('/settings', limits)).json(), limits);
+  const saved = await readFile(path, 'utf8');
+  assert.match(saved, /# Keep provider settings\nKRAKEN_API_KEY=fixture-secret\nKRAKEN_MODEL=example\n/);
+  assert.match(saved, /KRAKEN_TURN_TIMEOUT_MS=10800000/);
+  assert.deepEqual(await (await f.request('/settings')).json(), limits);
+  assert.equal((await (await f.request('/info')).json()).turnTimeoutMs, limits.turnTimeoutMs);
+  assert.doesNotMatch(JSON.stringify(await (await f.request('/settings')).json()), /fixture-secret|KRAKEN_API_KEY/);
+  for (const input of [{ ...limits, turnTimeoutMs: 10_800_001 }, { ...limits, requestTimeoutMs: '180000' }, { ...limits, apiKey: 'forbidden' }, { requestTimeoutMs: 1 }]) {
+    assert.equal((await f.request('/settings', input)).status, 400);
+  }
+  assert.equal(await readFile(path, 'utf8'), saved);
+});
+
+test('agent-server: new timeout settings apply to the next turn, not an active one', async t => {
+  const provider: Provider = { name: 'test:settings', complete(_m, _t, signal) {
+    return new Promise((_resolve, reject) => { signal.addEventListener('abort', () => reject(signal.reason), { once: true }); });
+  } };
+  const f = await fixture(t, { config: { ...defaults, turnTimeoutMs: 5000 }, provider }), id = await f.create();
+  const first = await f.start(id, 'wait');
+  await until(() => f.snapshot(id), snapshot => snapshot.events.some(event => event.type === 'model.start'));
+  assert.equal((await f.request('/settings', { requestTimeoutMs: 180_000, turnTimeoutMs: 30 })).status, 200);
+  await delay(60);
+  assert.equal((await f.snapshot(id)).turn?.status, 'running');
+  await f.request(`/sessions/${id}/turns/${first.id}/cancel`, {});
+  assert.equal((await f.settled(id)).turn?.status, 'cancelled');
+  await f.start(id, 'next');
+  const result = await f.settled(id);
+  assert.equal(result.turn?.status, 'failed');
+  assert.match(result.turn?.error ?? '', /整轮任务超时/);
 });

@@ -45,6 +45,10 @@ export class AgentClient {
 
   /** @returns {Promise<import('../server/protocol.js').ServerInfo>} */
   info() { return this.request('/info'); }
+  /** @returns {Promise<import('../config.js').TimeoutSettings>} */
+  settings() { return this.request('/settings'); }
+  /** @param {import('../config.js').TimeoutSettings} settings @returns {Promise<import('../config.js').TimeoutSettings>} */
+  updateSettings(settings) { return this.request('/settings', settings); }
   /** @returns {Promise<import('../server/protocol.js').SessionSummary[]>} */
   async sessions() { return (await this.request('/sessions')).sessions; }
   /** @returns {Promise<import('../server/protocol.js').SessionSummary>} */

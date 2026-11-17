@@ -8,7 +8,7 @@ import { CompatibleProvider } from '../src/providers/compatible.js';
 import { reference } from '../src/learning/reference.js';
 import { sse } from '../src/providers/sse.js';
 import { apiUrl } from '../src/providers/http.js';
-import type { Message } from '../src/core/types.js';
+import type { Event, Message } from '../src/core/types.js';
 async function server(handler: RequestListener) {
   const srv = createServer(handler); srv.listen(0, '127.0.0.1'); await once(srv, 'listening');
   return { url: `http://127.0.0.1:${(srv.address() as AddressInfo).port}/v1`, close: async () => {
@@ -17,6 +17,97 @@ async function server(handler: RequestListener) {
 }
 const completed = (output: unknown[]) => ({ status: 'completed', output });
 const finalItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '完成 🐙' }] };
+const chatChunk = (delta: unknown, finish_reason: string | null = null) => `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason }] })}\n\n`;
+
+test('Compatible streams before completion, merges interleaved tools and replays reasoning; JSON fallback works', { timeout: 5000 }, async t => {
+  const requests: any[] = [], events: Event[] = [];
+  let release!: () => void, firstDelta!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const streaming = new Promise<void>(resolve => { firstDelta = resolve; });
+  t.after(() => release());
+  const local = await server(async (req, res) => {
+    const buffers: Buffer[] = []; for await (const c of req) buffers.push(c as Buffer);
+    requests.push(JSON.parse(Buffer.concat(buffers).toString()));
+    if (requests.length > 1) {
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: 'done' } }] }));
+      return;
+    }
+    res.setHeader('content-type', 'text/event-stream');
+    const initial = Buffer.from(chatChunk({ role: 'assistant', reasoning_content: '先查中文🐙' }));
+    for (let i = 0; i < initial.length; i += 3) res.write(initial.subarray(i, i + 3));
+    await gate;
+    res.write(chatChunk({ reasoning_content: '。', content: '检查文件', tool_calls: [
+      { index: 1, id: 'call_two', type: 'function', function: { name: 'echo', arguments: '{"value":' } },
+      { index: 0, id: 'call_', type: 'function', function: { name: 'read_', arguments: '{"path":' } },
+    ] }));
+    res.write(chatChunk({ tool_calls: [
+      { index: 0, id: 'one', function: { name: 'file', arguments: '"a.ts"}' } },
+      { index: 1, function: { arguments: '"ok"}' } },
+    ] }, 'tool_calls'));
+    res.end('data: {"choices":[],"usage":{"total_tokens":12}}\n\ndata: [DONE]\n\n');
+  }); t.after(local.close);
+  const provider = new CompatibleProvider({ baseUrl: local.url, model: 'fixture', timeoutMs: 3000 }, reference.decodeChat, event => {
+    events.push(event); firstDelta();
+  });
+  const messages: Message[] = [{ role: 'user', content: 'read' }];
+  let completed = false;
+  const pending = provider.complete(messages, [], new AbortController().signal).then(reply => { completed = true; return reply; });
+  await streaming;
+  assert.equal(completed, false);
+  assert.deepEqual(events[0], { type: 'model.delta', channel: 'reasoning', text: '先查中文🐙' });
+  release();
+  const reply = await pending;
+  assert.equal(reply.reasoningContent, '先查中文🐙。');
+  assert.equal(reply.content, '检查文件');
+  assert.deepEqual(reply.toolCalls, [
+    { id: 'call_one', name: 'read_file', arguments: '{"path":"a.ts"}' },
+    { id: 'call_two', name: 'echo', arguments: '{"value":"ok"}' },
+  ]);
+  assert.equal(events.filter(e => !e.channel).map(e => e.text).join(''), reply.content);
+  messages.push({ role: 'assistant', ...reply }, ...reply.toolCalls!.map(call => ({ role: 'tool' as const, toolCallId: call.id, content: 'result' })));
+  assert.equal((await provider.complete(messages, [], new AbortController().signal)).content, 'done');
+  assert.equal(requests[0].stream, true);
+  assert.equal(requests[1].messages[1].reasoning_content, reply.reasoningContent);
+  assert.equal(requests[1].messages[2].tool_call_id, 'call_one');
+});
+
+test('Compatible rejects incomplete, invalid and errored streams', async t => {
+  const cases: [string, string, RegExp][] = [
+    ['missing DONE', chatChunk({ content: 'partial' }, 'stop'), /without \[DONE\]/],
+    ['missing finish', chatChunk({ content: 'partial' }) + 'data: [DONE]\n\n', /without finish_reason/],
+    ['length', chatChunk({ content: 'partial' }, 'length') + 'data: [DONE]\n\n', /Incomplete completion/],
+    ['filter', chatChunk({ content: 'partial' }, 'content_filter') + 'data: [DONE]\n\n', /Incomplete completion/],
+    ['truncated frame', 'data: {"choices":', /Truncated SSE/],
+    ['remote error', 'data: {"error":{"message":"secret-do-not-print"}}\n\n', /stream failed/],
+    ['unfinished tool', chatChunk({ tool_calls: [{ index: 0, type: 'function', function: { name: 'read_file', arguments: '{}' } }] }, 'tool_calls') + 'data: [DONE]\n\n', /Invalid or duplicate tool call ID/],
+    ['bad index', chatChunk({ tool_calls: [{ index: 16 }] }) + 'data: [DONE]\n\n', /Invalid streamed tool index/],
+    ['post-finish content', chatChunk({ content: 'done' }, 'stop') + chatChunk({ content: 'extra' }) + 'data: [DONE]\n\n', /continued after finish_reason/],
+  ];
+  for (const [name, data, error] of cases) await t.test(name, async t => {
+    const local = await server((_req, res) => { res.setHeader('content-type', 'text/event-stream'); res.end(data); }); t.after(local.close);
+    const provider = new CompatibleProvider({ baseUrl: local.url, model: 'fixture', timeoutMs: 1000 }, reference.decodeChat);
+    await assert.rejects(provider.complete([], [], new AbortController().signal), failure => {
+      assert.match((failure as Error).message, error);
+      assert.doesNotMatch((failure as Error).message, /secret-do-not-print/);
+      return true;
+    });
+  });
+});
+
+test('Compatible cancellation and timeout abort an unfinished response body', async t => {
+  for (const cancel of [true, false]) await t.test(cancel ? 'cancel' : 'timeout', async t => {
+    const local = await server((_req, res) => { res.setHeader('content-type', 'text/event-stream'); res.write(chatChunk({ reasoning_content: 'working' })); }); t.after(local.close);
+    const controller = new AbortController();
+    let streamed = false;
+    const provider = new CompatibleProvider({ baseUrl: local.url, model: 'fixture', timeoutMs: cancel ? 1000 : 100 }, reference.decodeChat, () => {
+      streamed = true;
+      if (cancel) controller.abort(new Error('cancelled stream'));
+    });
+    await assert.rejects(provider.complete([], [], controller.signal), /cancelled|abort|timeout/i);
+    assert.equal(streamed, true);
+  });
+});
 test('SSE handles single-byte chunks, CRLF, UTF-8, comments and multiline data', async () => {
   const bytes = Buffer.from(': keepalive\r\ndata: {"text":\r\ndata: "中文🐙"}\r\n\r\ndata: [DONE]\r\n\r\n');
   const stream = new ReadableStream<Uint8Array>({ start(c) { for (const byte of bytes) c.enqueue(Uint8Array.of(byte)); c.close(); } });
@@ -64,7 +155,7 @@ test('HTTP failures never expose remote body; request timeout aborts waiting', a
   });
   const waiting = await server(() => {}); t.after(waiting.close);
   const q = new CompatibleProvider({ baseUrl: waiting.url, model: 'fixture', timeoutMs: 30 }, reference.decodeChat);
-  await assert.rejects(q.complete([], [], new AbortController().signal), /timeout/i);
+  await assert.rejects(q.complete([], [], new AbortController().signal), /模型单次请求超时/);
 });
 test('Provider URL rejects embedded credentials and remote plaintext HTTP', () => {
   for (const url of ['https://user:pass@example.com/v1', 'http://example.com/v1', 'https://example.com/v1?key=x']) assert.throws(() => apiUrl(url, 'responses'));

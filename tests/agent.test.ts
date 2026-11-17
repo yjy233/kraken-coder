@@ -3,12 +3,64 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { rm, readFile, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
 import { runTurn } from '../src/core/agent.js';
 import { createDemoProject } from '../src/demo-project.js';
 import { defaults } from '../src/config.js';
 import { readSession } from '../src/session/store.js';
 import { validateHistory } from '../src/core/validation.js';
-import type { Message, ModelReply, Provider } from '../src/core/types.js';
+import type { Event, Message, ModelReply, Provider } from '../src/core/types.js';
+
+test('streaming runTurn waits for completion before tools and persists full messages without deltas', { timeout: 5000 }, async t => {
+  for (const complete of [true, false]) await t.test(complete ? 'complete' : 'truncated', async t => {
+    const workspace = await mkdtemp(join(tmpdir(), 'kraken-stream-')), home = join(workspace, '.kraken-coder');
+    t.after(() => rm(workspace, { recursive: true, force: true }));
+    let release!: () => void, started!: () => void, requests = 0;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const streaming = new Promise<void>(resolve => { started = resolve; });
+    const frame = (delta: unknown, finish_reason: string | null = null) => `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason }] })}\n\n`;
+    const srv = createServer(async (req, res) => {
+      for await (const _ of req) { /* Drain request body. */ }
+      res.setHeader('content-type', 'text/event-stream');
+      if (++requests > 1) { res.end(frame({ reasoning_content: 'Check result.', content: 'done' }, 'stop') + 'data: [DONE]\n\n'); return; }
+      res.write(frame({ role: 'assistant', reasoning_content: 'Create the requested file.', tool_calls: [
+        { index: 0, id: 'create', type: 'function', function: { name: 'apply_patch', arguments: JSON.stringify({ patch: '*** Begin Patch\n*** Add File: created.txt\n+once\n*** End Patch' }) } },
+      ] }));
+      await gate;
+      res.end(complete ? frame({}, 'tool_calls') + 'data: [DONE]\n\n' : '');
+    });
+    srv.listen(0, '127.0.0.1'); await once(srv, 'listening');
+    t.after(async () => { release(); srv.closeAllConnections(); await new Promise<void>(resolve => srv.close(() => resolve())); });
+    const events: Event[] = [];
+    const pending = runTurn({ workspace, home, session: 'stream', config: { ...defaults, mode: 'learner', provider: 'compatible', model: 'fixture', baseUrl: `http://127.0.0.1:${(srv.address() as AddressInfo).port}/v1`, approval: 'full-auto' },
+      emit(event) { events.push(event); if (event.type === 'model.delta') started(); },
+    }, 'Create a file');
+    // Attach the failure expectation before releasing a deliberately broken stream.
+    const result = complete ? pending : assert.rejects(pending, /without \[DONE\]/);
+    await streaming;
+    try {
+      assert.equal(events.some(e => e.type === 'tool.start'), false);
+      await assert.rejects(readFile(join(workspace, 'created.txt')), /ENOENT/);
+    } finally { release(); }
+    await result;
+    const records = readSession(home, 'stream');
+    assert.equal(records.some(r => r.event.type === 'model.delta'), false);
+    if (complete) {
+      assert.equal(await readFile(join(workspace, 'created.txt'), 'utf8'), 'once\n');
+      assert.equal(events.filter(e => e.type === 'tool.start').length, 1);
+      const assistant = records.filter(r => r.event.type === 'message' && (r.event.message as Message).role === 'assistant');
+      assert.equal(assistant.length, 2);
+      assert.equal((assistant[0]!.event.message as Message).reasoningContent, 'Create the requested file.');
+      assert.equal(requests, 2);
+    } else {
+      assert.equal(events.some(e => e.type === 'tool.start'), false);
+      assert.equal(records.some(r => r.event.type === 'message' && (r.event.message as Message).role === 'assistant'), false);
+      await assert.rejects(readFile(join(workspace, 'created.txt')), /ENOENT/);
+    }
+  });
+});
 for (const mode of ['reference', 'learner'] as const) test(`${mode}: end-to-end bug fix, actual tests, journal and next turn resume`, async t => {
   const workspace = await createDemoProject(); t.after(() => rm(workspace, { recursive: true, force: true }));
   const home = join(workspace, '.kraken-coder');

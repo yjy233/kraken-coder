@@ -119,7 +119,7 @@ async function main(): Promise<void> {
   if (command === 'serve') {
     const port = flags.port === undefined ? 4317 : Number(flags.port);
     if (!Number.isSafeInteger(port) || port < 0 || port > 65535) throw new Error('--port must be an integer between 0 and 65535');
-    const server = await startAgentServer({ config: config!, workspace, home, allowShell: flags['allow-shell'], port, token: process.env.KRAKEN_SERVER_TOKEN });
+    const server = await startAgentServer({ config: config!, workspace, home, allowShell: flags['allow-shell'], port, token: process.env.KRAKEN_SERVER_TOKEN, envFile: resolve(flags['env-file'] ?? '.env') });
     console.error(`Kraken agent-server\n工作区：${workspace}\nWeb：${server.url}/#token=${encodeURIComponent(server.token)}\n服务令牌仅用于本机客户端连接；模型密钥保留在服务端。Ctrl+C 停止服务。`);
     await new Promise<void>(resolveStopped => {
       const stop = (): void => {

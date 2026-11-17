@@ -1,4 +1,14 @@
 export interface HttpOptions { baseUrl: string; apiKey?: string; model: string; timeoutMs: number }
+/** Keep request deadlines distinguishable from a caller's cancellation or turn deadline. */
+export async function withRequestTimeout<T>(timeoutMs: number, signal: AbortSignal, request: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const deadline = AbortSignal.timeout(timeoutMs), active = AbortSignal.any([signal, deadline]);
+  try { active.throwIfAborted(); return await request(active); }
+  catch (error) {
+    if (signal.aborted) throw signal.reason;
+    if (deadline.aborted) throw new Error(`模型单次请求超时（${timeoutMs / 1000} 秒，包含思考和流式输出）。可在运行设置或 KRAKEN_REQUEST_TIMEOUT_MS 中调整。`, { cause: error });
+    throw error;
+  }
+}
 export function apiUrl(base: string, endpoint: string): string {
   const url = new URL(base.replace(/\/$/, '') + '/' + endpoint);
   if (url.username || url.password || url.search || url.hash) throw new Error('API URL must not contain credentials, query, or fragment');

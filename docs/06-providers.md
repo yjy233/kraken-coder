@@ -27,14 +27,27 @@ Demo 不理解一般自然语言。它支持 `/files`、`/read PATH`、`/search 
 | baseUrl | 空；responses 自动使用 OpenAI v1 | API 根地址，不包含具体资源路径 |
 | maxSteps | 16 | 每回合模型请求数，包含最终答复 |
 | contextChars | 120000 | 消息与工具 schema 的近似字符预算 |
-| requestTimeoutMs | 60000 | 单次 HTTP 请求和读取响应总超时 |
-| turnTimeoutMs | 300000 | 整个回合，包括审批等待与工具执行 |
+| requestTimeoutMs | 180000（3 分钟） | 单次 HTTP 请求和读取响应总超时，最长 10 分钟 |
+| turnTimeoutMs | 10800000（3 小时） | 整个回合，包括审批等待与工具执行，最长 3 小时 |
 
 `--allow-shell` 是独立 CLI 开关，不存入配置文件。`KRAKEN_HOME` 可设置运行数据目录，CLI `--home` 优先。
+
+时限也可在 `.env` 中手动配置，单位为毫秒：
+
+```dotenv
+KRAKEN_REQUEST_TIMEOUT_MS=180000
+KRAKEN_TURN_TIMEOUT_MS=10800000
+```
+
+手动修改后重启服务。网页右上角“运行设置”可修改同一组字段，保存到服务启动时使用的环境文件（`--env-file` 或默认 `.env`），并立即更新服务内的配置，从下一轮生效；正在执行的回合使用启动时的配置快照。页面只写这两个时限字段，不读回或展示 API Key。服务重启后仍按命令行 > 环境变量 > config.json > 默认值的顺序取值。
+
+单次请求时限包含思考及整个流式输出，收到增量不会重置计时。报错会明确区分“模型单次请求超时”和“整轮任务超时”；`update_plan` 的 completed 只是模型更新的计划状态，不等于最终答案已经成功返回。
 
 ## Chat Completions
 
 POST `<baseUrl>/chat/completions`，发送 messages 和函数 tools。工具调用通过 assistant 的 `tool_calls` 声明，结果使用 `role=tool` 与 `tool_call_id` 回传。
+
+默认请求 `stream: true`，逐块读取 SSE 的 `delta.content` 和 `delta.reasoning_content`，以 `model.delta` 临时事件交给客户端；思考文本的事件附带 `channel: "reasoning"`。工具调用按 `index` 分别拼接 ID、函数名和参数，只有收到 `finish_reason`、`[DONE]` 并通过完整回复校验后才落盘和执行工具。断流、取消、超时或截断不会执行半个工具调用。兼容服务忽略流式请求而返回完整 JSON 时，仍支持原有解码，但该次请求只能完成后显示。字段参考 [火山方舟 Chat API](https://docs.volcengine.com/docs/ark/chat-api?lang=en)。
 
 `decodeChat` 只接受 `stop/tool_calls`。`length/content_filter` 等结束状态报未完成；空文本且没有工具调用也拒绝。来自服务的 `reasoning_content` 保存在 `reasoningContent`，在后续消息中原样回传，但不拼到最终用户答复。
 

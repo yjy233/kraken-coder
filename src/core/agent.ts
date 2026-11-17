@@ -19,7 +19,7 @@ export function createProvider(config: Config, emit: Emit): Provider {
   const apiKey = config.provider === 'responses' ? process.env.OPENAI_API_KEY : process.env.KRAKEN_API_KEY;
   if (config.provider === 'responses' && !apiKey) throw new Error('Set OPENAI_API_KEY for Responses');
   const http = { model: config.model, baseUrl: config.baseUrl, apiKey, timeoutMs: config.requestTimeoutMs };
-  return config.provider === 'responses' ? new ResponsesProvider(http, emit) : new CompatibleProvider(http, algorithms(config.mode).decodeChat);
+  return config.provider === 'responses' ? new ResponsesProvider(http, emit) : new CompatibleProvider(http, algorithms(config.mode).decodeChat, emit);
 }
 export async function runTurn(options: AgentOptions, input: string, signal: AbortSignal = new AbortController().signal): Promise<{ answer: string; session: string; journal: string }> {
   if (!input.trim()) throw new Error('Message cannot be empty');
@@ -33,7 +33,7 @@ export async function runTurn(options: AgentOptions, input: string, signal: Abor
   };
   const provider = options.provider ?? createProvider(config, emit);
   store = SessionStore.open(options.home, { id: options.session, workspace: workspace.root, provider: provider.name });
-  const active = AbortSignal.any([signal, AbortSignal.timeout(config.turnTimeoutMs)]);
+  const deadline = AbortSignal.timeout(config.turnTimeoutMs), active = AbortSignal.any([signal, deadline]);
   try {
     active.throwIfAborted();
     const instructions = new Instructions(workspace), skills = await listSkills(workspace);
@@ -59,6 +59,10 @@ export async function runTurn(options: AgentOptions, input: string, signal: Abor
     active.throwIfAborted();
     emit({ type: 'turn.completed', session: options.session, answer });
     return { answer, session: options.session, journal: store.path };
-  } catch (error) { emit({ type: active.aborted ? 'turn.cancelled' : 'turn.failed', error: errorText(error) }); throw error; }
+  } catch (error) {
+    const failure = !signal.aborted && deadline.aborted ? new Error(`整轮任务超时（${config.turnTimeoutMs / 1000} 秒，包含模型、工具和审批等待）。可在运行设置或 KRAKEN_TURN_TIMEOUT_MS 中调整。`, { cause: error }) : error;
+    emit({ type: signal.aborted ? 'turn.cancelled' : 'turn.failed', error: errorText(failure) });
+    throw failure;
+  }
   finally { store.close(); }
 }

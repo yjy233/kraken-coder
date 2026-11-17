@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { defaults, loadConfig } from '../src/config.js';
+import { defaults, loadConfig, saveTimeoutEnv, validateConfig } from '../src/config.js';
 const exec = promisify(execFile);
 const baseEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('KRAKEN_') && key !== 'OPENAI_API_KEY'));
 async function cli(args: string[], extra: Record<string, string> = {}) {
@@ -42,4 +42,25 @@ test('Config rejects unknown fields, zero budgets and wrong enum values', async 
   await writeFile(join(root, 'config.json'), '{"apiKey":"must-not-be-here"}');
   assert.throws(() => loadConfig(root, {}), /Unknown config field/);
   await writeFile(join(root, 'config.json'), '{"maxSteps":0}'); assert.throws(() => loadConfig(root, {}), /maxSteps/);
+});
+
+test('timeout settings preserve dotenv credentials and load through CLI with flag precedence', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'kraken-timeout-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const path = join(root, '.env');
+  await writeFile(path, '# provider\r\nKRAKEN_API_KEY="fixture-secret"\r\nexport KRAKEN_REQUEST_TIMEOUT_MS = 500\r\n');
+  saveTimeoutEnv(path, { requestTimeoutMs: 180_000, turnTimeoutMs: 10_800_000 });
+  const saved = await readFile(path, 'utf8');
+  assert.match(saved, /# provider\r\nKRAKEN_API_KEY="fixture-secret"\r\n/);
+  assert.match(saved, /KRAKEN_REQUEST_TIMEOUT_MS=180000\r\n/);
+  const args = ['doctor', '--cwd', root, '--env-file', path, '--provider', 'demo'];
+  const result = JSON.parse((await cli(args)).stdout);
+  assert.equal(result.config.requestTimeoutMs, 180_000);
+  assert.equal(result.config.turnTimeoutMs, 10_800_000);
+  assert.doesNotMatch(JSON.stringify(result), /fixture-secret/);
+  assert.equal(JSON.parse((await cli([...args, '--request-timeout-ms', '200000'])).stdout).config.requestTimeoutMs, 200_000);
+  assert.throws(() => validateConfig({ ...defaults, turnTimeoutMs: 10_800_001 }), /turnTimeoutMs/);
+  const multiline = 'KRAKEN_API_KEY="first\nKRAKEN_REQUEST_TIMEOUT_MS=embedded\nlast"\n';
+  await writeFile(path, multiline);
+  assert.throws(() => saveTimeoutEnv(path, { requestTimeoutMs: 1, turnTimeoutMs: 2 }), /无法安全更新/);
+  assert.equal(await readFile(path, 'utf8'), multiline);
 });

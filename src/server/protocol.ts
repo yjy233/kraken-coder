@@ -1,9 +1,9 @@
-import type { Config } from '../config.js';
+import type { Config, TimeoutSettings } from '../config.js';
 import type { Event, Effect } from '../core/types.js';
 
 /** Versioned transport boundary shared by browser, CLI and future IDE clients. */
 export const API_VERSION = 1;
-export interface ServerInfo {
+export interface ServerInfo extends TimeoutSettings {
   version: 1;
   workspace: string;
   provider: Config['provider'];

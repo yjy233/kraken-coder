@@ -1,6 +1,6 @@
 import type { Emit, Message, ModelReply, Provider, ToolSpec } from '../core/types.js';
 import { object, string, validateReply } from '../core/validation.js';
-import { apiUrl, boundedText, post, type HttpOptions } from './http.js';
+import { apiUrl, boundedText, post, withRequestTimeout, type HttpOptions } from './http.js';
 import { sse } from './sse.js';
 export function responseInput(messages: readonly Message[]): unknown[] {
   return messages.flatMap((m): unknown[] => {
@@ -36,7 +36,9 @@ export class ResponsesProvider implements Provider {
     this.name = `responses:${options.model}:${apiUrl(options.baseUrl, 'responses')}`;
   }
   async complete(messages: readonly Message[], tools: ToolSpec[], signal: AbortSignal): Promise<ModelReply> {
-    const timeout = AbortSignal.any([signal, AbortSignal.timeout(this.options.timeoutMs)]);
+    return withRequestTimeout(this.options.timeoutMs, signal, timeout => this.request(messages, tools, timeout));
+  }
+  private async request(messages: readonly Message[], tools: ToolSpec[], timeout: AbortSignal): Promise<ModelReply> {
     const response = await post(this.options, 'responses', {
       model: this.options.model, input: responseInput(messages), store: false, stream: true,
       include: ['reasoning.encrypted_content'],

@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve, join } from 'node:path';
 import { runTurn, createProvider } from '../core/agent.js';
-import { validateConfig, type Config } from '../config.js';
+import { saveTimeoutEnv, validateConfig, type Config, type TimeoutSettings } from '../config.js';
 import { errorText } from '../core/validation.js';
 import type { Event, Message, Provider } from '../core/types.js';
 import { Workspace } from '../tools/workspace.js';
@@ -21,6 +21,8 @@ export interface AgentServerOptions {
   port?: number;
   token?: string;
   webRoot?: string;
+  /** File used by the CLI at startup; settings only update the two timeout keys. */
+  envFile?: string;
 }
 export interface AgentServer {
   /** Loopback HTTP origin; pass the token using Authorization, never in a query. */
@@ -42,12 +44,14 @@ const fail = (status: number, code: string, message: string): never => { throw n
 const BODY_LIMIT = 128_000;
 const MESSAGE_LIMIT = 32_000;
 
-/** Browser state is intentionally separate from model context: encrypted/private reasoning stays in the journal. */
+/** Expose returned reasoning text; raw provider items and encrypted state stay in the journal. */
 function visible(event: Event): Event | undefined {
   if (event.type === 'instructions.snapshot') return;
   if (event.type !== 'message') return event;
   const m = event.message as Message;
-  return { type: 'message', message: { role: m.role, content: m.content, ...(m.toolCalls ? { toolCalls: m.toolCalls } : {}), ...(m.toolCallId ? { toolCallId: m.toolCallId } : {}) } };
+  return { type: 'message', message: { role: m.role, content: m.content,
+    ...(m.role === 'assistant' && m.reasoningContent?.trim() ? { reasoningContent: m.reasoningContent } : {}),
+    ...(m.toolCalls ? { toolCalls: m.toolCalls } : {}), ...(m.toolCallId ? { toolCallId: m.toolCallId } : {}) } };
 }
 function summary(id: string, records: RecordLine[]): SessionSummary {
   const user = records.find(r => r.event.type === 'message' && (r.event.message as Message).role === 'user');
@@ -93,7 +97,8 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
   const token = options.token ?? randomBytes(32).toString('base64url');
   if (token.length < 16 || /\s/.test(token)) throw new Error('Server token must have at least 16 characters without whitespace');
   const providerName = (options.provider ?? createProvider(config, () => {})).name;
-  const info: ServerInfo = { version: 1, workspace, provider: config.provider, model: config.provider === 'demo' ? '' : config.model, mode: config.mode, approval: config.approval, shellEnabled: options.allowShell === true };
+  const settings = (): TimeoutSettings => ({ requestTimeoutMs: config.requestTimeoutMs, turnTimeoutMs: config.turnTimeoutMs });
+  const info: ServerInfo = { version: 1, workspace, provider: config.provider, model: config.provider === 'demo' ? '' : config.model, mode: config.mode, approval: config.approval, shellEnabled: options.allowShell === true, ...settings() };
   const live = new Map<string, LiveSession>();
   const listeners = new Map<string, Set<ServerResponse>>();
   let active: string | undefined, stopping = false, origin = '';
@@ -191,6 +196,20 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
       if (Buffer.byteLength(supplied) !== Buffer.byteLength(expected) || !timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))) fail(401, 'unauthorized', 'A server access token is required');
       if (stopping) fail(503, 'stopping', 'Server is shutting down');
       if (req.method === 'GET' && path === '/api/v1/info') { json(res, 200, info); return; }
+      if (path === '/api/v1/settings') {
+        if (req.method === 'GET') { json(res, 200, settings()); return; }
+        if (req.method === 'POST') {
+          const input = await body(req); fields(input, ['requestTimeoutMs', 'turnTimeoutMs']);
+          if (typeof input.requestTimeoutMs !== 'number' || typeof input.turnTimeoutMs !== 'number') fail(400, 'invalid_settings', '请提供两个时限数值（毫秒）。');
+          let next: Config;
+          try { next = validateConfig({ ...config, ...input }); }
+          catch { return fail(400, 'invalid_settings', '单次模型请求需在 1 毫秒～10 分钟之间，整轮任务需在 1 毫秒～3 小时之间。'); }
+          const limits = { requestTimeoutMs: next.requestTimeoutMs, turnTimeoutMs: next.turnTimeoutMs };
+          saveTimeoutEnv(options.envFile ?? join(workspace, '.env'), limits);
+          Object.assign(config, limits); Object.assign(info, limits);
+          json(res, 200, limits); return;
+        }
+      }
       if (path === '/api/v1/sessions') {
         if (req.method === 'GET') {
           const sessions = listSessions(home).filter((item: any) => item.workspace === workspace && item.provider === providerName).map((item: any) => summary(item.id, recordsFor(item.id))).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
