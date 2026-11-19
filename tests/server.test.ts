@@ -7,7 +7,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { request as httpRequest } from 'node:http';
 import { startAgentServer, type AgentServer, type AgentServerOptions } from '../src/server/server.js';
 import { defaults } from '../src/config.js';
-import type { Event, Provider } from '../src/core/types.js';
+import type { Event, Message, Provider } from '../src/core/types.js';
+import { validateHistory } from '../src/core/validation.js';
+import { AgentClient } from '../src/client/client.js';
 import type { ServerFrame, SessionSnapshot } from '../src/server/protocol.js';
 import { SessionStore } from '../src/session/store.js';
 
@@ -61,6 +63,94 @@ function patchProvider(): Provider {
   } };
 }
 const eventMessages = (events: Event[]) => events.filter(e => e.type === 'message').map(e => e.message as { role: string; content: string });
+
+for (const mode of ['reference', 'learner'] as const) test(`agent-server (${mode}): steering follows the full tool group and follow-ups start in order`, async t => {
+  let releaseDraft!: () => void;
+  const draft = new Promise<void>(resolve => { releaseDraft = resolve; });
+  const requests: Message[][] = [];
+  const provider: Provider = { name: 'test:queued-input', async complete(messages, _tools, signal) {
+    validateHistory(messages);
+    requests.push([...messages]);
+    const user = messages.findLast(message => message.role === 'user')!;
+    if (user.content === 'original task') return { content: '', toolCalls: [
+      { id: 'write', name: 'apply_patch', arguments: JSON.stringify({ patch: '*** Begin Patch\n*** Add File: created.txt\n+test\n*** End Patch' }) },
+      { id: 'read', name: 'read_file', arguments: '{"path":"hello.txt"}' },
+    ] };
+    if (user.content === 'change scope') {
+      await Promise.race([draft, delay(5000, undefined, { signal, ref: false })]);
+      return { content: 'draft before revision' };
+    }
+    return { content: `answer: ${user.content}` };
+  } };
+  const f = await fixture(t, { provider, config: { ...defaults, mode } });
+  t.after(releaseDraft);
+  await writeFile(join(f.root, 'hello.txt'), 'hello');
+  const client = new AgentClient(f.server.url, f.server.token);
+  const id = await f.create(), other = await f.create(), stream = await watch(f.server, id);
+  t.after(() => stream.close());
+  const turn = await client.startTurn(id, 'original task');
+  const waiting = await until(() => client.session(id), snapshot => snapshot.approvals.length === 1);
+  const steer = await client.queueInput(id, turn.id, 'steer', 'change scope');
+  const first = await client.queueInput(id, turn.id, 'follow_up', 'first follow-up');
+  const removed = await client.queueInput(id, turn.id, 'follow_up', 'remove this');
+  const second = await client.queueInput(id, turn.id, 'follow_up', 'second follow-up');
+  await client.removeInput(id, removed.id);
+  assert.equal((await f.request(`/sessions/${other}/turns`, { message: 'another session' })).status, 409);
+  assert.equal((await client.session(id)).events.some(event => event.type === 'message' && (event.message as Message).steered), false);
+  const reconnect = await watch(f.server, id);
+  try {
+    const frame = reconnect.frames[0];
+    assert.equal(frame?.type, 'snapshot');
+    assert.deepEqual(frame.snapshot.inputs, [steer, first, second]);
+  } finally { await reconnect.close(); }
+  await client.approve(id, waiting.approvals[0]!.id, false);
+  await until(() => requests.length, count => count === 2);
+  assert.deepEqual(requests[1]!.slice(-3).map(message => message.toolCallId ?? message.content), ['write', 'read', 'change scope']);
+  await client.queueInput(id, turn.id, 'steer', 'late revision');
+  releaseDraft();
+  const result = await until(() => client.session(id), snapshot =>
+    snapshot.turn?.status === 'completed' && snapshot.events.filter(event => event.type === 'turn.completed').length === 3);
+  assert.deepEqual(result.inputs, []);
+  assert.deepEqual(result.events.filter(event => event.type === 'turn.completed').map(event => event.answer),
+    ['answer: late revision', 'answer: first follow-up', 'answer: second follow-up']);
+  const messages = result.events.filter(event => event.type === 'message').map(event => event.message as Message);
+  assert.deepEqual(messages.filter(message => message.steered).map(message => message.content), ['change scope', 'late revision']);
+  assert.deepEqual(messages.filter(message => message.role === 'user' && !message.steered).map(message => message.content),
+    ['original task', 'first follow-up', 'second follow-up']);
+  const completed = await until(() => stream.frames.flatMap(frame =>
+    frame.type === 'event' && frame.event.type === 'turn.completed' ? [frame.turnId] : []), ids => ids.length === 3);
+  assert.equal(new Set(completed).size, 3);
+  assert.equal(completed[0], turn.id);
+  await assert.rejects(client.queueInput(id, turn.id, 'steer', 'stale'), { status: 409, code: 'stale_turn' });
+});
+
+test('agent-server: stopping leaves follow-ups for explicit resumption', async t => {
+  const requests: string[] = [];
+  const provider: Provider = { name: 'test:pause-input', async complete(messages, _tools, signal) {
+    const input = messages.at(-1)!.content;
+    requests.push(input);
+    if (input === 'wait') await delay(5000, undefined, { signal, ref: false });
+    return { content: input };
+  } };
+  const f = await fixture(t, { provider }), id = await f.create();
+  const client = new AgentClient(f.server.url, f.server.token);
+  const { id: turnId } = await client.startTurn(id, 'wait');
+  await until(() => requests.length, count => count === 1);
+  const followUp = await client.queueInput(id, turnId, 'follow_up', 'after cancellation');
+  await client.cancelTurn(id, turnId);
+  const stopped = await f.settled(id);
+  assert.equal(stopped.turn?.status, 'cancelled');
+  assert.deepEqual(stopped.inputs, [followUp]);
+  await client.startTurn(id, 'unrelated task');
+  const unrelated = await f.settled(id);
+  assert.deepEqual(unrelated.inputs, [followUp]);
+  assert.deepEqual(requests, ['wait', 'unrelated task']);
+  await client.resumeFollowUps(id);
+  const resumed = await f.settled(id);
+  assert.equal(resumed.turn?.status, 'completed');
+  assert.deepEqual(resumed.inputs, []);
+  assert.deepEqual(requests, ['wait', 'unrelated task', 'after cancellation']);
+});
 
 test('agent-server: real Demo read, live events, reconnect, persistence and multi-turn history', async t => {
   const f = await fixture(t);

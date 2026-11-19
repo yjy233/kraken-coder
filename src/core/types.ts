@@ -6,6 +6,8 @@ export interface ToolCall { id: string; name: string; arguments: string }
 export interface Message {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
+  /** A user message inside an existing turn, so it cannot split a context group. */
+  steered?: true;
   toolCalls?: ToolCall[];
   toolCallId?: string;
   reasoningContent?: string;
@@ -25,7 +27,7 @@ export interface Schema {
   maximum?: number;
 }
 export interface ToolSpec { name: string; description: string; parameters: Schema }
-export interface ModelReply extends Omit<Message, 'role' | 'toolCallId'> {}
+export interface ModelReply extends Omit<Message, 'role' | 'toolCallId' | 'steered'> {}
 export interface Provider {
   name: string;
   complete(messages: readonly Message[], tools: ToolSpec[], signal: AbortSignal): Promise<ModelReply>;
@@ -40,6 +42,7 @@ export interface LoopRuntime {
   emit: Emit;
   /** checkpoint 是原始轨迹；context 只改变发给模型的窗口。 */
   checkpoint(message: Message): void;
+  takeSteering?(): string[];
   context(messages: Message[]): Message[];
   execute(call: ToolCall, signal: AbortSignal): Promise<Message>;
 }

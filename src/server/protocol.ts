@@ -29,15 +29,22 @@ export interface PendingApproval {
   effect: Effect;
   preview: string;
 }
+export interface PendingInput {
+  id: string;
+  turnId: string;
+  kind: 'steer' | 'follow_up';
+  message: string;
+}
 export interface SessionSnapshot {
   session: SessionSummary;
   events: Event[];
   turn: TurnState | null;
   approvals: PendingApproval[];
+  inputs: PendingInput[];
 }
 /** Each subscription/reconnection starts with a snapshot; clients replace their view. */
 export type ServerFrame =
   | { type: 'snapshot'; snapshot: SessionSnapshot }
   | { type: 'event'; sessionId: string; turnId: string; event: Event }
-  | { type: 'state'; sessionId: string; turn: TurnState | null; approvals: PendingApproval[] };
+  | { type: 'state'; sessionId: string; turn: TurnState | null; approvals: PendingApproval[]; inputs: PendingInput[] };
 export interface ApiError { error: { code: string; message: string } }

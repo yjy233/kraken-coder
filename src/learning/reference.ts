@@ -25,8 +25,17 @@ export const reference: Algorithms = {
     const history = [...messages];
     validateHistory(history);
     const used = new Set(history.flatMap(m => m.toolCalls?.map(c => c.id) ?? []));
+    const appendSteering = () => {
+      const inputs = r.takeSteering?.() ?? [];
+      for (const content of inputs) {
+        const message: Message = { role: 'user', content, steered: true };
+        r.checkpoint(message); history.push(message);
+      }
+      return inputs.length > 0;
+    };
     for (let step = 0; step < r.maxSteps; step++) {
       r.signal.throwIfAborted();
+      if (step === 0) appendSteering();
       r.emit({ type: 'model.start', step });
       const reply = await r.provider.complete(r.context(history), r.tools, r.signal);
       r.signal.throwIfAborted(); validateReply(reply);
@@ -37,12 +46,14 @@ export const reference: Algorithms = {
       // 最后一次模型请求不再启动副作用：必须留出一次请求来解释工具结果；意图已落盘，恢复按结果未知处理。
       if (calls.length && step + 1 === r.maxSteps) throw new Error('Step limit reached before executing tools');
       r.emit({ type: 'model.end', step, toolCalls: calls.length });
-      if (!calls.length) return reply.content;
       for (const call of calls) {
         used.add(call.id); r.signal.throwIfAborted();
         const result = await r.execute(call, r.signal);
         r.checkpoint(result); history.push(result);
       }
+      r.signal.throwIfAborted();
+      const steered = step + 1 < r.maxSteps && appendSteering();
+      if (!calls.length && !steered) return reply.content;
     }
     throw new Error('Step limit reached');
   },
@@ -64,7 +75,7 @@ export const reference: Algorithms = {
     validateHistory(messages);
     const next = [...messages];
     while (JSON.stringify(next).length > maxChars) {
-      const users = next.flatMap((m, i) => m.role === 'user' ? [i] : []);
+      const users = next.flatMap((m, i) => m.role === 'user' && !m.steered ? [i] : []);
       if (users.length === 0) throw new Error('Context budget exceeded by instructions; increase --context-chars');
       if (users.length === 1) throw new Error('Context budget exceeded by current turn; read smaller ranges or increase --context-chars');
       next.splice(users[0]!, users[1]! - users[0]!);

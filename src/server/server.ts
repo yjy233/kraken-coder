@@ -10,7 +10,7 @@ import type { Event, Message, Provider } from '../core/types.js';
 import { Workspace } from '../tools/workspace.js';
 import type { Approve } from '../tools/registry.js';
 import { listSessions, readSession, SessionStore, sessionId, type RecordLine } from '../session/store.js';
-import type { ApiError, PendingApproval, ServerFrame, ServerInfo, SessionSnapshot, SessionSummary, TurnState } from './protocol.js';
+import type { ApiError, PendingApproval, PendingInput, ServerFrame, ServerInfo, SessionSnapshot, SessionSummary, TurnState } from './protocol.js';
 
 export interface AgentServerOptions {
   config: Config;
@@ -38,11 +38,14 @@ interface LiveSession {
   turn: TurnState;
   controller: AbortController;
   approvals: Map<string, ApprovalWaiter>;
+  inputs: PendingInput[];
+  followUpsPaused: boolean;
   done?: Promise<void>;
 }
 const fail = (status: number, code: string, message: string): never => { throw new HttpError(status, code, message); };
 const BODY_LIMIT = 128_000;
 const MESSAGE_LIMIT = 32_000;
+const QUEUE_LIMIT = 16;
 
 /** Expose returned reasoning text; raw provider items and encrypted state stay in the journal. */
 function visible(event: Event): Event | undefined {
@@ -50,6 +53,7 @@ function visible(event: Event): Event | undefined {
   if (event.type !== 'message') return event;
   const m = event.message as Message;
   return { type: 'message', message: { role: m.role, content: m.content,
+    ...(m.role === 'user' && m.steered ? { steered: true } : {}),
     ...(m.role === 'assistant' && m.reasoningContent?.trim() ? { reasoningContent: m.reasoningContent } : {}),
     ...(m.toolCalls ? { toolCalls: m.toolCalls } : {}), ...(m.toolCallId ? { toolCallId: m.toolCallId } : {}) } };
 }
@@ -86,6 +90,10 @@ async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
 }
 function fields(value: Record<string, unknown>, allowed: string[]): void {
   if (Object.keys(value).some(key => !allowed.includes(key))) fail(400, 'invalid_body', 'Unexpected request field');
+}
+function messageText(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim() || value.length > MESSAGE_LIMIT) return fail(400, 'invalid_message', 'message must contain 1–32000 characters');
+  return value;
 }
 
 /** A single owner of turns, approval promises and session streams; transports never run tools themselves. */
@@ -124,7 +132,7 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
   const pending = (state?: LiveSession): PendingApproval[] => [...(state?.approvals.values() ?? [])].map(item => item.approval);
   const snapshot = (id: string): SessionSnapshot => {
     const records = recordsFor(id), state = live.get(id);
-    return { session: summary(id, records), events: records.flatMap(r => { const event = visible(r.event); return event ? [event] : []; }), turn: state?.turn ?? previousTurn(records), approvals: pending(state) };
+    return { session: summary(id, records), events: records.flatMap(r => { const event = visible(r.event); return event ? [event] : []; }), turn: state?.turn ?? previousTurn(records), approvals: pending(state), inputs: state?.inputs ?? [] };
   };
   const frame = (res: ServerResponse, value: ServerFrame): void => {
     // A slow/abandoned consumer must not buffer unbounded tool output or block a turn.
@@ -133,7 +141,7 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
     res.write(`data: ${JSON.stringify(value)}\n\n`);
   };
   const publish = (id: string, value: ServerFrame): void => { for (const res of listeners.get(id) ?? []) frame(res, value); };
-  const publishState = (id: string, state: LiveSession): void => publish(id, { type: 'state', sessionId: id, turn: state.turn, approvals: pending(state) });
+  const publishState = (id: string, state: LiveSession): void => publish(id, { type: 'state', sessionId: id, turn: state.turn, approvals: pending(state), inputs: state.inputs });
   const requestApproval = (id: string, state: LiveSession): Approve => (request, signal) => new Promise<boolean>((resolveApproval, reject) => {
     signal.throwIfAborted();
     const approval: PendingApproval = { id: randomUUID(), turnId: state.turn.id, ...request };
@@ -150,24 +158,48 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
   });
   const start = (id: string, message: string): TurnState => {
     if (active) return fail(409, 'turn_busy', 'A turn is already running in this workspace');
-    const state: LiveSession = { turn: { id: randomUUID(), status: 'running' }, controller: new AbortController(), approvals: new Map() };
+    const previous = live.get(id);
+    const state: LiveSession = {
+      turn: { id: randomUUID(), status: 'running' }, controller: new AbortController(), approvals: new Map(),
+      inputs: previous?.inputs ?? [], followUpsPaused: previous?.followUpsPaused ?? false,
+    };
     active = id; live.set(id, state); publishState(id, state);
     const emit = (event: Event): void => { const publicEvent = visible(event); if (publicEvent) publish(id, { type: 'event', sessionId: id, turnId: state.turn.id, event: publicEvent }); };
+    const takeSteering = (): string[] => {
+      const inputs = state.inputs.filter(item => item.kind === 'steer' && item.turnId === state.turn.id);
+      if (inputs.length) {
+        state.inputs = state.inputs.filter(item => !inputs.includes(item));
+        publishState(id, state);
+      }
+      return inputs.map(item => item.message);
+    };
     // Do not await the turn in the HTTP handler: client disconnection never owns its lifetime.
     state.done = (async () => {
       try {
-        await runTurn({ config, workspace, home, session: id, allowShell: options.allowShell, provider: options.provider, emit, approve: requestApproval(id, state) }, message, state.controller.signal);
+        await runTurn({ config, workspace, home, session: id, allowShell: options.allowShell, provider: options.provider, emit, approve: requestApproval(id, state), takeSteering }, message, state.controller.signal);
         state.turn = { ...state.turn, status: 'completed' };
       } catch (error) {
         const cancelled = state.controller.signal.aborted || (error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name));
         state.turn = { ...state.turn, status: cancelled ? 'cancelled' : 'failed', error: errorText(error) };
       } finally {
+        const steerWaiting = state.inputs.some(item => item.kind === 'steer' && item.turnId === state.turn.id);
+        if (state.turn.status !== 'completed' || steerWaiting) {
+          state.followUpsPaused = state.inputs.some(item => item.kind === 'follow_up');
+        }
         for (const waiter of state.approvals.values()) waiter.settle(false);
         active = undefined;
         publishState(id, state);
+        if (!stopping && !state.followUpsPaused) startFollowUp(id, state);
       }
     })();
     return state.turn;
+  };
+  const startFollowUp = (id: string, state: LiveSession): TurnState | undefined => {
+    const index = state.inputs.findIndex(item => item.kind === 'follow_up');
+    if (index === -1) return;
+    const [next] = state.inputs.splice(index, 1);
+    state.followUpsPaused = false;
+    return start(id, next!.message);
   };
   const server = createServer((req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -241,8 +273,40 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
       }
       if (req.method === 'POST' && tail === 'turns') {
         const input = await body(req); fields(input, ['message']);
-        if (typeof input.message !== 'string' || !input.message.trim() || input.message.length > MESSAGE_LIMIT) return fail(400, 'invalid_message', 'message must contain 1–32000 characters');
-        json(res, 202, { turn: start(id, input.message) }); return;
+        json(res, 202, { turn: start(id, messageText(input.message)) }); return;
+      }
+      if (req.method === 'POST' && tail === 'inputs') {
+        const input = await body(req); fields(input, ['turnId', 'kind', 'message']);
+        const message = messageText(input.message), kind = input.kind;
+        if (kind !== 'steer' && kind !== 'follow_up') return fail(400, 'invalid_input_kind', 'Use steer or follow_up');
+        const state = live.get(id);
+        if (!state || state.turn.id !== input.turnId || state.turn.status !== 'running' || state.controller.signal.aborted) {
+          return fail(409, 'stale_turn', '该回合已结束或正在停止，请检查当前回合后再发送。');
+        }
+        if (state.inputs.length >= QUEUE_LIMIT) return fail(409, 'queue_full', '待发队列最多保留 16 条消息。');
+        const item: PendingInput = { id: randomUUID(), turnId: state.turn.id, kind, message };
+        state.inputs.push(item);
+        publishState(id, state);
+        json(res, 202, { input: item }); return;
+      }
+      if (req.method === 'POST' && tail === 'inputs/resume') {
+        fields(await body(req), []);
+        if (active) return fail(409, 'turn_busy', '有任务正在执行，请等待该回合结束。');
+        const state = live.get(id);
+        const turn = state && startFollowUp(id, state);
+        if (!turn) return fail(409, 'empty_queue', '没有待执行的后续任务。');
+        json(res, 202, { turn }); return;
+      }
+      const removal = /^inputs\/([^/]+)\/remove$/.exec(tail ?? '');
+      if (req.method === 'POST' && removal) {
+        fields(await body(req), []);
+        const state = live.get(id);
+        const index = state?.inputs.findIndex(item => item.id === removal[1]) ?? -1;
+        if (!state || index === -1) return fail(409, 'stale_input', '这条消息已送出或已移除。');
+        state.inputs.splice(index, 1);
+        if (!state.inputs.some(item => item.kind === 'follow_up')) state.followUpsPaused = false;
+        publishState(id, state);
+        json(res, 200, { ok: true }); return;
       }
       const cancellation = /^turns\/([^/]+)\/cancel$/.exec(tail ?? '');
       if (req.method === 'POST' && cancellation) {

@@ -31,8 +31,18 @@ export const runLoop: Algorithms['runLoop'] = async (messages, runtime) => {
   const history = messages.slice();
   validateHistory(history);
   const usedIds = new Set(history.flatMap(m => (m.toolCalls ?? []).map(c => c.id)));
+  const appendSteering = () => {
+    const inputs = runtime.takeSteering?.() ?? [];
+    for (const content of inputs) {
+      const message: Message = { role: 'user', content, steered: true };
+      runtime.checkpoint(message);
+      history.push(message);
+    }
+    return inputs.length > 0;
+  };
   for (let step = 0; step < runtime.maxSteps; step++) {
     runtime.signal.throwIfAborted();
+    if (step === 0) appendSteering();
     runtime.emit({ type: 'model.start', step });
     const response = await runtime.provider.complete(runtime.context(history), runtime.tools, runtime.signal);
     runtime.signal.throwIfAborted();
@@ -45,7 +55,6 @@ export const runLoop: Algorithms['runLoop'] = async (messages, runtime) => {
     // 步数耗尽不启动副作用，但意图已落盘：恢复时按结果未知处理，而不是丢弃这次响应。
     if (calls.length > 0 && step === runtime.maxSteps - 1) throw new Error('Step limit reached before executing tools');
     runtime.emit({ type: 'model.end', step, toolCalls: calls.length });
-    if (calls.length === 0) return assistant.content;
     for (const call of calls) {
       usedIds.add(call.id);
       runtime.signal.throwIfAborted();
@@ -53,6 +62,10 @@ export const runLoop: Algorithms['runLoop'] = async (messages, runtime) => {
       runtime.checkpoint(observation);
       history.push(observation);
     }
+    // Insert user input only after all tool results, including after a text-only reply.
+    runtime.signal.throwIfAborted();
+    const steered = step + 1 < runtime.maxSteps && appendSteering();
+    if (calls.length === 0 && !steered) return assistant.content;
   }
   throw new Error('Step limit reached');
 };
@@ -87,8 +100,8 @@ export const fitContext: Algorithms['fitContext'] = (messages, maxChars) => {
   validateHistory(messages);
   let context = messages.slice();
   while (JSON.stringify(context).length > maxChars) {
-    const first = context.findIndex(m => m.role === 'user');
-    const second = context.findIndex((m, i) => i > first && m.role === 'user');
+    const first = context.findIndex(m => m.role === 'user' && !m.steered);
+    const second = context.findIndex((m, i) => i > first && m.role === 'user' && !m.steered);
     if (first === -1) throw new Error('Context budget exceeded by instructions; increase --context-chars');
     if (second === -1) throw new Error('Context budget exceeded by current turn; read smaller ranges or increase --context-chars');
     context = [...context.slice(0, first), ...context.slice(second)];

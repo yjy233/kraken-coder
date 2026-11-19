@@ -50,10 +50,20 @@
           </div>
           <div class="composer-region">
             <div class="approval-list" id="approval-list" aria-live="polite"></div>
+            <section class="input-queue" id="input-queue" aria-label="待发消息" hidden>
+              <div class="input-queue-heading"><strong>待发消息</strong><button class="queue-button" id="resume-follow-ups" type="button" hidden>继续队列</button></div>
+              <ul id="queued-inputs" aria-live="polite"></ul>
+            </section>
             <form class="composer" id="composer-form">
               <label class="sr-only" for="message-input">给 Kraken 发送消息</label>
               <textarea id="message-input" placeholder="描述你的任务，或问一个关于代码的问题…" rows="2" disabled></textarea>
-              <div class="composer-toolbar"><div class="composer-settings"><span class="model-chip"><span class="tiny-dot"></span><span id="composer-model">尚未连接</span></span><span class="permission-chip" id="composer-permission">审批模式</span></div><div class="composer-actions"><span class="keyboard-hint">↵ 发送</span><button id="cancel-turn" class="stop-button" type="button" hidden><span aria-hidden="true">■</span> 停止</button><button id="send-message" class="send-button" type="submit" aria-label="发送消息" disabled>↑</button></div></div>
+              <div class="composer-toolbar"><div class="composer-settings"><span class="model-chip"><span class="tiny-dot"></span><span id="composer-model">尚未连接</span></span><span class="permission-chip" id="composer-permission">审批模式</span></div><div class="composer-actions">
+                <span class="keyboard-hint" id="send-hint">↵ 发送</span>
+                <button id="steer-turn" class="queue-button" type="button" title="在下一次模型请求前加入当前任务" hidden>调整当前任务</button>
+                <button id="follow-up-turn" class="queue-button" type="button" title="当前任务成功后启动下一轮" hidden>排到下一轮</button>
+                <button id="cancel-turn" class="stop-button" type="button" hidden><span aria-hidden="true">■</span> 停止</button>
+                <button id="send-message" class="send-button" type="submit" aria-label="发送消息" disabled>↑</button>
+              </div></div>
             </form>
             <p class="composer-caption" id="composer-caption">Shift + Enter 换行 <span>·</span> 工具在服务端配置的工作区中运行</p>
           </div>

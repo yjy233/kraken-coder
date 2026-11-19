@@ -25,18 +25,18 @@ test('remote CLI identifies its result when later turn events arrive before its 
     if (req.url?.endsWith('/events')) {
       stream = res;
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
-      send({ type: 'snapshot', snapshot: { session: { id: 's', title: 'session', updatedAt: '' }, events: [], turn: null, approvals: [] } });
+      send({ type: 'snapshot', snapshot: { session: { id: 's', title: 'session', updatedAt: '' }, events: [], turn: null, approvals: [], inputs: [] } });
       return;
     }
     if (req.url?.endsWith('/turns')) {
       acknowledgement = res;
       req.resume();
-      send({ type: 'state', sessionId: 's', turn: { id: 'own', status: 'running' }, approvals: [] });
+      send({ type: 'state', sessionId: 's', turn: { id: 'own', status: 'running' }, approvals: [], inputs: [] });
       send({ type: 'event', sessionId: 's', turnId: 'own', event: { type: 'turn.completed', answer: 'own answer' } });
-      send({ type: 'state', sessionId: 's', turn: { id: 'own', status: 'completed' }, approvals: [] });
-      send({ type: 'state', sessionId: 's', turn: { id: 'next', status: 'running' }, approvals: [] });
+      send({ type: 'state', sessionId: 's', turn: { id: 'own', status: 'completed' }, approvals: [], inputs: [] });
+      send({ type: 'state', sessionId: 's', turn: { id: 'next', status: 'running' }, approvals: [], inputs: [] });
       send({ type: 'event', sessionId: 's', turnId: 'next', event: { type: 'turn.completed', answer: 'other answer' } });
-      send({ type: 'state', sessionId: 's', turn: { id: 'next', status: 'completed' }, approvals: [] });
+      send({ type: 'state', sessionId: 's', turn: { id: 'next', status: 'completed' }, approvals: [], inputs: [] });
       return;
     }
     res.writeHead(404).end();

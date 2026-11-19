@@ -57,6 +57,12 @@ export class AgentClient {
   session(id) { return this.request(`/sessions/${encodeURIComponent(id)}`); }
   /** @param {string} id @param {string} message @returns {Promise<import('../server/protocol.js').TurnState>} */
   async startTurn(id, message) { return (await this.request(`/sessions/${encodeURIComponent(id)}/turns`, { message })).turn; }
+  /** @param {string} id @param {string} turnId @param {import('../server/protocol.js').PendingInput['kind']} kind @param {string} message @returns {Promise<import('../server/protocol.js').PendingInput>} */
+  async queueInput(id, turnId, kind, message) { return (await this.request(`/sessions/${encodeURIComponent(id)}/inputs`, { turnId, kind, message })).input; }
+  /** @param {string} id @param {string} inputId @returns {Promise<{ok: true}>} */
+  removeInput(id, inputId) { return this.request(`/sessions/${encodeURIComponent(id)}/inputs/${encodeURIComponent(inputId)}/remove`, {}); }
+  /** @param {string} id @returns {Promise<import('../server/protocol.js').TurnState>} */
+  async resumeFollowUps(id) { return (await this.request(`/sessions/${encodeURIComponent(id)}/inputs/resume`, {})).turn; }
   /** @param {string} id @param {string} turnId @returns {Promise<{ok: true}>} */
   cancelTurn(id, turnId) { return this.request(`/sessions/${encodeURIComponent(id)}/turns/${encodeURIComponent(turnId)}/cancel`, {}); }
   /** @param {string} id @param {string} approvalId @param {boolean} approved @returns {Promise<{ok: true}>} */

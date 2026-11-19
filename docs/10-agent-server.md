@@ -90,6 +90,9 @@ flowchart LR
 | `GET /sessions/:id/events` | — | SSE：先发送完整快照，随后发送事件与状态变化 |
 | `POST /sessions/:id/turns` | `{ "message": "..." }` | HTTP 202 与 `{ turn }`，后台开始执行 |
 | `POST /sessions/:id/turns/:turnId/cancel` | `{}` | 请求取消，最终状态通过事件流确认 |
+| `POST /sessions/:id/inputs` | `{ turnId, kind: "steer" \| "follow_up", message }` | 将消息加入当前回合的待发队列 |
+| `POST /sessions/:id/inputs/:inputId/remove` | `{}` | 移除还未送达的消息 |
+| `POST /sessions/:id/inputs/resume` | `{}` | 空闲时启动第一条暂停的 follow-up |
 | `POST /sessions/:id/approvals/:approvalId` | `{ "approved": true }` | 回复该审批；`false` 表示拒绝 |
 
 `202` 只表示接受了任务，不能当作完成。回合状态为 `running`、`completed`、`cancelled` 或 `failed`。拒绝某个工具审批会作为工具结果反馈给模型；它不必然使整个回合失败。
@@ -116,9 +119,13 @@ sequenceDiagram
     S-->>C: state：回合终态
 ```
 
-SSE 的 `data:` 是 `ServerFrame` JSON，分为三类：`snapshot` 替换客户端完整视图，`event` 追加一条可见运行事件，`state` 更新回合与待审批列表。`event` 帧携带 `sessionId` 和 `turnId`；即使任务完成先于提交请求的 HTTP 确认、另一个客户端又启动了后续回合，CLI 仍能按回合 ID 取回自己的结果。工具调用与结果继续使用核心的 `toolCalls[].id` / `toolCallId` 配对。
+SSE 的 `data:` 是 `ServerFrame` JSON，分为三类：`snapshot` 替换客户端完整视图，`event` 追加一条可见运行事件，`state` 更新回合、待审批和待发消息列表。`event` 帧携带 `sessionId` 和 `turnId`；即使任务完成先于提交请求的 HTTP 确认、另一个客户端又启动了后续回合，CLI 仍能按回合 ID 取回自己的结果。工具调用与结果继续使用核心的 `toolCalls[].id` / `toolCallId` 配对。
 
 待审批界面以快照或 `state.approvals` 为准，不能把历史 `approval.request` 重新显示成可操作卡片。同一 token 的多个客户端都可回复，第一次有效回复结束等待，其他客户端的旧回复会被拒绝。
+
+运行中可以按 Enter 或点「调整当前任务」发送 steer。正在进行的模型请求和整组工具先结束，随后把新指令作为用户消息写入当前回合，交给下一次模型请求。调整沿用当前回合的步数与时限，步数用尽时待发区会显示「未送达」。
+
+点击「排到下一轮」可追加 follow-up。当前回合成功且 steer 已送达后，服务按入队顺序调用 `runTurn`，每条都有自己的回合 ID 和预算。失败或停止会暂停后续任务，可以用「继续队列」恢复。待发消息可以移除，保存在服务进程内存中，页面刷新会恢复，服务重启会清空。Web 页面和 SDK 提供这些操作。
 
 ## 重连与进程恢复
 

@@ -127,12 +127,14 @@ export const stages: Case[][] = [
       const messages: Message[] = [
         { role: 'system', content: 'instructions' }, { role: 'user', content: 'old'.repeat(200) },
         { role: 'assistant', content: '', toolCalls: [toolCall] }, { role: 'tool', toolCallId: toolCall.id, content: 'result'.repeat(200) }, { role: 'assistant', content: 'done' },
+        { role: 'user', content: 'old steering', steered: true }, { role: 'assistant', content: 'revised' },
         { role: 'user', content: 'current' }, { role: 'assistant', content: '', toolCalls: [{ ...toolCall, id: 'current' }] }, { role: 'tool', toolCallId: 'current', content: 'current result' },
+        { role: 'user', content: 'new steering', steered: true },
       ];
-      const copy = structuredClone(messages), expected = [messages[0], ...messages.slice(5)];
+      const copy = structuredClone(messages), expected = [messages[0], ...messages.slice(7)];
       const context = a.fitContext(messages, JSON.stringify(expected).length);
       assert.deepEqual(context, expected); assert.deepEqual(messages, copy); validateHistory(context);
-      assert.throws(() => a.fitContext(context, 10), /Context budget/);
+      assert.throws(() => a.fitContext(context, JSON.stringify(expected).length - 1), /current turn/);
     } },
   ],
   [

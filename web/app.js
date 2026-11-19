@@ -5,7 +5,7 @@ const tokenKey = 'kraken.server.token';
 const selectionKey = 'kraken.server.session';
 const policyLabels = { 'read-only': '只读模式', ask: '操作需审批', 'workspace-write': '工作区可写', 'full-auto': '自动执行' };
 const state = {
-  client: null, info: null, sessions: [], selectedId: null, events: [], turn: null, approvals: [],
+  client: null, info: null, sessions: [], selectedId: null, events: [], turn: null, approvals: [], inputs: [],
   delta: '', reasoningDelta: '', streamingReasoningOpen: true, stream: null, generation: 0, authGeneration: 0, connected: false,
   submitting: false, creating: false, cancelling: false, settingsBusy: false, pendingApprovals: new Set(),
   expandedTools: new Set(), expandedReasoning: new Set(), connection: 'connecting', notice: '',
@@ -118,15 +118,21 @@ async function refreshSessions() {
 function isRunning() { return state.turn?.status === 'running'; }
 function renderControls() {
   const connected = state.connected && state.connection === 'live';
-  const busy = isRunning() || state.submitting;
+  const running = isRunning(), hasMessage = Boolean($('message-input').value.trim());
   $('message-input').disabled = !state.connected;
-  $('send-message').disabled = !connected || busy || !$('message-input').value.trim();
-  $('send-message').hidden = isRunning();
-  $('cancel-turn').hidden = !isRunning();
+  $('send-message').disabled = !connected || running || state.submitting || !hasMessage;
+  $('send-message').hidden = running;
+  $('send-hint').hidden = running;
+  for (const id of ['steer-turn', 'follow-up-turn']) {
+    $(id).hidden = !running;
+    $(id).disabled = !connected || state.submitting || state.cancelling || !hasMessage;
+  }
+  $('resume-follow-ups').disabled = !connected || state.submitting;
+  $('cancel-turn').hidden = !running;
   $('cancel-turn').disabled = state.cancelling || !connected;
   $('new-session').disabled = !state.connected || state.creating;
   $('open-settings').disabled = !state.connected || state.settingsBusy;
-  $('message-input').placeholder = isRunning() ? 'Agent 正在执行；可先写下下一条消息…' : '描述你的任务，或问一个关于代码的问题…';
+  $('message-input').placeholder = running ? '调整当前任务（Enter），或排到下一轮…' : '描述你的任务，或问一个关于代码的问题…';
 }
 function currentTurnEvents() {
   const start = state.events.findLastIndex(event => event.type === 'turn.started');
@@ -181,11 +187,11 @@ function renderRichText(container, content) {
     } else container.append(node('span', '', part));
   }
 }
-function messageElement(role, content, streaming = false) {
+function messageElement(role, content, streaming = false, steered = false) {
   const item = node('article', `message ${role}`);
   item.append(node('div', `message-avatar${role === 'assistant' ? ' agent-avatar' : ''}`, role === 'assistant' ? 'k' : '你'));
   const body = node('div', 'message-content');
-  body.append(node('span', 'message-label', role === 'assistant' ? 'Kraken' : '你'));
+  body.append(node('span', 'message-label', role === 'assistant' ? 'Kraken' : steered ? '你 · 调整任务' : '你'));
   const prose = node('div', `message-text${streaming ? ' streaming-text' : ''}`);
   renderRichText(prose, content);
   body.append(prose);
@@ -207,7 +213,7 @@ function buildItems() {
     if (event.type === 'message') {
       const message = event.message;
       if (!message) continue;
-      if (message.role === 'user') items.push({ type: 'message', role: 'user', content: message.content });
+      if (message.role === 'user') items.push({ type: 'message', role: 'user', content: message.content, steered: message.steered });
       if (message.role === 'assistant') {
         if (message.reasoningContent?.trim()) items.push({ type: 'reasoning', id: index, content: message.reasoningContent });
         if (message.content) items.push({ type: 'message', role: 'assistant', content: message.content });
@@ -273,7 +279,7 @@ function renderConversation() {
   $('welcome').hidden = items.length > 0 || !state.connected;
   const fragment = document.createDocumentFragment();
   for (const item of items) {
-    if (item.type === 'message') fragment.append(messageElement(item.role, item.content));
+    if (item.type === 'message') fragment.append(messageElement(item.role, item.content, false, item.steered));
     else if (item.type === 'reasoning') fragment.append(reasoningElement(item));
     else if (item.type === 'tool') fragment.append(toolElement(item));
     else fragment.append(node('div', `turn-notice${item.error ? ' error' : ''}`, item.content));
@@ -318,7 +324,22 @@ function renderApprovals() {
     card.append(actions); list.append(card);
   }
 }
-function render() { renderSessions(); renderConversation(); renderApprovals(); }
+function renderQueue() {
+  $('input-queue').hidden = !state.inputs.length;
+  $('resume-follow-ups').hidden = isRunning() || !state.inputs.some(item => item.kind === 'follow_up');
+  const rows = state.inputs.map(item => {
+    const row = node('li', 'queued-input');
+    const status = item.kind === 'follow_up' ? '下一轮' : isRunning() && item.turnId === state.turn.id ? '待调整' : '未送达';
+    const remove = node('button', 'queue-button', '移除');
+    remove.type = 'button';
+    remove.disabled = state.connection !== 'live';
+    remove.addEventListener('click', () => { void removeInput(item.id); });
+    row.append(node('span', 'queued-input-kind', status), node('span', 'queued-input-text', item.message), remove);
+    return row;
+  });
+  $('queued-inputs').replaceChildren(...rows);
+}
+function render() { renderSessions(); renderConversation(); renderApprovals(); renderQueue(); }
 function consumeFrame(frame, generation) {
   if (generation !== state.generation) return;
   setConnection('live');
@@ -326,6 +347,7 @@ function consumeFrame(frame, generation) {
     state.events = frame.snapshot.events;
     state.turn = frame.snapshot.turn;
     state.approvals = frame.snapshot.approvals;
+    state.inputs = frame.snapshot.inputs ?? [];
     state.delta = ''; state.reasoningDelta = '';
     mergeSession(frame.snapshot.session);
     render();
@@ -335,6 +357,7 @@ function consumeFrame(frame, generation) {
   if (frame.type === 'state') {
     state.turn = frame.turn;
     state.approvals = frame.approvals;
+    state.inputs = frame.inputs ?? [];
     if (frame.turn?.status !== 'running') {
       state.delta = ''; state.reasoningDelta = ''; state.cancelling = false;
       void refreshSessions();
@@ -376,7 +399,7 @@ async function streamSession(id, generation, controller) {
         state.stream = null;
         const recovery = ++state.generation;
         state.selectedId = null; state.events = []; state.turn = null;
-        state.approvals = []; state.delta = ''; state.reasoningDelta = ''; state.submitting = false; state.cancelling = false;
+        state.approvals = []; state.inputs = []; state.delta = ''; state.reasoningDelta = ''; state.submitting = false; state.cancelling = false;
         state.pendingApprovals.clear(); state.expandedTools.clear(); state.expandedReasoning.clear();
         try { sessionStorage.removeItem(selectionKey); } catch { /* Optional preference. */ }
         showNotice('这个会话已不存在，或不属于当前工作区 / 模型。请选择其他会话，或新建会话。');
@@ -394,6 +417,7 @@ async function streamSession(id, generation, controller) {
       }
       setConnection('reconnecting');
       renderApprovals();
+      renderQueue();
       if (attempts >= 2) showNotice('与 Agent Server 的连接已断开，正在重连。服务端任务会继续运行；重新连接后将恢复会话状态。');
       const delay = Math.min(8000, 1000 * 2 ** Math.min(attempts++, 3));
       await new Promise(resolve => {
@@ -408,7 +432,7 @@ async function streamSession(id, generation, controller) {
 function requireConnection(message) {
   ++state.generation;
   state.stream = null; state.connected = false;
-  state.turn = null; state.approvals = []; state.delta = ''; state.reasoningDelta = '';
+  state.turn = null; state.approvals = []; state.inputs = []; state.delta = ''; state.reasoningDelta = '';
   state.submitting = false; state.cancelling = false;
   state.pendingApprovals.clear();
   $('connection-panel').hidden = false;
@@ -421,7 +445,7 @@ async function selectSession(id) {
   state.stream?.abort();
   const generation = ++state.generation;
   state.selectedId = id;
-  state.events = []; state.turn = null; state.approvals = []; state.delta = ''; state.reasoningDelta = ''; state.streamingReasoningOpen = true;
+  state.events = []; state.turn = null; state.approvals = []; state.inputs = []; state.delta = ''; state.reasoningDelta = ''; state.streamingReasoningOpen = true;
   state.submitting = false; state.cancelling = false;
   state.pendingApprovals.clear(); state.expandedTools.clear(); state.expandedReasoning.clear();
   showNotice('');
@@ -450,10 +474,10 @@ async function createSession() {
     return null;
   } finally { if (auth === state.authGeneration) { state.creating = false; renderControls(); } }
 }
-async function sendMessage() {
+async function sendMessage(kind) {
   const input = $('message-input');
   const message = input.value.trim();
-  if (!message || !state.client || state.submitting || isRunning() || state.connection !== 'live') return;
+  if (!message || !state.client || state.submitting || state.cancelling || state.connection !== 'live' || Boolean(kind) !== isRunning()) return;
   let generation = state.generation;
   state.submitting = true; renderControls(); showNotice('');
   try {
@@ -465,10 +489,15 @@ async function sendMessage() {
     }
     const id = state.selectedId;
     const previousTurnId = state.turn?.id;
-    const turn = await state.client.startTurn(id, message);
+    if (kind) {
+      await state.client.queueInput(id, previousTurnId, kind, message);
+    } else {
+      const turn = await state.client.startTurn(id, message);
+      if (generation !== state.generation) return;
+      // The stream can finish before the command response arrives: do not rewind it.
+      if (!state.turn || state.turn.id === previousTurnId || (state.turn.id === turn.id && state.turn.status === 'running')) state.turn = turn;
+    }
     if (generation !== state.generation) return;
-    // The stream can finish before the command response arrives: do not rewind it.
-    if (!state.turn || state.turn.id === previousTurnId || (state.turn.id === turn.id && state.turn.status === 'running')) state.turn = turn;
     if (input.value.trim() === message) input.value = '';
     resizeComposer(); render();
     $('messages-scroll').scrollTop = $('messages-scroll').scrollHeight;
@@ -478,6 +507,21 @@ async function sendMessage() {
       else showNotice(`未收到明确的发送结果：${errorText(error)}。请求可能已被服务端接收，请先检查当前会话和执行状态，再决定是否重试；页面不会自动重发。`);
     }
   } finally {
+    if (generation === state.generation) { state.submitting = false; renderControls(); }
+  }
+}
+async function removeInput(inputId) {
+  const generation = state.generation;
+  try { await state.client.removeInput(state.selectedId, inputId); }
+  catch (error) { if (generation === state.generation) showNotice(`移除失败：${errorText(error)}`); }
+}
+async function resumeFollowUps() {
+  if (isRunning() || state.submitting || state.connection !== 'live') return;
+  const generation = state.generation;
+  state.submitting = true; renderControls(); showNotice('');
+  try { await state.client.resumeFollowUps(state.selectedId); }
+  catch (error) { if (generation === state.generation) showNotice(`无法继续队列：${errorText(error)}`); }
+  finally {
     if (generation === state.generation) { state.submitting = false; renderControls(); }
   }
 }
@@ -503,7 +547,7 @@ async function connect(token) {
   const auth = ++state.authGeneration;
   state.stream?.abort(); ++state.generation;
   state.connected = false; state.selectedId = null;
-  state.events = []; state.turn = null; state.approvals = []; state.delta = ''; state.reasoningDelta = ''; state.streamingReasoningOpen = true;
+  state.events = []; state.turn = null; state.approvals = []; state.inputs = []; state.delta = ''; state.reasoningDelta = ''; state.streamingReasoningOpen = true;
   state.creating = false; state.submitting = false; state.cancelling = false;
   state.client = new AgentClient(location.origin, token);
   text('connection-error', ''); setConnection('connecting'); render();
@@ -573,8 +617,11 @@ function resizeComposer() {
 $('composer-form').addEventListener('submit', event => { event.preventDefault(); void sendMessage(); });
 $('message-input').addEventListener('input', resizeComposer);
 $('message-input').addEventListener('keydown', event => {
-  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); void sendMessage(); }
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); void sendMessage(isRunning() ? 'steer' : undefined); }
 });
+$('steer-turn').addEventListener('click', () => { void sendMessage('steer'); });
+$('follow-up-turn').addEventListener('click', () => { void sendMessage('follow_up'); });
+$('resume-follow-ups').addEventListener('click', () => { void resumeFollowUps(); });
 $('new-session').addEventListener('click', () => { void createSession(); });
 $('open-settings').addEventListener('click', () => { void openSettings(); });
 $('close-settings').addEventListener('click', () => $('settings-dialog').close());

@@ -1,5 +1,5 @@
 import { validateConfig, type Config } from '../config.js';
-import type { Emit, Message, Provider } from './types.js';
+import type { Emit, LoopRuntime, Message, Provider } from './types.js';
 import { errorText } from './validation.js';
 import { algorithms } from '../learning/index.js';
 import { Workspace } from '../tools/workspace.js';
@@ -13,6 +13,7 @@ import { ResponsesProvider } from '../providers/responses.js';
 export interface AgentOptions {
   config: Config; workspace: string; home: string; session: string;
   allowShell?: boolean; approve?: Approve; emit?: Emit; provider?: Provider;
+  takeSteering?: LoopRuntime['takeSteering'];
 }
 export function createProvider(config: Config, emit: Emit): Provider {
   if (config.provider === 'demo') return new DemoProvider();
@@ -48,7 +49,7 @@ export async function runTurn(options: AgentOptions, input: string, signal: Abor
     registerBuiltins(registry, workspace, alg, instructions, skills, emit);
     const schemas = registry.schemas(), schemaChars = JSON.stringify(schemas).length;
     const answer = await alg.runLoop([system, ...restored, user], {
-      provider, tools: schemas, maxSteps: config.maxSteps, signal: active, emit, checkpoint,
+      provider, tools: schemas, maxSteps: config.maxSteps, signal: active, emit, checkpoint, takeSteering: options.takeSteering,
       execute: (call, s) => registry.execute(call, s),
       context(messages) {
         const context = alg.fitContext(messages, config.contextChars - schemaChars);
