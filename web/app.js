@@ -617,7 +617,10 @@ function resizeComposer() {
 $('composer-form').addEventListener('submit', event => { event.preventDefault(); void sendMessage(); });
 $('message-input').addEventListener('input', resizeComposer);
 $('message-input').addEventListener('keydown', event => {
-  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); void sendMessage(isRunning() ? 'steer' : undefined); }
+  // Some browsers end composition before dispatching its confirming Enter.
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return;
+  event.preventDefault();
+  void sendMessage(isRunning() ? 'steer' : undefined);
 });
 $('steer-turn').addEventListener('click', () => { void sendMessage('steer'); });
 $('follow-up-turn').addEventListener('click', () => { void sendMessage('follow_up'); });
