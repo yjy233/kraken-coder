@@ -29,11 +29,19 @@ Schema 校验器实现本项目需要的有限 JSON Schema 子集：object、str
 
 ## 策略和 shell 开关
 
-`read-only` 拒绝项目修改和所有 shell。`ask` 对修改与 shell 逐次审批。`workspace-write` 自动应用文件补丁，shell 仍需审批。`full-auto` 自动允许两者。
+`read-only` 拒绝项目修改和所有 shell。`ask` 把补丁和命令交给用户审批。`auto-review` 把同一份操作交给当前模型单独审核。`workspace-write` 自动应用文件补丁，shell 仍需审批。`full-auto` 自动允许两者。
 
-无论哪种策略，未传 `--allow-shell` 时 shell 都被拒绝。CLI 没有从 config.json 自动开启 shell 的选项。审批等待受回合取消/总超时控制；只认可输入 `y`，空输入视为拒绝。
+服务启动时的 `--allow-shell` 决定能否使用 shell。运行中切换审批模式从下一回合生效。CLI 输入 `y` 批准本次，直接回车拒绝，有可记忆的规则时还可输入 `p`。
 
-`shell` 不是“只读命令的捷径”，所以即使 `ls` 也需要 shell 权限。只读浏览应使用内置文件工具。
+自动审核通过一次独立、无工具的模型请求读取本轮用户要求、已送达的调整、工作区路径及完整操作预览。审核结果为允许、拒绝或转人工。遇到离线 Demo、模型错误、无效回复或审核预算不足时，操作等待人工审批。审核文字不进入任务对话。
+
+## 记住命令
+
+人工审批卡片只对能识别的命令显示「此工作区以后允许」。`git status`、`git ls-files`、`ls`、`pwd` 可带实现中列出的展示参数。例如批准 `git status --short` 后，`git status -sb` 也可使用这条规则。带路径、管道、重定向或命令拼接的请求仍按当前审批模式处理。
+
+`npm test` 和 `npm run test/build/typecheck/lint/verify` 按完整命令逐条记忆。例如记住 `npm run build` 只授权该工作区运行同名脚本，执行时使用项目当时的脚本内容，追加参数需要重新审批。
+
+命令匹配先经过 shell 开关和权限策略。只有用户能保存规则，审核模型的同意只对当前操作生效。规则跨会话和重启有效。每条规则对应文件 `~/.kraken-coder/command-rules/<工作区真实路径的 SHA-256>/<命令名>`，删除对应文件即可撤销；下一次检查会重新读取。匹配和可记忆参数见[命令规则](../src/permissions/command-rules.ts)。
 
 ## Patch 子集
 

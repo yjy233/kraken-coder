@@ -24,7 +24,7 @@
 | tool.start / tool.end | 工具执行与 ok 状态 |
 | approval.request / approval.result | 具体审批预览与决定 |
 | files.changed / plan.updated | 文件路径和计划事件 |
-| context.trimmed | 本次请求删去了多少条旧消息 |
+| context.trimmed | 本次请求裁掉的旧消息和压缩的工具结果数量 |
 | turn.completed / turn.failed / turn.cancelled | 回合结束状态 |
 
 每次 append 后调用 fsync。API Key 不写入配置或元数据，但用户输入、文件内容、命令输出、推理协议字段会进入日志。它不是加密存储，也不是自动脱敏系统。新建日志权限为 0600。
@@ -64,7 +64,7 @@ assistant 调用意图落盘
 
 ## L4 的预算
 
-每次模型请求前计算消息 JSON 字符数，预算预先扣除工具 schema 的 JSON 字符数。超限时从最早旧 user 消息开始，删到下一个 user 之前；system 与当前用户回合始终保留。
+每次模型请求前估算消息与工具 schema 的体积。能从模型接口获得窗口时，默认在估算 token 达到窗口的 80% 时裁剪。没有窗口时使用本地字符预算。超限时优先从最早的完整旧回合开始删，system 和当前轮的用户要求及 steer 始终保留。
 
 ```text
 system | user1 assistant tool assistant | user2 assistant | user3 assistant tool
@@ -73,9 +73,9 @@ system | user1 assistant tool assistant | user2 assistant | user3 assistant tool
 
 此处按整个用户回合裁剪，所有 call_id 配对自然一起移动。对于 Responses，`responseItems` 包含 reasoning 和 function_call，它们也随整轮保留或删除。
 
-这只是可解释的字符预算，不等于模型真实 token 上限，也不会处理所有远端 context length 错误。若当前回合本身过大，运行会报错，读者可缩小读取结果、开始新会话或调整 `--context-chars`。不要无限增大到服务本身不支持的大小。
+如果当前回合本身也过大，先缩短较早的文件内容、搜索和命令输出，保留读到的目录指令、调用 ID 与工具结果间的配对。如果仍超预算，用户可以缩小读取范围、开始新会话或调整预算。token 估算以 UTF-8 JSON 字节数为依据，与供应商 tokenizer 的计数可能有差异。
 
-完整消息从未被裁剪出 JSONL。下次恢复仍从完整历史重新计算请求窗口。这里没有摘要生成、长期记忆、向量检索或远端 compaction checkpoint；想添加这些机制时，应在“工作上下文”和“原始轨迹”之间保留清楚边界。
+裁剪和压缩只改变模型收到的输入。JSONL 保留原有消息，下次恢复时从日志重新计算请求窗口。工具输出的压缩采用首尾保留的方式。
 
 ## 查看数据
 

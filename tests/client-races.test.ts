@@ -12,7 +12,7 @@ test('remote CLI cancellation stops an unfinished SSE handshake without submitti
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); }));
   const address = server.address(); assert.ok(address && typeof address === 'object');
-  const client = new AgentClient(`http://127.0.0.1:${address.port}`, 'test-token');
+  const client = new AgentClient(`http://127.0.0.1:${address.port}`);
   await assert.rejects(runRemoteTurn({ client, session: 's', message: 'task', emit: () => {}, approve: async () => false, signal: controller.signal }), /cancel opening connection/);
   assert.equal(requests, 1);
 });
@@ -22,6 +22,7 @@ test('remote CLI identifies its result when later turn events arrive before its 
   let stream: ServerResponse, acknowledgement: ServerResponse;
   const send = (frame: ServerFrame) => stream.write(`data: ${JSON.stringify(frame)}\n\n`);
   const server = createServer((req, res) => {
+    assert.equal(req.headers.authorization, undefined);
     if (req.url?.endsWith('/events')) {
       stream = res;
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
@@ -44,7 +45,7 @@ test('remote CLI identifies its result when later turn events arrive before its 
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise<void>(resolve => { stream?.end(); acknowledgement?.end(); server.close(() => resolve()); server.closeAllConnections(); }));
   const address = server.address(); assert.ok(address && typeof address === 'object');
-  const client = new AgentClient(`http://127.0.0.1:${address.port}`, 'test-token');
+  const client = new AgentClient(`http://127.0.0.1:${address.port}`);
   const watch = client.watchSession.bind(client);
   client.watchSession = (id, onFrame, signal) => watch(id, frame => {
     onFrame(frame);

@@ -17,7 +17,7 @@ async function fixture(t: test.TestContext, provider?: Provider) {
   await writeFile(join(workspace, 'hello.txt'), '来自共享服务的内容');
   const server = await startAgentServer({ config: { ...defaults, mode: 'learner' }, workspace, home: join(workspace, '.kraken-coder'), port: 0, provider });
   t.after(async () => { await server.close(); await rm(workspace, { recursive: true, force: true }); });
-  return { server, client: new AgentClient(server.url, server.token), workspace };
+  return { server, client: new AgentClient(server.url), workspace };
 }
 
 test('shared SDK observes remote turns and CLI resumes the same server-owned session', async t => {
@@ -26,16 +26,14 @@ test('shared SDK observes remote turns and CLI resumes the same server-owned ses
   const answer = await runRemoteTurn({ client, session: session.id, message: '/read hello.txt', emit: event => events.push(event), approve: async () => false, signal: new AbortController().signal });
   assert.match(answer, /来自共享服务的内容/);
   assert.ok(events.some(e => e.type === 'tool.end' && e.ok === true));
-  const url = `${server.url}/#token=${server.token}`;
-  const result = await exec(process.execPath, ['--import', 'tsx', resolve('src/cli.ts'), 'exec', '--server', url, '--session', session.id, '--message', '/files', '--json'], { timeout: 15_000 });
+  const result = await exec(process.execPath, ['--import', 'tsx', resolve('src/cli.ts'), 'exec', '--server', server.url, '--session', session.id, '--message', '/files', '--json'], { timeout: 15_000 });
   const output = result.stdout.trim().split('\n').map(line => JSON.parse(line));
   assert.equal(output.at(-1).type, 'turn.completed');
   assert.match(output.at(-1).answer, /hello.txt/);
   const snapshot = await client.session(session.id);
   assert.equal(snapshot.events.filter(e => e.type === 'turn.completed').length, 2);
-  const sessions = await exec(process.execPath, ['--import', 'tsx', resolve('src/cli.ts'), 'sessions', '--server', url], { timeout: 15_000 });
+  const sessions = await exec(process.execPath, ['--import', 'tsx', resolve('src/cli.ts'), 'sessions', '--server', server.url], { timeout: 15_000 });
   assert.equal(JSON.parse(sessions.stdout)[0].id, session.id);
-  assert.doesNotMatch(result.stdout + result.stderr, new RegExp(server.token));
 });
 
 test('remote client relays approval decisions; rejecting a patch never changes the file', async t => {
@@ -64,7 +62,7 @@ test('remote client cancellation reaches an in-flight model call', async t => {
 
 test('remote CLI rejects local permission overrides instead of silently ignoring them', async t => {
   const { server } = await fixture(t);
-  await assert.rejects(exec(process.execPath, ['--import', 'tsx', resolve('src/cli.ts'), 'exec', '--server', `${server.url}/#token=${server.token}`, '--approval', 'full-auto', '--message', '/files']), error => {
+  await assert.rejects(exec(process.execPath, ['--import', 'tsx', resolve('src/cli.ts'), 'exec', '--server', server.url, '--approval', 'full-auto', '--message', '/files']), error => {
     assert.match((error as { stderr: string }).stderr, /owned by the server/); return true;
   });
 });

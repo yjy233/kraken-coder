@@ -70,7 +70,7 @@ export const runLoop: Algorithms['runLoop'] = async (messages, runtime) => {
   throw new Error('Step limit reached');
 };
 
-// L2：审批策略和操作系统沙箱不是一回事；shell 必须独立开启。
+// L2：shell 必须独立开启。ask 和 auto-review 均交给工具注册表发起审批。
 export const decide: Algorithms['decide'] = (policy, effect, shellEnabled) => {
   if (effect === 'read' || effect === 'state') return 'allow';
   if (policy === 'read-only') return 'deny';
@@ -96,10 +96,10 @@ export const replaceText: Algorithms['replaceText'] = (source, before, after) =>
 
 // L4：仅删除完整旧用户轮次，不能从 assistant/tool 中间切开。
 // 这是可解释的整轮裁剪，并非模型语义摘要；完整轨迹仍在 JSONL 中。
-export const fitContext: Algorithms['fitContext'] = (messages, maxChars) => {
+export const fitContext: Algorithms['fitContext'] = (messages, maxSize, size = messages => JSON.stringify(messages).length) => {
   validateHistory(messages);
   let context = messages.slice();
-  while (JSON.stringify(context).length > maxChars) {
+  while (size(context) > maxSize) {
     const first = context.findIndex(m => m.role === 'user' && !m.steered);
     const second = context.findIndex((m, i) => i > first && m.role === 'user' && !m.steered);
     if (first === -1) throw new Error('Context budget exceeded by instructions; increase --context-chars');

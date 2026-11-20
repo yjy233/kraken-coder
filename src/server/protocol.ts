@@ -1,8 +1,11 @@
-import type { Config, TimeoutSettings } from '../config.js';
-import type { Event, Effect } from '../core/types.js';
+import type { Config, RuntimeSettings, TimeoutSettings } from '../config.js';
+import type { ContextBudget } from '../context/budget.js';
+import type { Event } from '../core/types.js';
+import type { ApprovalRequest } from '../tools/registry.js';
 
 /** Versioned transport boundary shared by browser, CLI and future IDE clients. */
 export const API_VERSION = 1;
+export interface ServerSettings extends RuntimeSettings { contextBudget: ContextBudget }
 export interface ServerInfo extends TimeoutSettings {
   version: 1;
   workspace: string;
@@ -22,12 +25,9 @@ export interface TurnState {
   status: 'running' | 'completed' | 'cancelled' | 'failed';
   error?: string;
 }
-export interface PendingApproval {
+export interface PendingApproval extends ApprovalRequest {
   id: string;
   turnId: string;
-  name: string;
-  effect: Effect;
-  preview: string;
 }
 export interface PendingInput {
   id: string;

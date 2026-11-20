@@ -13,9 +13,9 @@ npm run serve -- --mode learner --allow-shell
 # 等价：npm run dev -- serve --mode learner --allow-shell --port 4317
 ```
 
-服务读取启动目录的 `.env`，默认监听 `127.0.0.1:4317`，默认审批策略仍为 `ask`。打开终端打印的完整 URL。页面支持新建/切换会话、聊天、工具调用与结果、审批、取消和断线重连。省略 `--allow-shell` 时，文件读取和审批后的补丁仍可使用，shell 不可执行。
+服务从启动目录的 `.env` 读取模型配置和 API Key，默认审批策略为 `ask`。在本机浏览器打开 <http://127.0.0.1:4317/>，页面会自动连接。指定其他端口时，打开终端打印的地址。页面支持新建/切换会话、聊天、工具调用与结果、审批、取消和断线重连。省略 `--allow-shell` 时，文件读取和审批后的补丁仍可使用，shell 不可执行。
 
-右上角“运行设置”可修改单次模型请求时限（默认 3 分钟）和整轮任务时限（默认 3 小时）。保存后写入 `.env` 并从下一轮任务生效，当前回合不会重新计时。手动配置方式见 [模型配置](06-providers.md)。其他客户端打开设置时会重新读取最新值。
+点击输入框下方的权限名称，或打开右上角「运行设置」，可以选择工具审批模式。这里也可以调整单次请求和整轮时限、上下文压缩比例及模型窗口。设置保存到 `.env`，从下一轮任务生效。其他客户端打开设置时会重新读取最新值。手动配置见 [模型配置](06-providers.md)。
 
 离线观察同一套客户端和协议：
 
@@ -26,22 +26,19 @@ npm run serve -- --provider demo --approval read-only
 
 Demo 的动作来自固定脚本，不能理解任意自然语言。真实模型的接入方式见 [06 模型接入](06-providers.md)。
 
-服务打印的地址形式为 `http://127.0.0.1:4317/#token=...`。这里的 token 授权客户端访问当前服务；它与 LLM API Key 独立。浏览器读取 fragment 后保存到当前标签页的 `sessionStorage`，再清除地址栏中的 fragment。API Key 始终由服务端读取，页面没有模型密钥配置表单。
-
 连接同一个服务的 CLI：
 
 ```bash
-# 将 URL 替换为 serve 打印的完整地址
-npm run dev -- chat --server 'http://127.0.0.1:4317/#token=...'
+npm run dev -- chat --server http://127.0.0.1:4317
 
 # 加入已有会话，ID 可从 Web 会话信息中获取
-npm run dev -- chat --server 'http://127.0.0.1:4317/#token=...' --session SESSION_ID
+npm run dev -- chat --server http://127.0.0.1:4317 --session SESSION_ID
 
 # 一次任务，stdout 输出 JSONL 事件
-npm run dev -- exec --server 'http://127.0.0.1:4317/#token=...' --message '/files' --json
+npm run dev -- exec --server http://127.0.0.1:4317 --message '/files' --json
 ```
 
-也可通过 `KRAKEN_SERVER_TOKEN` 环境变量传入连接 token，此时 `--server` 只填服务地址。模型、模式、审批策略、shell 权限和工作区由服务启动参数决定，客户端不能通过提交任务修改它们。普通 `chat/exec` 不加 `--server` 时，仍直接调用本地核心。
+模型、算法模式、shell 开关和工作区由服务启动配置决定。审批策略可通过设置接口更改，提交任务只需发送消息。普通 `chat/exec` 不加 `--server` 时直接调用本地核心。
 
 ## 源码边界
 
@@ -61,13 +58,13 @@ flowchart LR
 | 入口 | 负责的状态 |
 | --- | --- |
 | [`web/app.js`](../web/app.js) | 当前页面选中的会话、消息视图、输入草稿、连接状态 |
-| [`src/client/client.js`](../src/client/client.js) | HTTP 请求、token、SSE 帧解析；浏览器与 CLI 共用 |
+| [`src/client/client.js`](../src/client/client.js) | 浏览器与 CLI 共用的 HTTP 请求和 SSE 帧解析 |
 | [`src/client/remote-turn.ts`](../src/client/remote-turn.ts) | CLI 回合等待、终端审批、取消请求 |
 | [`src/server/protocol.ts`](../src/server/protocol.ts) | 跨客户端的数据类型与协议版本 |
 | [`src/server/server.ts`](../src/server/server.ts) | 执行中的回合、审批 Promise、事件订阅与本机 HTTP 服务 |
 | [`src/core/agent.ts`](../src/core/agent.ts) | 指令、上下文、模型/工具循环、会话日志与回合超时 |
 
-客户端不会把工具名解释成一次文件写入或 shell 执行。它把审批 ID 和布尔决定交回服务端，服务端才让原来等待的工具调用继续。这样 Web 和 CLI 展示不同界面，也能遵守同一份执行策略。
+客户端把审批 ID、是否批准和可选的记忆选择交回服务端。服务端核对该待审操作后继续工具调用，Web 和 CLI 共用同一份执行策略。
 
 ## 命令、状态与事件
 
@@ -77,13 +74,13 @@ flowchart LR
 - `turn.id`：定位一次正在运行的用户任务，用于取消和状态跟踪。
 - `approval.id`：定位一次具体操作的审批，附带所属 `turnId`；不是对某类工具的永久授权。
 
-所有 API 请求使用 `Authorization: Bearer <token>`。修改请求使用 `Content-Type: application/json`；以下路径都以 `/api/v1` 为前缀。
+本机客户端可直接请求 `/api/v1` 下的接口，例如 `curl http://127.0.0.1:4317/api/v1/info`。修改请求使用 `Content-Type: application/json`。下表省略 `/api/v1` 前缀。
 
 | 方法与路径 | 输入 | 返回 / 行为 |
 | --- | --- | --- |
 | `GET /info` | — | 版本、工作区、provider/model、模式、审批策略、shell 是否启用 |
-| `GET /settings` | — | `{ requestTimeoutMs, turnTimeoutMs }`，毫秒 |
-| `POST /settings` | 两个时限字段 | 校验并写入环境文件，从下一轮生效；返回保存值 |
+| `GET /settings` | — | 审批模式、两个时限（毫秒）、窗口配置、压缩比例和生效预算 |
+| `POST /settings` | 可单独提交 `approval`，也可提交两个时限字段、`contextWindowTokens` 和 `contextCompactRatio` | 保存到环境文件，从下一轮生效 |
 | `GET /sessions` | — | `{ sessions }`，当前工作区与 Provider 匹配的会话 |
 | `POST /sessions` | `{}` | `{ session }`，创建并持久化一个空会话 |
 | `GET /sessions/:id` | — | `SessionSnapshot`：会话、可见事件、回合状态、待审批项 |
@@ -93,7 +90,7 @@ flowchart LR
 | `POST /sessions/:id/inputs` | `{ turnId, kind: "steer" \| "follow_up", message }` | 将消息加入当前回合的待发队列 |
 | `POST /sessions/:id/inputs/:inputId/remove` | `{}` | 移除还未送达的消息 |
 | `POST /sessions/:id/inputs/resume` | `{}` | 空闲时启动第一条暂停的 follow-up |
-| `POST /sessions/:id/approvals/:approvalId` | `{ "approved": true }` | 回复该审批；`false` 表示拒绝 |
+| `POST /sessions/:id/approvals/:approvalId` | `{ "approved": true }`，可选 `"remember": true` | `false` 拒绝。只有待审项含服务端生成的 `commandPrefix` 且用户批准时才能记住 |
 
 `202` 只表示接受了任务，不能当作完成。回合状态为 `running`、`completed`、`cancelled` 或 `failed`。拒绝某个工具审批会作为工具结果反馈给模型；它不必然使整个回合失败。
 
@@ -121,7 +118,7 @@ sequenceDiagram
 
 SSE 的 `data:` 是 `ServerFrame` JSON，分为三类：`snapshot` 替换客户端完整视图，`event` 追加一条可见运行事件，`state` 更新回合、待审批和待发消息列表。`event` 帧携带 `sessionId` 和 `turnId`；即使任务完成先于提交请求的 HTTP 确认、另一个客户端又启动了后续回合，CLI 仍能按回合 ID 取回自己的结果。工具调用与结果继续使用核心的 `toolCalls[].id` / `toolCallId` 配对。
 
-待审批界面以快照或 `state.approvals` 为准，不能把历史 `approval.request` 重新显示成可操作卡片。同一 token 的多个客户端都可回复，第一次有效回复结束等待，其他客户端的旧回复会被拒绝。
+待审批界面以快照或 `state.approvals` 为准，不能把历史 `approval.request` 重新显示成可操作卡片。连接同一服务的本机客户端都可回复，第一次有效回复结束等待，其他客户端的旧回复会被拒绝。
 
 运行中可以按 Enter 或点「调整当前任务」发送 steer。正在进行的模型请求和整组工具先结束，随后把新指令作为用户消息写入当前回合，交给下一次模型请求。调整沿用当前回合的步数与时限，步数用尽时待发区会显示「未送达」。
 
@@ -145,9 +142,9 @@ Web 可随时查看并处理运行中的会话；当前 CLI 适配器在提交�
 
 ## 本机服务的边界
 
-服务仅绑定 `127.0.0.1`，校验 Host、Origin 和 API token，没有开放跨域访问。静态资源采用固定列表，不会把整个工作区变成文件服务器。`/info` 不返回模型密钥；发送给客户端的消息包含模型返回的 `reasoningContent` 文本，但移除原始 `responseItems` 和系统指令快照，不展示加密推理状态。模型恢复仍使用服务端的完整日志。
+服务仅绑定 `127.0.0.1`，检查 Host 并拒绝跨来源请求。静态资源采用固定列表，不会把整个工作区变成文件服务器。`/info` 不返回模型密钥；发送给客户端的消息包含模型返回的 `reasoningContent` 文本，但移除原始 `responseItems` 和系统指令快照，不展示加密推理状态。模型恢复仍使用服务端的完整日志。
 
-连接 token 可提交任务和回复审批，因此持有 token 的客户端具有相同控制权。这版没有多用户身份、不同客户端权限、远程部署鉴权或 OS 沙箱。原有 shell 仍以当前系统用户运行；仅监听本机不改变工具执行权限。一次一个回合的约束也只覆盖当前服务实例，不是跨进程的工作区锁。
+任何能访问该端口的本机进程都可以提交任务和回复审批。工具按服务启动时选择的策略执行，启用的 shell 以当前系统用户身份运行。每个服务实例同时只执行一个回合。
 
 ## 后续接 VS Code
 

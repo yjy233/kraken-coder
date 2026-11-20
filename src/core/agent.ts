@@ -6,6 +6,8 @@ import { Workspace } from '../tools/workspace.js';
 import { ToolRegistry, type Approve } from '../tools/registry.js';
 import { registerBuiltins } from '../tools/builtins.js';
 import { Instructions, listSkills, systemPrompt } from '../context/instructions.js';
+import { contextSize, fitModelContext, resolveContextBudget } from '../context/budget.js';
+import { createReviewer } from '../permissions/reviewer.js';
 import { SessionStore } from '../session/store.js';
 import { DemoProvider } from '../providers/demo.js';
 import { CompatibleProvider } from '../providers/compatible.js';
@@ -40,20 +42,35 @@ export async function runTurn(options: AgentOptions, input: string, signal: Abor
     const instructions = new Instructions(workspace), skills = await listSkills(workspace);
     const system: Message = { role: 'system', content: await systemPrompt(workspace, instructions, skills) };
     const raw = store.messages(), restored = alg.replay(raw);
-    const checkpoint = (message: Message): void => emit({ type: 'message', message });
+    const userMessages = [input];
+    const checkpoint = (message: Message): void => {
+      if (message.role === 'user' && message.steered) userMessages.push(message.content);
+      emit({ type: 'message', message });
+    };
     for (const repair of restored.slice(raw.length)) checkpoint(repair);
     emit({ type: 'turn.started', session: options.session, mode: config.mode, approval: config.approval, shellEnabled: options.allowShell === true });
     emit({ type: 'instructions.snapshot', content: system.content });
     const user: Message = { role: 'user', content: input }; checkpoint(user);
-    const registry = new ToolRegistry({ policy: config.approval, shellEnabled: options.allowShell === true, algorithms: alg, approve: options.approve ?? (async () => false), emit });
+    const budget = await resolveContextBudget(config, options.provider === undefined);
+    active.throwIfAborted();
+    const reviewer = config.approval === 'auto-review' && config.provider !== 'demo'
+      ? createReviewer(() => createProvider(config, () => {}), workspace.root, userMessages, budget)
+      : undefined;
+    const registry = new ToolRegistry({
+      policy: config.approval, workspace: workspace.root, shellEnabled: options.allowShell === true,
+      algorithms: alg, approve: options.approve ?? (async () => false), reviewer, emit,
+    });
     registerBuiltins(registry, workspace, alg, instructions, skills, emit);
-    const schemas = registry.schemas(), schemaChars = JSON.stringify(schemas).length;
+    const schemas = registry.schemas();
+    const schemaSize = contextSize(schemas, budget);
     const answer = await alg.runLoop([system, ...restored, user], {
       provider, tools: schemas, maxSteps: config.maxSteps, signal: active, emit, checkpoint, takeSteering: options.takeSteering,
       execute: (call, s) => registry.execute(call, s),
       context(messages) {
-        const context = alg.fitContext(messages, config.contextChars - schemaChars);
-        if (context.length !== messages.length) emit({ type: 'context.trimmed', beforeMessages: messages.length, afterMessages: context.length });
+        const { context, compacted } = fitModelContext(messages, budget, schemaSize, alg.fitContext);
+        if (context.length !== messages.length || compacted) {
+          emit({ type: 'context.trimmed', beforeMessages: messages.length, afterMessages: context.length, toolResults: compacted });
+        }
         return context;
       },
     });

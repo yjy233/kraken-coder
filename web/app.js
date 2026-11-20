@@ -1,22 +1,24 @@
 import { AgentClient } from '/client.js';
 
 const $ = id => document.getElementById(id);
-const tokenKey = 'kraken.server.token';
 const selectionKey = 'kraken.server.session';
-const policyLabels = { 'read-only': '只读模式', ask: '操作需审批', 'workspace-write': '工作区可写', 'full-auto': '自动执行' };
+const policyLabels = { ask: '每次问我', 'auto-review': '替我审批', 'full-auto': '完全权限', 'read-only': '只读模式', 'workspace-write': '工作区可写' };
+const policyHelp = {
+  ask: '修改文件或运行命令前请你确认。你可以记住常用命令。',
+  'auto-review': '由当前模型单独审核补丁和命令。审核无法判断时交给你确认。',
+  'full-auto': '直接应用补丁；启用 Shell 后，命令以你的本机用户身份执行。',
+  'read-only': '只允许读取文件和更新计划。',
+  'workspace-write': '直接应用工作区补丁，运行命令前请你确认。',
+};
 const state = {
   client: null, info: null, sessions: [], selectedId: null, events: [], turn: null, approvals: [], inputs: [],
-  delta: '', reasoningDelta: '', streamingReasoningOpen: true, stream: null, generation: 0, authGeneration: 0, connected: false,
+  delta: '', reasoningDelta: '', stream: null, generation: 0, connected: false,
   submitting: false, creating: false, cancelling: false, settingsBusy: false, pendingApprovals: new Set(),
-  expandedTools: new Set(), expandedReasoning: new Set(), connection: 'connecting', notice: '',
+  connection: 'connecting', notice: '',
 };
-const tokenFromLink = new URLSearchParams(location.hash.slice(1)).get('token');
-let initialToken = tokenFromLink || '';
-try {
-  if (tokenFromLink) sessionStorage.setItem(tokenKey, tokenFromLink);
-  else initialToken = sessionStorage.getItem(tokenKey) || '';
-} catch { /* Restricted browser storage still permits this tab's connection. */ }
-if (tokenFromLink) history.replaceState(null, '', location.pathname + location.search);
+// Clean up credentials from bookmarks and tabs used by earlier versions.
+if (location.hash.startsWith('#token=')) history.replaceState(null, '', location.pathname + location.search);
+try { sessionStorage.removeItem('kraken.server.token'); } catch { /* Optional storage. */ }
 
 function node(tag, className, content) {
   const element = document.createElement(tag);
@@ -52,7 +54,7 @@ function configure(info) {
   text('composer-permission', policyLabels[info.approval] || info.approval);
   text('config-provider', info.provider);
   text('config-mode', info.mode);
-  text('config-approval', info.approval);
+  text('config-approval', policyLabels[info.approval] || info.approval);
   text('config-shell', info.shellEnabled ? '已启用' : '未启用');
   text('config-protocol', `HTTP + SSE · v${info.version}`);
   text('config-request-timeout', `${Number((info.requestTimeoutMs / 60000).toFixed(3))} 分钟`);
@@ -107,10 +109,8 @@ function mergeSession(session) {
   renderSessions();
 }
 async function refreshSessions() {
-  const client = state.client, auth = state.authGeneration;
   try {
-    const sessions = await client.sessions();
-    if (client !== state.client || auth !== state.authGeneration) return;
+    const sessions = await state.client.sessions();
     state.sessions = sessions;
     renderSessions();
   } catch { /* The stream's connection indicator owns transport errors. */ }
@@ -132,6 +132,7 @@ function renderControls() {
   $('cancel-turn').disabled = state.cancelling || !connected;
   $('new-session').disabled = !state.connected || state.creating;
   $('open-settings').disabled = !state.connected || state.settingsBusy;
+  $('composer-permission').disabled = $('open-settings').disabled;
   $('message-input').placeholder = running ? '调整当前任务（Enter），或排到下一轮…' : '描述你的任务，或问一个关于代码的问题…';
 }
 function currentTurnEvents() {
@@ -160,8 +161,15 @@ function renderInspector() {
     if (event.type === 'turn.started') timeline.push(['任务开始', 'turn.started']);
     if (event.type === 'model.start') timeline.push([`模型步骤 ${Number(event.step) + 1}`, 'model.start']);
     if (event.type === 'tool.start') timeline.push([event.name, 'tool.start']);
+    if (event.type === 'approval.reviewing') timeline.push(['模型正在替你审批', event.name]);
+    if (event.type === 'approval.result') {
+      const label = event.source === 'rule' ? '命中已允许的命令'
+        : event.source === 'reviewer' ? (event.approved ? '模型已批准' : '模型已拒绝')
+        : event.commandPrefix ? '已记住命令规则' : (event.approved ? '你已批准' : '你已拒绝');
+      timeline.push([label, event.commandPrefix || event.name]);
+    }
     if (event.type === 'files.changed') timeline.push(['文件已修改', (event.paths || []).join(', ')]);
-    if (event.type === 'context.trimmed') timeline.push(['已精简旧轮次', 'context.trimmed']);
+    if (event.type === 'context.trimmed') timeline.push([event.toolResults ? `已压缩 ${event.toolResults} 条工具结果` : '已精简旧轮次', 'context.trimmed']);
     if (event.type === 'turn.completed') timeline.push(['本回合完成', 'turn.completed']);
     if (event.type === 'turn.cancelled') timeline.push(['本回合已取消', 'turn.cancelled']);
     if (event.type === 'turn.failed') timeline.push(['本回合失败', 'turn.failed']);
@@ -175,34 +183,44 @@ function renderInspector() {
     list.append(item);
   }
 }
+// Keep existing text and code nodes attached so selections and code scrollbars survive a delta.
 function renderRichText(container, content) {
-  // Parse fenced code only. All model- and tool-provided text goes through textContent.
-  const parts = String(content).split(/(```[^\n]*\n[\s\S]*?```)/g);
-  for (const part of parts) {
+  const parts = content.split(/(```[^\n]*\n[\s\S]*?(?:```|$))/g);
+  let count = 0;
+  for (const [index, part] of parts.entries()) {
     if (!part) continue;
-    if (part.startsWith('```') && part.endsWith('```')) {
-      const pre = node('pre', 'code-block');
-      pre.append(node('code', '', part.slice(part.indexOf('\n') + 1, -3).replace(/\n$/, '')));
-      container.append(pre);
-    } else container.append(node('span', '', part));
+    const code = index % 2 === 1;
+    const value = code ? part.slice(part.indexOf('\n') + 1).replace(/\n?```$/, '') : part;
+    let block = container.children[count++];
+    if (block?.localName !== (code ? 'pre' : 'span')) {
+      const next = code ? node('pre', 'code-block') : node('span');
+      if (code) next.append(node('code'));
+      if (block) block.replaceWith(next);
+      else container.append(next);
+      block = next;
+    }
+    const target = code ? block.firstChild : block;
+    const textNode = target.firstChild;
+    if (!textNode || !value.startsWith(textNode.data)) target.textContent = value;
+    else if (value.length > textNode.length) textNode.appendData(value.slice(textNode.length));
   }
+  while (container.children.length > count) container.lastElementChild.remove();
 }
-function messageElement(role, content, streaming = false, steered = false) {
-  const item = node('article', `message ${role}`);
-  item.append(node('div', `message-avatar${role === 'assistant' ? ' agent-avatar' : ''}`, role === 'assistant' ? 'k' : '你'));
+function messageElement(item) {
+  const article = node('article', `message ${item.role}`);
+  const assistant = item.role === 'assistant';
+  article.append(node('div', `message-avatar${assistant ? ' agent-avatar' : ''}`, assistant ? 'k' : '你'));
   const body = node('div', 'message-content');
-  body.append(node('span', 'message-label', role === 'assistant' ? 'Kraken' : steered ? '你 · 调整任务' : '你'));
-  const prose = node('div', `message-text${streaming ? ' streaming-text' : ''}`);
-  renderRichText(prose, content);
-  body.append(prose);
-  item.append(body);
-  return item;
+  body.append(node('span', 'message-label', assistant ? 'Kraken' : item.steered ? '你 · 调整任务' : '你'), node('div', 'message-text'));
+  article.append(body);
+  return article;
 }
 function pretty(value) {
   if (typeof value !== 'string') return JSON.stringify(value, null, 2) ?? '';
   try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; }
 }
-function buildItems() {
+function buildItems(streamedReply) {
+  let modelStart;
   const items = [], tools = new Map();
   function getTool(id, name) {
     if (tools.has(id)) return tools.get(id);
@@ -210,13 +228,17 @@ function buildItems() {
     tools.set(id, tool); items.push(tool); return tool;
   }
   for (const [index, event] of state.events.entries()) {
+    if (event.type === 'turn.started' || event.type === 'model.start') modelStart = index;
+    if (event.type === 'turn.completed' || event.type === 'turn.cancelled' || event.type === 'turn.failed') modelStart = undefined;
     if (event.type === 'message') {
       const message = event.message;
       if (!message) continue;
-      if (message.role === 'user') items.push({ type: 'message', role: 'user', content: message.content, steered: message.steered });
+      if (message.role === 'user') items.push({ type: 'message', id: index, role: 'user', content: message.content, steered: message.steered });
       if (message.role === 'assistant') {
-        if (message.reasoningContent?.trim()) items.push({ type: 'reasoning', id: index, content: message.reasoningContent });
-        if (message.content) items.push({ type: 'message', role: 'assistant', content: message.content });
+        const id = modelStart ?? index;
+        modelStart = undefined;
+        if (message.reasoningContent?.trim()) items.push({ type: 'reasoning', id, content: message.reasoningContent, open: message === streamedReply });
+        if (message.content) items.push({ type: 'message', id, role: 'assistant', content: message.content });
         for (const call of message.toolCalls || []) {
           const tool = getTool(call.id, call.name); tool.name = call.name; tool.args = call.arguments;
         }
@@ -230,72 +252,124 @@ function buildItems() {
     }
     if (event.type === 'tool.start') getTool(event.callId, event.name).status = 'running';
     if (event.type === 'tool.end') getTool(event.callId, event.name).status = event.ok ? 'completed' : 'failed';
-    if (event.type === 'turn.failed') items.push({ type: 'notice', error: true, content: `执行失败：${event.error || '未知错误'}` });
-    if (event.type === 'turn.cancelled') items.push({ type: 'notice', content: '本回合已停止。你可以发送新的消息继续。' });
+    if (event.type === 'turn.failed') items.push({ type: 'notice', id: index, error: true, content: `执行失败：${event.error || '未知错误'}` });
+    if (event.type === 'turn.cancelled') items.push({ type: 'notice', id: index, content: '本回合已停止。你可以发送新的消息继续。' });
   }
-  return items;
+  return { items, nextReplyId: modelStart };
 }
 function reasoningElement(item) {
   const card = node('details', 'reasoning-card');
-  card.open = item.streaming ? state.streamingReasoningOpen : state.expandedReasoning.has(item.id);
+  card.open = Boolean(item.open);
   const summary = node('summary');
-  summary.append(node('span', 'tool-arrow', '›'), node('span', '', item.streaming && !state.delta ? '模型思考 · 生成中' : '模型思考'));
-  summary.addEventListener('click', event => {
-    event.preventDefault(); card.open = !card.open;
-    if (item.streaming) state.streamingReasoningOpen = card.open;
-    else if (card.open) state.expandedReasoning.add(item.id);
-    else state.expandedReasoning.delete(item.id);
-  });
+  summary.append(node('span', 'tool-arrow', '›'), node('span'));
   const body = node('div', 'reasoning-body');
-  body.append(node('p', 'reasoning-caption', '模型接口返回的思考文本，不代表完整内部推理。'));
-  const prose = node('div', 'message-text');
-  renderRichText(prose, item.content);
-  body.append(prose);
+  body.append(node('p', 'reasoning-caption', '模型接口返回的思考文本，不代表完整内部推理。'), node('div', 'message-text'));
   card.append(summary, body);
   return card;
 }
 function toolElement(tool) {
   const card = node('details', 'tool-card');
-  card.open = state.expandedTools.has(tool.id);
-  card.addEventListener('toggle', () => {
-    if (card.open) state.expandedTools.add(tool.id);
-    else state.expandedTools.delete(tool.id);
-  });
   const summary = node('summary');
-  const labels = { pending: '待执行', running: isRunning() ? '执行中' : '未收到结果', completed: '已完成', failed: '未成功' };
-  summary.append(node('span', 'tool-arrow', '›'), node('span', 'tool-name', tool.name), node('span', `tool-status ${tool.status}`, labels[tool.status]));
-  card.append(summary);
+  summary.append(node('span', 'tool-arrow', '›'), node('span', 'tool-name', tool.name), node('span', 'tool-status'));
   const body = node('div', 'tool-body');
   body.append(node('span', 'tool-label', `CALL ${tool.id || '—'}`));
-  if (tool.args) body.append(node('span', 'tool-label', '参数'), node('pre', '', pretty(tool.args)));
-  if (tool.result !== null) body.append(node('span', 'tool-label', '结果'), node('pre', '', pretty(tool.result)));
-  card.append(body);
+  card.append(summary, body);
   return card;
 }
-function renderConversation() {
-  const scroll = $('messages-scroll');
-  const atBottom = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 100;
-  const items = buildItems();
-  $('welcome').hidden = items.length > 0 || !state.connected;
-  const fragment = document.createDocumentFragment();
-  for (const item of items) {
-    if (item.type === 'message') fragment.append(messageElement(item.role, item.content, false, item.steered));
-    else if (item.type === 'reasoning') fragment.append(reasoningElement(item));
-    else if (item.type === 'tool') fragment.append(toolElement(item));
-    else fragment.append(node('div', `turn-notice${item.error ? ' error' : ''}`, item.content));
+function updateTool(card, tool, previous) {
+  const labels = { pending: '待执行', running: isRunning() ? '执行中' : '未收到结果', completed: '已完成', failed: '未成功' };
+  const status = card.querySelector('.tool-status');
+  if (status.textContent !== labels[tool.status]) {
+    status.className = `tool-status ${tool.status}`;
+    status.textContent = labels[tool.status];
   }
-  if (state.reasoningDelta) fragment.append(reasoningElement({ streaming: true, content: state.reasoningDelta }));
-  if (state.delta) fragment.append(messageElement('assistant', state.delta, true));
-  else if (isRunning() && !state.approvals.length && !state.reasoningDelta) {
+  if (tool.name !== previous?.name) card.querySelector('.tool-name').textContent = tool.name;
+  const body = card.querySelector('.tool-body');
+  for (const [field, label] of [['args', '参数'], ['result', '结果']]) {
+    if (!tool[field] || tool[field] === previous?.[field]) continue;
+    let pre = body.querySelector(`.${field}`);
+    if (!pre) { pre = node('pre', field); body.append(node('span', 'tool-label', label), pre); }
+    pre.textContent = pretty(tool[field]);
+  }
+}
+const atBottom = el => el.scrollHeight - el.clientHeight - el.scrollTop <= 1;
+const transcript = $('messages-scroll');
+let readingPanel = null;
+transcript.addEventListener('scroll', ({ target }) => {
+  if (target === transcript) readingPanel = null;
+  else if (target.matches('.reasoning-body, .tool-body pre')) {
+    if (!atBottom(target)) readingPanel = target;
+    else if (readingPanel === target) readingPanel = null;
+  }
+}, true);
+
+const rows = [];
+let historyLength = 0, nextReplyId;
+function liveItems() {
+  const items = [], id = nextReplyId ?? state.events.length;
+  if (state.reasoningDelta) items.push({ type: 'reasoning', id, content: state.reasoningDelta, open: true, generating: !state.delta });
+  if (state.delta) items.push({ type: 'message', id, role: 'assistant', content: state.delta, streaming: true });
+  else if (isRunning() && nextReplyId !== undefined && !state.approvals.length && !state.reasoningDelta) items.push({ type: 'thinking' });
+  if (state.turn?.status === 'failed' && !state.events.some(e => e.type === 'turn.failed' && e.error === state.turn.error)) {
+    items.push({ type: 'notice', error: true, content: `执行失败：${state.turn.error || '请检查服务端日志'}` });
+  }
+  return items;
+}
+function createRow(item) {
+  if (item.type === 'reasoning') return reasoningElement(item);
+  if (item.type === 'message') return messageElement(item);
+  if (item.type === 'tool') return toolElement(item);
+  if (item.type === 'thinking') {
     const thinking = node('div', 'thinking');
     thinking.append(node('span', 'thinking-dot'), 'Agent 正在处理…');
-    fragment.append(thinking);
+    return thinking;
   }
-  if (state.turn?.status === 'failed' && !state.events.some(e => e.type === 'turn.failed' && e.error === state.turn.error)) {
-    fragment.append(node('div', 'turn-notice error', `执行失败：${state.turn.error || '请检查服务端日志'}`));
+  return node('div', `turn-notice${item.error ? ' error' : ''}`, item.content);
+}
+function updateProse(element, item, previous) {
+  const prose = element.querySelector('.message-text');
+  if (item.content !== previous?.content) {
+    const body = item.type === 'reasoning' && element.querySelector('.reasoning-body');
+    const follow = body && element.open && atBottom(body);
+    renderRichText(prose, item.content);
+    if (follow) body.scrollTop = body.scrollHeight;
   }
-  $('message-list').replaceChildren(fragment);
-  if (atBottom) requestAnimationFrame(() => { scroll.scrollTop = scroll.scrollHeight; });
+  if (item.type === 'reasoning' && (!previous || item.generating !== previous.generating)) {
+    element.querySelector('summary span:last-child').textContent = item.generating ? '模型思考 · 生成中' : '模型思考';
+  }
+  if (item.type === 'message' && item.streaming !== previous?.streaming) {
+    prose.classList.toggle('streaming-text', Boolean(item.streaming));
+  }
+}
+// History grows by appending events. A streaming reply keeps its slot and ID when committed.
+function renderRows(items, start = 0) {
+  const follow = atBottom(transcript) && !(readingPanel?.clientHeight && !atBottom(readingPanel));
+  const list = $('message-list');
+  let index = start;
+  for (const item of items) {
+    const row = rows[index];
+    let previous = row?.item, element = row?.element;
+    if (!previous || previous.type !== item.type || previous.id !== item.id || previous.role !== item.role) {
+      element = createRow(item);
+      if (row) row.element.replaceWith(element);
+      else list.append(element);
+      previous = undefined;
+    }
+    if (item.type === 'message' || item.type === 'reasoning') updateProse(element, item, previous);
+    else if (item.type === 'tool') updateTool(element, item, previous);
+    else if (item.type === 'notice' && previous && item.content !== previous.content) element.textContent = item.content;
+    rows[index++] = { item, element };
+  }
+  while (rows.length > index) rows.pop().element.remove();
+  if (!readingPanel?.isConnected) readingPanel = null;
+  if (follow && !atBottom(transcript)) transcript.scrollTop = transcript.scrollHeight;
+}
+function renderConversation(streamedReply) {
+  const history = buildItems(streamedReply);
+  historyLength = history.items.length;
+  nextReplyId = history.nextReplyId;
+  $('welcome').hidden = historyLength > 0 || !state.connected;
+  renderRows([...history.items, ...liveItems()]);
   renderInspector();
   renderControls();
 }
@@ -303,7 +377,7 @@ let conversationRenderQueued = false;
 function scheduleConversationRender() {
   if (conversationRenderQueued) return;
   conversationRenderQueued = true;
-  requestAnimationFrame(() => { conversationRenderQueued = false; renderConversation(); });
+  requestAnimationFrame(() => { conversationRenderQueued = false; renderRows(liveItems(), historyLength); });
 }
 function renderApprovals() {
   const list = $('approval-list');
@@ -314,11 +388,18 @@ function renderApprovals() {
     heading.append(node('span', '', '◇'), `需要确认 · ${approval.name}`);
     card.append(heading, node('p', '', approval.effect === 'shell' ? '此命令将在本机执行，请核对后批准。' : '请检查以下操作内容，再决定是否继续。'), node('pre', 'approval-preview', approval.preview));
     const actions = node('div', 'approval-actions');
-    for (const approved of [false, true]) {
-      const button = node('button', '', approved ? '批准本次操作' : '拒绝');
+    const choices = [['拒绝', false, false]];
+    if (approval.commandPrefix) {
+      const script = approval.commandPrefix.startsWith('npm ');
+      card.append(node('p', '', script ? '记住后会运行此工作区当时定义的同名脚本。' : '记住后也会允许此命令的常用显示参数。'));
+      choices.push([`此工作区以后允许「${approval.commandPrefix}」`, true, true]);
+    }
+    choices.push(['批准本次操作', true, false]);
+    for (const [label, approved, remember] of choices) {
+      const button = node('button', '', label);
       button.type = 'button';
       button.disabled = state.pendingApprovals.has(approval.id) || state.connection !== 'live';
-      button.addEventListener('click', () => { void decideApproval(approval.id, approved); });
+      button.addEventListener('click', () => { void decideApproval(approval.id, approved, remember); });
       actions.append(button);
     }
     card.append(actions); list.append(card);
@@ -342,7 +423,7 @@ function renderQueue() {
 function render() { renderSessions(); renderConversation(); renderApprovals(); renderQueue(); }
 function consumeFrame(frame, generation) {
   if (generation !== state.generation) return;
-  setConnection('live');
+  if (state.connection !== 'live') setConnection('live');
   if (frame.type === 'snapshot') {
     state.events = frame.snapshot.events;
     state.turn = frame.snapshot.turn;
@@ -369,14 +450,14 @@ function consumeFrame(frame, generation) {
       else state.delta += frame.event.text || '';
       scheduleConversationRender();
     } else {
-      if (frame.event.type === 'message' && frame.event.message?.role === 'assistant' && state.reasoningDelta && state.streamingReasoningOpen) state.expandedReasoning.add(state.events.length);
+      const reply = frame.event.type === 'message' && frame.event.message?.role === 'assistant' ? frame.event.message : undefined;
+      const streamedReply = state.reasoningDelta ? reply : undefined;
       state.events.push(frame.event);
-      if (frame.event.type === 'model.start' || (frame.event.type === 'message' && frame.event.message?.role === 'assistant')) {
+      if (frame.event.type === 'model.start' || reply) {
         state.delta = ''; state.reasoningDelta = '';
-        state.streamingReasoningOpen = true;
       }
       if (frame.event.type === 'message' && frame.event.message?.role === 'user') void refreshSessions();
-      renderConversation();
+      renderConversation(streamedReply);
     }
   }
 }
@@ -390,8 +471,7 @@ async function streamSession(id, generation, controller) {
     } catch (error) {
       if (controller.signal.aborted || generation !== state.generation) return;
       if (error.status === 401 || error.status === 403) {
-        controller.abort();
-        requireConnection('连接令牌已失效或被服务端拒绝。请使用当前服务启动时显示的新链接或令牌重新连接。');
+        disconnect('本机服务拒绝了连接。请从服务启动时显示的本机地址打开控制台。');
         return;
       }
       if (error.status === 404 || error.status === 409) {
@@ -400,7 +480,7 @@ async function streamSession(id, generation, controller) {
         const recovery = ++state.generation;
         state.selectedId = null; state.events = []; state.turn = null;
         state.approvals = []; state.inputs = []; state.delta = ''; state.reasoningDelta = ''; state.submitting = false; state.cancelling = false;
-        state.pendingApprovals.clear(); state.expandedTools.clear(); state.expandedReasoning.clear();
+        state.pendingApprovals.clear();
         try { sessionStorage.removeItem(selectionKey); } catch { /* Optional preference. */ }
         showNotice('这个会话已不存在，或不属于当前工作区 / 模型。请选择其他会话，或新建会话。');
         setConnection('connecting'); render();
@@ -411,7 +491,7 @@ async function streamSession(id, generation, controller) {
           setConnection('live'); render();
         } catch (refreshError) {
           if (recovery !== state.generation) return;
-          requireConnection(`无法重新加载会话：${errorText(refreshError)}。请重新连接服务。`);
+          disconnect(`无法重新加载会话：${errorText(refreshError)}。请刷新页面重试。`);
         }
         return;
       }
@@ -429,25 +509,22 @@ async function streamSession(id, generation, controller) {
     }
   }
 }
-function requireConnection(message) {
-  ++state.generation;
+function disconnect(message) {
+  state.stream?.abort(); ++state.generation;
   state.stream = null; state.connected = false;
   state.turn = null; state.approvals = []; state.inputs = []; state.delta = ''; state.reasoningDelta = '';
   state.submitting = false; state.cancelling = false;
   state.pendingApprovals.clear();
-  $('connection-panel').hidden = false;
-  text('connection-error', message);
-  showNotice(''); setConnection('offline'); render();
-  $('connection-token').focus();
+  showNotice(message); setConnection('offline'); render();
 }
 async function selectSession(id) {
   if (id === state.selectedId && state.stream && !state.stream.signal.aborted) return;
   state.stream?.abort();
   const generation = ++state.generation;
   state.selectedId = id;
-  state.events = []; state.turn = null; state.approvals = []; state.inputs = []; state.delta = ''; state.reasoningDelta = ''; state.streamingReasoningOpen = true;
+  state.events = []; state.turn = null; state.approvals = []; state.inputs = []; state.delta = ''; state.reasoningDelta = '';
   state.submitting = false; state.cancelling = false;
-  state.pendingApprovals.clear(); state.expandedTools.clear(); state.expandedReasoning.clear();
+  state.pendingApprovals.clear();
   showNotice('');
   try { sessionStorage.setItem(selectionKey, id); } catch { /* Optional preference. */ }
   setConnection('connecting');
@@ -459,10 +536,9 @@ async function selectSession(id) {
 async function createSession() {
   if (!state.client || state.creating) return null;
   state.creating = true; renderControls();
-  const auth = state.authGeneration, generation = state.generation;
+  const generation = state.generation;
   try {
     const session = await state.client.createSession();
-    if (auth !== state.authGeneration) return null;
     mergeSession(session);
     if (generation !== state.generation) return null;
     await selectSession(session.id);
@@ -470,15 +546,16 @@ async function createSession() {
     $('message-input').focus();
     return session;
   } catch (error) {
-    if (generation === state.generation && auth === state.authGeneration) showNotice(`无法新建会话：${errorText(error)}`);
+    if (generation === state.generation) showNotice(`无法新建会话：${errorText(error)}`);
     return null;
-  } finally { if (auth === state.authGeneration) { state.creating = false; renderControls(); } }
+  } finally { state.creating = false; renderControls(); }
 }
 async function sendMessage(kind) {
   const input = $('message-input');
   const message = input.value.trim();
   if (!message || !state.client || state.submitting || state.cancelling || state.connection !== 'live' || Boolean(kind) !== isRunning()) return;
   let generation = state.generation;
+  if (!kind) transcript.scrollTop = transcript.scrollHeight;
   state.submitting = true; renderControls(); showNotice('');
   try {
     if (!state.selectedId) {
@@ -500,7 +577,6 @@ async function sendMessage(kind) {
     if (generation !== state.generation) return;
     if (input.value.trim() === message) input.value = '';
     resizeComposer(); render();
-    $('messages-scroll').scrollTop = $('messages-scroll').scrollHeight;
   } catch (error) {
     if (generation === state.generation) {
       if (typeof error.status === 'number' && error.status < 500) showNotice(`发送未被接受：${errorText(error)}`);
@@ -533,30 +609,22 @@ async function cancelTurn() {
   catch (error) { if (generation === state.generation) showNotice(`停止失败：${errorText(error)}`); }
   finally { if (generation === state.generation) { state.cancelling = false; renderControls(); } }
 }
-async function decideApproval(id, approved) {
+async function decideApproval(id, approved, remember) {
   if (state.pendingApprovals.has(id)) return;
   const generation = state.generation, session = state.selectedId;
   state.pendingApprovals.add(id); renderApprovals();
-  try { await state.client.approve(session, id, approved); }
+  try { await state.client.approve(session, id, approved, remember); }
   catch (error) { if (generation === state.generation) showNotice(`审批未提交：${errorText(error)}`); }
   finally {
     if (generation === state.generation) { state.pendingApprovals.delete(id); renderApprovals(); }
   }
 }
-async function connect(token) {
-  const auth = ++state.authGeneration;
-  state.stream?.abort(); ++state.generation;
-  state.connected = false; state.selectedId = null;
-  state.events = []; state.turn = null; state.approvals = []; state.inputs = []; state.delta = ''; state.reasoningDelta = ''; state.streamingReasoningOpen = true;
-  state.creating = false; state.submitting = false; state.cancelling = false;
-  state.client = new AgentClient(location.origin, token);
-  text('connection-error', ''); setConnection('connecting'); render();
+async function connect() {
+  setConnection('connecting'); render();
   try {
+    state.client = new AgentClient(location.origin);
     const [info, sessions] = await Promise.all([state.client.info(), state.client.sessions()]);
-    if (auth !== state.authGeneration) return;
     configure(info); state.sessions = sessions; state.connected = true;
-    try { sessionStorage.setItem(tokenKey, token); } catch { /* Session remains usable. */ }
-    $('connection-panel').hidden = true;
     setConnection('live'); render();
     let selected;
     try { selected = sessionStorage.getItem(selectionKey); } catch { /* No saved selection. */ }
@@ -564,34 +632,53 @@ async function connect(token) {
     else if (sessions.length) await selectSession(sessions[0].id);
     $('message-input').focus();
   } catch (error) {
-    if (auth !== state.authGeneration) return;
-    state.connected = false;
-    $('connection-panel').hidden = false;
-    text('connection-error', `连接失败：${errorText(error)}`);
-    setConnection('offline'); render();
+    disconnect(`连接失败：${errorText(error)}。确认本机服务已启动后，刷新页面重试。`);
   }
 }
 function closeMobileNav() { $('sidebar').classList.remove('open'); $('menu-toggle').setAttribute('aria-expanded', 'false'); }
 function setSettingsBusy(busy) {
   state.settingsBusy = busy;
-  for (const id of ['settings-request-timeout', 'settings-turn-timeout', 'save-settings']) $(id).disabled = busy;
+  for (const id of ['settings-approval', 'settings-request-timeout', 'settings-turn-timeout', 'settings-context-ratio', 'settings-context-window', 'save-settings']) $(id).disabled = busy;
   renderControls();
 }
 function settingsError(message = '') {
   text('settings-error', message); $('settings-error').hidden = !message;
 }
-async function openSettings() {
+function describeApproval() {
+  text('settings-approval-help', policyHelp[$('settings-approval').value]);
+}
+async function openSettings(focusApproval = false) {
   if (!state.connected || state.settingsBusy) return;
   const client = state.client;
+  $('settings-approval-field').hidden = true;
   $('settings-dialog').showModal(); settingsError(); setSettingsBusy(true);
   try {
     const limits = await client.settings();
     if (client !== state.client) return;
+    if (limits.approval) {
+      const select = $('settings-approval');
+      select.value = select.dataset.saved = limits.approval;
+      $('settings-approval-field').hidden = false;
+      describeApproval();
+    }
     $('settings-request-timeout').value = String(Number((limits.requestTimeoutMs / 60000).toFixed(6)));
     $('settings-turn-timeout').value = String(Number((limits.turnTimeoutMs / 3600000).toFixed(6)));
+    const budget = limits.contextBudget;
+    $('settings-context').hidden = !budget;
+    if (budget) {
+      $('settings-context-ratio').value = String(Number((limits.contextCompactRatio * 100).toFixed(6)));
+      $('settings-context-window').value = limits.contextWindowTokens ?? '';
+      const format = value => value.toLocaleString('zh-CN');
+      text('settings-context-budget', budget.source === 'fallback'
+        ? `当前按 ${format(budget.thresholdChars)} 字符压缩。探测到窗口或手动填写后会使用比例。`
+        : `${budget.source === 'api' ? '接口返回' : '手动配置'}窗口 ${format(budget.windowTokens)} token，当前阈值约 ${format(budget.thresholdTokens)} token。`);
+    }
     configure({ ...state.info, ...limits });
   } catch (error) { settingsError(`无法加载设置：${errorText(error)}`); }
-  finally { setSettingsBusy(false); }
+  finally {
+    setSettingsBusy(false);
+    if (focusApproval && !$('settings-approval-field').hidden) $('settings-approval').focus();
+  }
 }
 async function saveSettings() {
   if (!state.connected || state.settingsBusy) return;
@@ -600,6 +687,13 @@ async function saveSettings() {
     requestTimeoutMs: Math.round(Number($('settings-request-timeout').value) * 60000),
     turnTimeoutMs: Math.round(Number($('settings-turn-timeout').value) * 3600000),
   };
+  const select = $('settings-approval');
+  if (!$('settings-approval-field').hidden && select.value !== select.dataset.saved) limits.approval = select.value;
+  if (!$('settings-context').hidden) {
+    const window = $('settings-context-window').value;
+    limits.contextWindowTokens = window === '' ? null : Number(window);
+    limits.contextCompactRatio = Number($('settings-context-ratio').value) / 100;
+  }
   settingsError(); setSettingsBusy(true);
   try {
     const saved = await client.updateSettings(limits);
@@ -627,6 +721,8 @@ $('follow-up-turn').addEventListener('click', () => { void sendMessage('follow_u
 $('resume-follow-ups').addEventListener('click', () => { void resumeFollowUps(); });
 $('new-session').addEventListener('click', () => { void createSession(); });
 $('open-settings').addEventListener('click', () => { void openSettings(); });
+$('composer-permission').addEventListener('click', () => { void openSettings(true); });
+$('settings-approval').addEventListener('change', describeApproval);
 $('close-settings').addEventListener('click', () => $('settings-dialog').close());
 $('settings-form').addEventListener('submit', event => { event.preventDefault(); void saveSettings(); });
 $('cancel-turn').addEventListener('click', () => { void cancelTurn(); });
@@ -646,10 +742,6 @@ $('copy-session-id').addEventListener('click', async () => {
     selection?.removeAllRanges(); selection?.addRange(range);
     showNotice('浏览器未允许自动复制，已选中会话 ID。可手动复制，并用于 CLI 的 --session 参数。');
   }
-});
-$('connect-form').addEventListener('submit', event => {
-  event.preventDefault(); const token = $('connection-token').value.trim();
-  if (token) { $('connection-token').value = ''; void connect(token); }
 });
 $('suggestions').addEventListener('click', event => {
   const button = event.target.closest('button[data-prompt]');
@@ -672,8 +764,4 @@ document.addEventListener('keydown', event => {
   if (event.key === 'Escape') { closeMobileNav(); $('inspector').classList.remove('show-mobile'); }
 });
 window.addEventListener('beforeunload', () => state.stream?.abort());
-if (initialToken) void connect(initialToken);
-else {
-  $('connection-panel').hidden = false; $('welcome').hidden = true;
-  setConnection('offline'); renderControls();
-}
+void connect();

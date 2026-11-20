@@ -1,6 +1,6 @@
 /** 协议层只描述数据；这里不依赖 CLI、HTTP 或文件系统。 */
 export type Mode = 'reference' | 'learner';
-export type Policy = 'read-only' | 'ask' | 'workspace-write' | 'full-auto';
+export type Policy = 'read-only' | 'ask' | 'auto-review' | 'workspace-write' | 'full-auto';
 export type Effect = 'read' | 'write' | 'shell' | 'state';
 export interface ToolCall { id: string; name: string; arguments: string }
 export interface Message {
@@ -51,6 +51,6 @@ export interface Algorithms {
   runLoop(messages: Message[], runtime: LoopRuntime): Promise<string>;
   decide(policy: Policy, effect: Effect, shellEnabled: boolean): 'allow' | 'ask' | 'deny';
   replaceText(source: string, before: string, after: string): string;
-  fitContext(messages: Message[], maxChars: number): Message[];
+  fitContext(messages: Message[], maxSize: number, size?: (messages: Message[]) => number): Message[];
   replay(messages: Message[]): Message[];
 }

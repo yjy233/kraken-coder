@@ -35,8 +35,8 @@ export async function runRemoteTurn(options: {
       const approvalSignal = AbortSignal.any([controller.signal, subscription.signal, signal]);
       void (async () => {
         try {
-          const approved = await approve(request, approvalSignal);
-          if (!approvalSignal.aborted) await client.approve(session, request.id, approved);
+          const decision = await approve(request, approvalSignal);
+          if (!approvalSignal.aborted) await client.approve(session, request.id, decision === true || decision === 'remember', decision === 'remember');
         } catch (error) {
           if (!approvalSignal.aborted && !(error instanceof AgentClientError && error.status === 409)) {
             finished.reject(error);

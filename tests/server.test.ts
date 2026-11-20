@@ -2,7 +2,8 @@ import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, readFile, writeFile, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import os, { tmpdir } from 'node:os';
+import { syncBuiltinESMExports } from 'node:module';
 import { setTimeout as delay } from 'node:timers/promises';
 import { request as httpRequest } from 'node:http';
 import { startAgentServer, type AgentServer, type AgentServerOptions } from '../src/server/server.js';
@@ -23,7 +24,7 @@ async function fixture(t: TestContext, overrides: Partial<AgentServerOptions> = 
   let server = await startAgentServer(options);
   t.after(async () => { await server.close(); await rm(root, { recursive: true, force: true }); });
   const request = async (path: string, body?: unknown, headers: Record<string, string> = {}) => fetch(server.url + '/api/v1' + path, {
-    method: body === undefined ? 'GET' : 'POST', headers: { Authorization: `Bearer ${server.token}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    method: body === undefined ? 'GET' : 'POST', headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const create = async () => { const response = await request('/sessions', {}); assert.equal(response.status, 201); return (await response.json()).session.id as string; };
   const snapshot = async (id: string): Promise<SessionSnapshot> => { const response = await request(`/sessions/${id}`); assert.equal(response.status, 200); return response.json(); };
@@ -33,7 +34,7 @@ async function fixture(t: TestContext, overrides: Partial<AgentServerOptions> = 
 }
 async function watch(server: AgentServer, id: string) {
   const controller = new AbortController(), frames: ServerFrame[] = [];
-  const response = await fetch(`${server.url}/api/v1/sessions/${id}/events`, { headers: { Authorization: `Bearer ${server.token}` }, signal: controller.signal });
+  const response = await fetch(`${server.url}/api/v1/sessions/${id}/events`, { signal: controller.signal });
   assert.equal(response.status, 200); assert.match(response.headers.get('content-type')!, /text\/event-stream/);
   const reader = response.body!.getReader(), decoder = new TextDecoder();
   const done = (async () => {
@@ -85,7 +86,7 @@ for (const mode of ['reference', 'learner'] as const) test(`agent-server (${mode
   const f = await fixture(t, { provider, config: { ...defaults, mode } });
   t.after(releaseDraft);
   await writeFile(join(f.root, 'hello.txt'), 'hello');
-  const client = new AgentClient(f.server.url, f.server.token);
+  const client = new AgentClient(f.server.url);
   const id = await f.create(), other = await f.create(), stream = await watch(f.server, id);
   t.after(() => stream.close());
   const turn = await client.startTurn(id, 'original task');
@@ -124,7 +125,7 @@ for (const mode of ['reference', 'learner'] as const) test(`agent-server (${mode
   await assert.rejects(client.queueInput(id, turn.id, 'steer', 'stale'), { status: 409, code: 'stale_turn' });
 });
 
-test('agent-server: stopping leaves follow-ups for explicit resumption', async t => {
+test('agent-server: stopped follow-ups stay paused across an explicit queue handover', async t => {
   const requests: string[] = [];
   const provider: Provider = { name: 'test:pause-input', async complete(messages, _tools, signal) {
     const input = messages.at(-1)!.content;
@@ -133,7 +134,7 @@ test('agent-server: stopping leaves follow-ups for explicit resumption', async t
     return { content: input };
   } };
   const f = await fixture(t, { provider }), id = await f.create();
-  const client = new AgentClient(f.server.url, f.server.token);
+  let client = new AgentClient(f.server.url);
   const { id: turnId } = await client.startTurn(id, 'wait');
   await until(() => requests.length, count => count === 1);
   const followUp = await client.queueInput(id, turnId, 'follow_up', 'after cancellation');
@@ -141,6 +142,10 @@ test('agent-server: stopping leaves follow-ups for explicit resumption', async t
   const stopped = await f.settled(id);
   assert.equal(stopped.turn?.status, 'cancelled');
   assert.deepEqual(stopped.inputs, [followUp]);
+  f.options.pausedQueues = [{ session: stopped.session, inputs: stopped.inputs }];
+  await f.restart();
+  client = new AgentClient(f.server.url);
+  assert.deepEqual((await client.session(id)).inputs, [followUp]);
   await client.startTurn(id, 'unrelated task');
   const unrelated = await f.settled(id);
   assert.deepEqual(unrelated.inputs, [followUp]);
@@ -192,6 +197,10 @@ test('agent-server: approving a disconnected pending write resumes exactly once'
   const reconnect = (stream.frames[0] as Extract<ServerFrame, { type: 'snapshot' }>).snapshot;
   assert.equal(reconnect.approvals[0]!.id, awaiting.approvals[0]!.id);
   const approvalPath = `/sessions/${id}/approvals/${awaiting.approvals[0]!.id}`;
+  assert.equal(awaiting.approvals[0]!.commandPrefix, undefined);
+  for (const input of [{ approved: true, remember: true }, { approved: true, remember: 'true' }, { approved: true, commandPrefix: 'pwd' }]) {
+    assert.equal((await f.request(approvalPath, input)).status, 400);
+  }
   assert.equal((await f.request(approvalPath, { approved: true })).status, 200);
   assert.equal((await f.request(approvalPath, { approved: true })).status, 409);
   const result = await f.settled(id);
@@ -199,6 +208,38 @@ test('agent-server: approving a disconnected pending write resumes exactly once'
   assert.equal(await readFile(join(f.root, 'created.txt'), 'utf8'), 'approved\n');
   assert.equal(result.events.filter(e => e.type === 'files.changed').length, 1);
   await stream.close();
+});
+
+test('agent-server: only an offered shell command can be remembered and reused after restart', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'kraken-rule-home-'));
+  const user = { ...os.userInfo(), homedir: home };
+  const userInfo = t.mock.method(os, 'userInfo', () => user);
+  syncBuiltinESMExports();
+  t.after(async () => {
+    userInfo.mock.restore();
+    syncBuiltinESMExports();
+    await rm(home, { recursive: true, force: true });
+  });
+  let call = 0;
+  const provider: Provider = { name: 'test:command', async complete(messages) {
+    const last = messages.at(-1)!;
+    return last.role === 'tool' ? { content: last.content } : { content: '', toolCalls: [
+      { id: `cmd-${++call}`, name: 'shell', arguments: JSON.stringify({ command: last.content }) },
+    ] };
+  } };
+  const f = await fixture(t, { provider, allowShell: true }), id = await f.create();
+  await f.start(id, 'pwd');
+  const pending = (await until(() => f.snapshot(id), s => s.approvals.length === 1)).approvals[0]!;
+  assert.equal(pending.commandPrefix, 'pwd');
+  const client = new AgentClient(f.server.url);
+  await assert.rejects(client.approve(id, pending.id, false, true), /Only an approved command/);
+  await client.approve(id, pending.id, true, true);
+  assert.equal((await f.settled(id)).events.findLast(e => e.type === 'approval.result')?.source, 'user');
+  await f.restart();
+  await f.start(id, 'pwd -P');
+  const result = await f.settled(id);
+  assert.equal(result.events.findLast(e => e.type === 'approval.result')?.source, 'rule');
+  assert.equal(result.events.findLast(e => e.type === 'tool.end')?.ok, true);
 });
 
 test('agent-server: denial returns a tool error to the model without mutating the file', async t => {
@@ -292,13 +333,16 @@ test('agent-server: disconnect never cancels, but closing the server cancels its
   await f.server.close(); assert.equal(aborted, true);
 });
 
-test('agent-server: token, Host, Origin, JSON validation and allowlisted assets protect local runtime', async t => {
+test('agent-server: local clients connect directly, cross-origin API access is denied and inputs are validated', async t => {
   const f = await fixture(t), id = await f.create();
-  assert.equal((await fetch(f.server.url + '/api/v1/info')).status, 401);
-  assert.equal((await f.request('/info', undefined, { Authorization: 'Bearer invalid' })).status, 401);
-  assert.equal(await new Promise<number | undefined>((resolve, reject) => { const req = httpRequest(f.server.url + '/api/v1/info', { headers: { Host: 'attacker.example', Authorization: `Bearer ${f.server.token}` } }, res => { res.resume(); resolve(res.statusCode); }); req.on('error', reject); req.end(); }), 403);
+  assert.equal((await fetch(f.server.url + '/api/v1/info')).status, 200);
+  assert.equal(await new Promise<number | undefined>((resolve, reject) => { const req = httpRequest(f.server.url + '/api/v1/info', { headers: { Host: 'attacker.example' } }, res => { res.resume(); resolve(res.statusCode); }); req.on('error', reject); req.end(); }), 403);
   assert.equal((await f.request('/info', undefined, { Origin: 'https://attacker.example' })).status, 403);
-  assert.equal((await f.request('/info', undefined, { Origin: f.server.url })).status, 200);
+  assert.equal((await f.request('/info', undefined, { Origin: f.server.url, 'Sec-Fetch-Site': 'same-origin' })).status, 200);
+  assert.equal((await f.request('/sessions', {}, { Origin: 'null' })).status, 403);
+  assert.equal((await f.request('/sessions', {}, { 'Sec-Fetch-Site': 'same-site' })).status, 403);
+  assert.equal((await f.request(`/sessions/${id}/events`, undefined, { 'Sec-Fetch-Site': 'cross-site' })).status, 403);
+  assert.equal((await (await f.request('/sessions')).json()).sessions.length, 1);
   assert.equal((await f.request('/sessions', {}, { 'Content-Type': 'text/plain' })).status, 415);
   assert.equal((await f.request('/sessions', { config: { approval: 'full-auto' } })).status, 400);
   assert.equal((await f.request(`/sessions/${id}/turns`, { message: '' })).status, 400);
@@ -310,7 +354,6 @@ test('agent-server: token, Host, Origin, JSON validation and allowlisted assets 
   assert.equal((await fetch(f.server.url + '/src/server/server.ts')).status, 404);
   const info = await (await f.request('/info')).json();
   assert.deepEqual(Object.keys(info).sort(), ['approval', 'mode', 'model', 'provider', 'requestTimeoutMs', 'shellEnabled', 'turnTimeoutMs', 'version', 'workspace']);
-  assert.doesNotMatch(JSON.stringify(info), new RegExp(f.server.token));
 });
 
 test('agent-server: sessions from another workspace/provider are not exposed', async t => {
@@ -323,19 +366,50 @@ test('agent-server: sessions from another workspace/provider are not exposed', a
 test('agent-server: timeout settings persist only allowed fields without exposing credentials', async t => {
   const f = await fixture(t), path = join(f.root, '.env');
   await writeFile(path, '# Keep provider settings\nKRAKEN_API_KEY=fixture-secret\nKRAKEN_MODEL=example\n');
-  assert.equal((await fetch(f.server.url + '/api/v1/settings')).status, 401);
   const limits = { requestTimeoutMs: 180_000, turnTimeoutMs: 10_800_000 };
-  assert.deepEqual(await (await f.request('/settings', limits)).json(), limits);
+  const fallback = { ...limits, approval: 'ask', contextCompactRatio: 0.8, contextWindowTokens: null,
+    contextBudget: { source: 'fallback', thresholdChars: defaults.contextChars } };
+  assert.deepEqual(await (await f.request('/settings', limits)).json(), fallback);
   const saved = await readFile(path, 'utf8');
   assert.match(saved, /# Keep provider settings\nKRAKEN_API_KEY=fixture-secret\nKRAKEN_MODEL=example\n/);
   assert.match(saved, /KRAKEN_TURN_TIMEOUT_MS=10800000/);
-  assert.deepEqual(await (await f.request('/settings')).json(), limits);
+  assert.deepEqual(await (await f.request('/settings')).json(), fallback);
   assert.equal((await (await f.request('/info')).json()).turnTimeoutMs, limits.turnTimeoutMs);
   assert.doesNotMatch(JSON.stringify(await (await f.request('/settings')).json()), /fixture-secret|KRAKEN_API_KEY/);
-  for (const input of [{ ...limits, turnTimeoutMs: 10_800_001 }, { ...limits, requestTimeoutMs: '180000' }, { ...limits, apiKey: 'forbidden' }, { requestTimeoutMs: 1 }]) {
+  for (const input of [{ ...limits, turnTimeoutMs: 10_800_001 }, { ...limits, requestTimeoutMs: '180000' }, { ...limits, apiKey: 'forbidden' }, { requestTimeoutMs: 1 }, { approval: 'unknown' }, {}]) {
     assert.equal((await f.request('/settings', input)).status, 400);
   }
   assert.equal(await readFile(path, 'utf8'), saved);
+  const manual = { ...limits, contextWindowTokens: 32_000, contextCompactRatio: 0.7 };
+  assert.deepEqual(await (await f.request('/settings', manual)).json(), {
+    ...manual, approval: 'ask', contextBudget: { source: 'manual', windowTokens: 32_000, thresholdTokens: 22_400 },
+  });
+  assert.equal((await f.request('/settings', { ...manual, contextCompactRatio: 1 })).status, 400);
+  assert.match(await readFile(path, 'utf8'), /KRAKEN_CONTEXT_COMPACT_RATIO=0\.7/);
+  const client = new AgentClient(f.server.url);
+  const reviewed = await client.updateSettings({ approval: 'auto-review' });
+  assert.equal(reviewed.approval, 'auto-review');
+  assert.equal(reviewed.contextWindowTokens, 32_000);
+  assert.equal((await client.info()).approval, 'auto-review');
+  assert.match(await readFile(path, 'utf8'), /KRAKEN_APPROVAL=auto-review/);
+  assert.equal((await client.updateSettings({ ...manual, contextWindowTokens: null })).approval, 'auto-review');
+  assert.match(await readFile(path, 'utf8'), /KRAKEN_CONTEXT_WINDOW_TOKENS=auto/);
+});
+
+test('agent-server: changing approval while a turn waits affects the next turn', async t => {
+  const f = await fixture(t, { provider: patchProvider() }), id = await f.create();
+  const client = new AgentClient(f.server.url);
+  await f.start(id, 'first patch');
+  const pending = (await until(() => f.snapshot(id), s => s.approvals.length === 1)).approvals[0]!;
+  await client.updateSettings({ approval: 'full-auto' });
+  assert.deepEqual((await f.snapshot(id)).approvals, [pending]);
+  await client.approve(id, pending.id, false);
+  assert.match(eventMessages((await f.settled(id)).events).at(-1)!.content, /User denied/);
+  await f.start(id, 'second patch');
+  const result = await f.settled(id);
+  assert.equal(result.turn?.status, 'completed');
+  assert.deepEqual(result.events.filter(e => e.type === 'turn.started').map(e => e.approval), ['ask', 'full-auto']);
+  assert.equal(await readFile(join(f.root, 'created.txt'), 'utf8'), 'approved\n');
 });
 
 test('agent-server: new timeout settings apply to the next turn, not an active one', async t => {

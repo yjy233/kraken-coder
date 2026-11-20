@@ -32,12 +32,12 @@ npm run verify
 npm run serve -- --mode learner --allow-shell
 ```
 
-打开终端打印的完整 URL，即可创建会话、聊天、查看工具轨迹、审批补丁/命令和取消任务。服务默认监听 `127.0.0.1:4317`，读取现有模型配置，默认使用 `ask` 审批。离线体验可运行 `npm run serve -- --provider demo --approval read-only`，再在页面输入 `/files`。
+在本机浏览器打开 <http://127.0.0.1:4317/>，即可创建会话、聊天、查看工具轨迹、审批补丁/命令和取消任务。服务读取现有模型配置，默认使用 `ask` 审批。离线体验可运行 `npm run serve -- --provider demo --approval read-only`，再在页面输入 `/files`。
 
 CLI 也可以连接这个服务，复用相同会话与执行状态：
 
 ```bash
-npm run dev -- chat --server 'http://127.0.0.1:4317/#token=终端打印的连接token'
+npm run dev -- chat --server http://127.0.0.1:4317
 # 使用 --session SESSION_ID 加入已有会话
 ```
 
@@ -147,11 +147,14 @@ npm run dev -- chat --provider compatible --approval ask --allow-shell
 | 策略 | 读取与计划 | 文件补丁 | shell（还需 `--allow-shell`） |
 | --- | --- | --- | --- |
 | `read-only` | 自动 | 拒绝 | 拒绝 |
-| `ask`（默认） | 自动 | 逐次确认 | 逐次确认 |
+| 每次问我 `ask`（默认） | 自动 | 用户确认 | 用户确认 |
+| 替我审批 `auto-review` | 自动 | 模型审核 | 模型审核 |
 | `workspace-write` | 自动 | 自动 | 逐次确认 |
-| `full-auto` | 自动 | 自动 | 自动 |
+| 完全权限 `full-auto` | 自动 | 自动 | 自动 |
 
-审批会展示具体补丁或命令。非交互环境、`--json` 模式没有审批终端，需要审批的操作会得到拒绝结果，交回模型处理。
+点击 Web 输入框下方的权限名称即可更改模式，保存后从下一轮生效。也可以在 `.env` 中设置 `KRAKEN_APPROVAL=auto-review`，或用 `--approval auto-review` 启动。替我审批会用当前模型另发一次无工具请求，审核失败或拿不准时转人工。
+
+人工审批展示具体补丁或命令。对支持的命令可选择「此工作区以后允许」，例如记住 `git status` 后，`git status --short` 可以直接运行。非交互 CLI 遇到需要人工确认的操作会拒绝。支持的命令和撤销方式见[工具与权限](docs/04-tools-and-permissions.md#记住命令)。
 
 **这是应用层审批，不是操作系统沙箱。** 文件工具限制在工作区内，并拒绝 `.git`、`.kraken-coder`、真实 `.env`、符号链接和硬链接。开启 shell 后，命令以当前用户身份运行，可访问工作区之外和网络；`cwd` 不是权限隔离。支持 macOS/Linux，暂不支持 Windows shell。边界和补丁格式见 [工具与权限](docs/04-tools-and-permissions.md)。
 

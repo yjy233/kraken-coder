@@ -37,14 +37,15 @@ const help = `kraken-coder — Codex 风格 Coding Agent 教学项目（Node.js 
   --provider demo|responses|compatible
   --model ID --base-url URL      真实模型配置；密钥只从环境读取
   --mode reference|learner       两份独立算法，默认 reference
-  --approval read-only|ask|workspace-write|full-auto   默认 ask
+  --approval ask|auto-review|full-auto|read-only|workspace-write   默认 ask
   --allow-shell                 允许考虑本机 shell（无 OS 沙箱）；仍受审批策略控制
   --max-steps N --context-chars N
+  --context-window-tokens N|auto    手动模型窗口，auto 为自动探测，0 为字符预算
+  --context-compact-ratio N         压缩比例（0.1–0.95，默认 0.8）
   --request-timeout-ms N --turn-timeout-ms N
   --env-file PATH                .env 文件；已有 shell 环境优先
   --port N                       serve 监听端口，固定绑定 127.0.0.1
-  --server URL                   chat/exec/sessions/doctor 连接已有服务，可含 #token=...
-                                 或通过 KRAKEN_SERVER_TOKEN 提供服务令牌
+  --server URL                   chat/exec/sessions/doctor 连接已有本机服务
   --json                        stdout 输出 JSONL 事件；非交互审批自动拒绝
   --trace --debug                stderr 事件摘要 / 错误栈
 
@@ -57,6 +58,7 @@ async function main(): Promise<void> {
     'allow-shell': { type: 'boolean' }, cwd: { type: 'string' }, home: { type: 'string' }, session: { type: 'string' }, message: { type: 'string', short: 'm' },
     provider: { type: 'string' }, mode: { type: 'string' }, approval: { type: 'string' }, model: { type: 'string' }, 'base-url': { type: 'string' },
     'max-steps': { type: 'string' }, 'context-chars': { type: 'string' }, 'request-timeout-ms': { type: 'string' }, 'turn-timeout-ms': { type: 'string' },
+    'context-window-tokens': { type: 'string' }, 'context-compact-ratio': { type: 'string' },
     'env-file': { type: 'string' }, stage: { type: 'string' }, port: { type: 'string' }, server: { type: 'string' },
   } });
   const command = positionals[0] ?? 'help';
@@ -90,11 +92,11 @@ async function main(): Promise<void> {
   if (flags.port !== undefined && command !== 'serve') throw new Error('--port is only supported by serve');
   if (flags.server && !['exec', 'chat', 'sessions', 'doctor'].includes(command)) throw new Error('--server supports chat, exec, sessions and doctor');
   if (flags.server) {
-    for (const key of ['cwd', 'home', 'provider', 'model', 'mode', 'approval', 'base-url', 'allow-shell', 'max-steps', 'context-chars', 'request-timeout-ms', 'turn-timeout-ms'] as const) {
+    for (const key of ['cwd', 'home', 'provider', 'model', 'mode', 'approval', 'base-url', 'allow-shell', 'max-steps', 'context-chars', 'context-window-tokens', 'context-compact-ratio', 'request-timeout-ms', 'turn-timeout-ms'] as const) {
       if (flags[key] !== undefined) throw new Error(`--${key} is owned by the server; set it when starting serve`);
     }
   }
-  const remote = flags.server ? new AgentClient(flags.server, process.env.KRAKEN_SERVER_TOKEN) : undefined;
+  const remote = flags.server ? new AgentClient(flags.server) : undefined;
   const workspace = resolve(flags.cwd ?? '.'), home = resolve(flags.home ?? process.env.KRAKEN_HOME ?? resolve(workspace, '.kraken-coder'));
   if (command === 'sessions') { console.log(JSON.stringify(remote ? await remote.sessions() : listSessions(home), null, 2)); return; }
   if (command === 'history') {
@@ -114,13 +116,17 @@ async function main(): Promise<void> {
   const overrides: Partial<Config> = {};
   for (const key of ['provider', 'mode', 'approval', 'model'] as const) if (flags[key] !== undefined) Object.assign(overrides, { [key]: flags[key] });
   if (flags['base-url'] !== undefined) overrides.baseUrl = flags['base-url'];
+  const windowFlag = flags['context-window-tokens'];
+  if (windowFlag !== undefined) overrides.contextWindowTokens = windowFlag === 'auto' ? null : Number(windowFlag);
+  else if (flags['context-chars'] !== undefined) overrides.contextWindowTokens = 0;
+  if (flags['context-compact-ratio'] !== undefined) overrides.contextCompactRatio = Number(flags['context-compact-ratio']);
   for (const [flag, key] of [['max-steps', 'maxSteps'], ['context-chars', 'contextChars'], ['request-timeout-ms', 'requestTimeoutMs'], ['turn-timeout-ms', 'turnTimeoutMs']] as const) if (flags[flag] !== undefined) overrides[key] = Number(flags[flag]);
   const config = remote ? undefined : loadConfig(home, overrides);
   if (command === 'serve') {
     const port = flags.port === undefined ? 4317 : Number(flags.port);
     if (!Number.isSafeInteger(port) || port < 0 || port > 65535) throw new Error('--port must be an integer between 0 and 65535');
-    const server = await startAgentServer({ config: config!, workspace, home, allowShell: flags['allow-shell'], port, token: process.env.KRAKEN_SERVER_TOKEN, envFile: resolve(flags['env-file'] ?? '.env') });
-    console.error(`Kraken agent-server\n工作区：${workspace}\nWeb：${server.url}/#token=${encodeURIComponent(server.token)}\n服务令牌仅用于本机客户端连接；模型密钥保留在服务端。Ctrl+C 停止服务。`);
+    const server = await startAgentServer({ config: config!, workspace, home, allowShell: flags['allow-shell'], port, envFile: resolve(flags['env-file'] ?? '.env') });
+    console.error(`Kraken agent-server\n工作区：${workspace}\nWeb：${server.url}/\nCtrl+C 停止服务。`);
     await new Promise<void>(resolveStopped => {
       const stop = (): void => {
         process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop);
@@ -149,9 +155,14 @@ async function main(): Promise<void> {
       session ??= remote ? (await remote.createSession()).id : randomUUID();
       console.error(`session: ${session}`);
       const approve: Approve = async (request, signal) => {
-          if (!rl) return false;
-          console.error(`\n${request.name} 申请执行：\n${request.preview}`);
-          return (await rl.question('批准本次操作？[y/N] ', { signal })).trim().toLowerCase() === 'y';
+        if (!rl) return false;
+        console.error(`\n${request.name} 申请执行：\n${request.preview}`);
+        const prompt = request.commandPrefix
+          ? `y 批准一次，p 以后也允许此工作区的「${request.commandPrefix}」${request.commandPrefix.startsWith('npm ') ? '项目脚本' : '及其常用显示参数'}，Enter 拒绝 [y/p/N] `
+          : '批准本次操作？[y/N] ';
+        const answer = (await rl.question(prompt, { signal })).trim().toLowerCase();
+        if (request.commandPrefix && answer === 'p') return 'remember';
+        return answer === 'y';
       };
       const answer = remote
         ? await runRemoteTurn({ client: remote, session, message, emit, approve, signal: controller.signal })

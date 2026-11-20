@@ -79,13 +79,15 @@ export const stages: Case[][] = [
   ],
   [
     { name: 'L2 权限矩阵及 shell 独立开关', run(a) {
-      for (const policy of ['read-only', 'ask', 'workspace-write', 'full-auto'] as const) {
+      for (const policy of ['read-only', 'ask', 'auto-review', 'workspace-write', 'full-auto'] as const) {
         assert.equal(a.decide(policy, 'read', false), 'allow');
         assert.equal(a.decide(policy, 'shell', false), 'deny');
       }
       assert.equal(a.decide('read-only', 'write', true), 'deny');
       assert.equal(a.decide('read-only', 'shell', true), 'deny');
       assert.equal(a.decide('ask', 'write', false), 'ask');
+      assert.equal(a.decide('auto-review', 'write', false), 'ask');
+      assert.equal(a.decide('auto-review', 'shell', true), 'ask');
       assert.equal(a.decide('workspace-write', 'write', false), 'allow');
       assert.equal(a.decide('workspace-write', 'shell', true), 'ask');
       assert.equal(a.decide('full-auto', 'shell', true), 'allow');

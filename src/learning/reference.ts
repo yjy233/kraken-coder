@@ -62,7 +62,7 @@ export const reference: Algorithms = {
     if (effect === 'read' || effect === 'state') return 'allow';
     if (policy === 'read-only') return 'deny';
     if (policy === 'full-auto' || (policy === 'workspace-write' && effect === 'write')) return 'allow';
-    return 'ask';
+    return 'ask'; // 注册表按 policy 将请求交给用户或自动审批。
   },
   replaceText(source, before, after) {
     if (!before) throw new Error('Patch requires nonempty old text');
@@ -71,10 +71,10 @@ export const reference: Algorithms = {
     if (source.indexOf(before, at + 1) >= 0) throw new Error('Patch context is ambiguous');
     return source.slice(0, at) + after + source.slice(at + before.length);
   },
-  fitContext(messages, maxChars) {
+  fitContext(messages, maxSize, size = messages => JSON.stringify(messages).length) {
     validateHistory(messages);
     const next = [...messages];
-    while (JSON.stringify(next).length > maxChars) {
+    while (size(next) > maxSize) {
       const users = next.flatMap((m, i) => m.role === 'user' && !m.steered ? [i] : []);
       if (users.length === 0) throw new Error('Context budget exceeded by instructions; increase --context-chars');
       if (users.length === 1) throw new Error('Context budget exceeded by current turn; read smaller ranges or increase --context-chars');

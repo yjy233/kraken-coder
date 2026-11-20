@@ -14,14 +14,12 @@ export class AgentClientError extends Error {
 
 /** Shared by the browser and CLI; no agent logic or provider credentials live here. */
 export class AgentClient {
-  #token;
-  /** @param {string} [baseUrl] @param {string} [token] */
-  constructor(baseUrl = '', token = '') {
+  /** @param {string} [baseUrl] */
+  constructor(baseUrl = '') {
     const url = new URL(baseUrl || globalThis.location.origin);
     if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(url.hostname) || url.username || url.password) {
       throw new Error('Agent server must be a local http://127.0.0.1 or http://localhost URL');
     }
-    this.#token = token || new URLSearchParams(url.hash.slice(1)).get('token') || '';
     this.baseUrl = url.origin;
   }
 
@@ -29,8 +27,7 @@ export class AgentClient {
   async request(path, body) {
     const response = await fetch(this.baseUrl + '/api/v1' + path, {
       method: body === undefined ? 'GET' : 'POST',
-      headers: { Authorization: `Bearer ${this.#token}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
       credentials: 'omit', signal: AbortSignal.timeout(15_000),
     });
     if (!response.ok) await this.failure(response);
@@ -45,9 +42,9 @@ export class AgentClient {
 
   /** @returns {Promise<import('../server/protocol.js').ServerInfo>} */
   info() { return this.request('/info'); }
-  /** @returns {Promise<import('../config.js').TimeoutSettings>} */
+  /** @returns {Promise<import('../server/protocol.js').ServerSettings>} */
   settings() { return this.request('/settings'); }
-  /** @param {import('../config.js').TimeoutSettings} settings @returns {Promise<import('../config.js').TimeoutSettings>} */
+  /** @param {Partial<import('../config.js').RuntimeSettings>} settings @returns {Promise<import('../server/protocol.js').ServerSettings>} */
   updateSettings(settings) { return this.request('/settings', settings); }
   /** @returns {Promise<import('../server/protocol.js').SessionSummary[]>} */
   async sessions() { return (await this.request('/sessions')).sessions; }
@@ -65,8 +62,10 @@ export class AgentClient {
   async resumeFollowUps(id) { return (await this.request(`/sessions/${encodeURIComponent(id)}/inputs/resume`, {})).turn; }
   /** @param {string} id @param {string} turnId @returns {Promise<{ok: true}>} */
   cancelTurn(id, turnId) { return this.request(`/sessions/${encodeURIComponent(id)}/turns/${encodeURIComponent(turnId)}/cancel`, {}); }
-  /** @param {string} id @param {string} approvalId @param {boolean} approved @returns {Promise<{ok: true}>} */
-  approve(id, approvalId, approved) { return this.request(`/sessions/${encodeURIComponent(id)}/approvals/${encodeURIComponent(approvalId)}`, { approved }); }
+  /** @param {string} id @param {string} approvalId @param {boolean} approved @param {boolean} [remember] @returns {Promise<{ok: true}>} */
+  approve(id, approvalId, approved, remember = false) {
+    return this.request(`/sessions/${encodeURIComponent(id)}/approvals/${encodeURIComponent(approvalId)}`, remember ? { approved, remember } : { approved });
+  }
 
   /**
    * A fresh authoritative snapshot starts each connection. Reconnect explicitly;
@@ -75,7 +74,7 @@ export class AgentClient {
    */
   async watchSession(id, onFrame, signal) {
     const response = await fetch(`${this.baseUrl}/api/v1/sessions/${encodeURIComponent(id)}/events`, {
-      headers: { Authorization: `Bearer ${this.#token}`, Accept: 'text/event-stream' },
+      headers: { Accept: 'text/event-stream' },
       credentials: 'omit', signal,
     });
     if (!response.ok) await this.failure(response);

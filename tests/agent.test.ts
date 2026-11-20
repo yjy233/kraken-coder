@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { rm, readFile, mkdtemp } from 'node:fs/promises';
+import { rm, readFile, writeFile, mkdir, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
@@ -22,6 +22,7 @@ test('streaming runTurn waits for completion before tools and persists full mess
     const streaming = new Promise<void>(resolve => { started = resolve; });
     const frame = (delta: unknown, finish_reason: string | null = null) => `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason }] })}\n\n`;
     const srv = createServer(async (req, res) => {
+      if (req.url === '/v1/models') { res.writeHead(404).end(); return; }
       for await (const _ of req) { /* Drain request body. */ }
       res.setHeader('content-type', 'text/event-stream');
       if (++requests > 1) { res.end(frame({ reasoning_content: 'Check result.', content: 'done' }, 'stop') + 'data: [DONE]\n\n'); return; }
@@ -60,6 +61,68 @@ test('streaming runTurn waits for completion before tools and persists full mess
       await assert.rejects(readFile(join(workspace, 'created.txt')), /ENOENT/);
     }
   });
+});
+
+test('Oversized user input reports the effective budget after compaction', async t => {
+  const workspace = await mkdtemp(join(tmpdir(), 'kraken-budget-')), home = join(workspace, '.kraken-coder');
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+  const provider: Provider = { name: 'budget', async complete() { throw new Error('Unexpected model request'); } };
+  for (const window of [0, 10_000]) {
+    const config = { ...defaults, contextWindowTokens: window, contextChars: 12_000 };
+    await assert.rejects(runTurn({ workspace, home, session: `budget-${window}`, config, provider }, '文'.repeat(16_000)),
+      window ? /自动压缩后.+token（估算）.+阈值 8000.+运行设置/ : /自动压缩后.+字符.+阈值 12000.+--context-chars/);
+  }
+});
+
+test('Model window triggers current-turn compaction while preserving instructions, protocol and the journal', async t => {
+  const workspace = await mkdtemp(join(tmpdir(), 'kraken-budget-')), home = join(workspace, '.kraken-coder');
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+  await mkdir(join(workspace, 'src'));
+  await writeFile(join(workspace, 'src/AGENTS.md'), 'Keep the nested project instruction.');
+  await writeFile(join(workspace, 'src/long.txt'), '长行'.repeat(100).concat('\n').repeat(60));
+  await writeFile(join(workspace, 'src/short.txt'), 'Recent observation');
+  let metadataRequests = 0;
+  const requests: { role: string; content: string; tool_call_id?: string }[][] = [];
+  const srv = createServer(async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    if (req.method === 'GET' && req.url === '/v1/models') {
+      metadataRequests++;
+      res.end(JSON.stringify({ data: [{ id: 'fixture', token_limits: { context_window: 12_000 } }] }));
+      return;
+    }
+    const parts: Buffer[] = [];
+    for await (const part of req) parts.push(part as Buffer);
+    requests.push(JSON.parse(Buffer.concat(parts).toString()).messages);
+    res.end(JSON.stringify({ choices: [requests.length === 1
+      ? { finish_reason: 'tool_calls', message: { role: 'assistant', tool_calls: ['long', 'short'].map(id => ({
+        id, type: 'function', function: { name: 'read_file', arguments: JSON.stringify({ path: `src/${id}.txt` }) },
+      })) } }
+      : { finish_reason: 'stop', message: { role: 'assistant', content: 'done' } }] }));
+  });
+  srv.listen(0, '127.0.0.1');
+  await once(srv, 'listening');
+  t.after(async () => { srv.closeAllConnections(); await new Promise<void>(resolve => srv.close(() => resolve())); });
+  const result = await runTurn({ workspace, home, session: 'budget', config: {
+    ...defaults, mode: 'learner', provider: 'compatible', model: 'fixture',
+    baseUrl: `http://127.0.0.1:${(srv.address() as AddressInfo).port}/v1`, contextChars: 1000,
+  } }, 'Read both files');
+  assert.equal(result.answer, 'done');
+  assert.equal(metadataRequests, 1);
+  const sent = requests[1]!;
+  assert.equal(sent.find(message => message.role === 'user')?.content, 'Read both files');
+  const observations = sent.filter(message => message.role === 'tool');
+  assert.deepEqual(observations.map(message => message.tool_call_id), ['long', 'short']);
+  const compressed = JSON.parse(observations[0]!.content);
+  assert.equal(compressed.compacted, true);
+  assert.match(compressed.result.instructions[0].content, /nested project instruction/);
+  assert.equal(compressed.result.totalLines, 61);
+  assert.match(observations[1]!.content, /Recent observation/);
+  assert.equal(JSON.parse(observations[1]!.content).compacted, undefined);
+  const records = readSession(home, 'budget');
+  const original = records.find(row => (row.event.message as Message | undefined)?.toolCallId === 'long')!.event.message as Message;
+  assert.equal(JSON.parse(original.content).compacted, undefined);
+  assert.ok(JSON.parse(original.content).result.content.length > 10_000);
+  assert.equal(records.find(row => row.event.type === 'context.trimmed')?.event.toolResults, 1);
 });
 for (const mode of ['reference', 'learner'] as const) test(`${mode}: end-to-end bug fix, actual tests, journal and next turn resume`, async t => {
   const workspace = await createDemoProject(); t.after(() => rm(workspace, { recursive: true, force: true }));

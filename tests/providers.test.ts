@@ -9,6 +9,8 @@ import { reference } from '../src/learning/reference.js';
 import { sse } from '../src/providers/sse.js';
 import { apiUrl } from '../src/providers/http.js';
 import type { Event, Message } from '../src/core/types.js';
+import { defaults } from '../src/config.js';
+import { resolveContextBudget } from '../src/context/budget.js';
 async function server(handler: RequestListener) {
   const srv = createServer(handler); srv.listen(0, '127.0.0.1'); await once(srv, 'listening');
   return { url: `http://127.0.0.1:${(srv.address() as AddressInfo).port}/v1`, close: async () => {
@@ -18,6 +20,34 @@ async function server(handler: RequestListener) {
 const completed = (output: unknown[]) => ({ status: 'completed', output });
 const finalItem = { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '完成 🐙' }] };
 const chatChunk = (delta: unknown, finish_reason: string | null = null) => `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason }] })}\n\n`;
+
+test('Context budget matches the model ID, caches API metadata and falls back safely', async t => {
+  let calls = 0;
+  const local = await server((req, res) => {
+    calls++;
+    assert.equal(req.url, '/v1/models');
+    res.end(JSON.stringify({ data: [
+      { id: 'ark', token_limits: { context_window: 100_000, max_input_token_length: 75_000 } },
+      { id: 'router/model', context_length: 50_000 },
+      { id: 'openai', owned_by: 'openai' },
+    ] }));
+  });
+  t.after(local.close);
+  const config = { ...defaults, provider: 'compatible' as const, baseUrl: local.url, model: 'ark' };
+  assert.deepEqual(await resolveContextBudget(config), { source: 'api', windowTokens: 100_000, thresholdTokens: 75_000 });
+  assert.deepEqual(await resolveContextBudget({ ...config, contextCompactRatio: 0.7 }),
+    { source: 'api', windowTokens: 100_000, thresholdTokens: 70_000 });
+  assert.equal(calls, 1);
+  assert.deepEqual(await resolveContextBudget({ ...config, model: 'router/model' }),
+    { source: 'api', windowTokens: 50_000, thresholdTokens: 40_000 });
+  assert.deepEqual(await resolveContextBudget({ ...config, model: 'openai', contextChars: 42_000 }),
+    { source: 'fallback', thresholdChars: 42_000 });
+  assert.deepEqual(await resolveContextBudget({ ...config, contextWindowTokens: 64_000 }),
+    { source: 'manual', windowTokens: 64_000, thresholdTokens: 51_200 });
+  assert.deepEqual(await resolveContextBudget({ ...config, contextWindowTokens: 0 }),
+    { source: 'fallback', thresholdChars: defaults.contextChars });
+  assert.equal(calls, 3);
+});
 
 test('Compatible streams before completion, merges interleaved tools and replays reasoning; JSON fallback works', { timeout: 5000 }, async t => {
   const requests: any[] = [], events: Event[] = [];

@@ -1,16 +1,17 @@
-import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve, join } from 'node:path';
 import { runTurn, createProvider } from '../core/agent.js';
-import { saveTimeoutEnv, validateConfig, type Config, type TimeoutSettings } from '../config.js';
+import { saveRuntimeEnv, validateConfig, type Config, type RuntimeSettings } from '../config.js';
+import { resolveContextBudget } from '../context/budget.js';
 import { errorText } from '../core/validation.js';
 import type { Event, Message, Provider } from '../core/types.js';
 import { Workspace } from '../tools/workspace.js';
-import type { Approve } from '../tools/registry.js';
+import type { ApprovalDecision, Approve } from '../tools/registry.js';
 import { listSessions, readSession, SessionStore, sessionId, type RecordLine } from '../session/store.js';
-import type { ApiError, PendingApproval, PendingInput, ServerFrame, ServerInfo, SessionSnapshot, SessionSummary, TurnState } from './protocol.js';
+import type { ApiError, PendingApproval, PendingInput, ServerFrame, ServerInfo, ServerSettings, SessionSnapshot, SessionSummary, TurnState } from './protocol.js';
 
 export interface AgentServerOptions {
   config: Config;
@@ -19,21 +20,21 @@ export interface AgentServerOptions {
   allowShell?: boolean;
   provider?: Provider;
   port?: number;
-  token?: string;
   webRoot?: string;
-  /** File used by the CLI at startup; settings only update the two timeout keys. */
+  /** Pending inputs handed over by a stopped server. Never starts a turn on boot. */
+  pausedQueues?: Pick<SessionSnapshot, 'session' | 'inputs'>[];
+  /** File used by the CLI at startup for runtime settings. */
   envFile?: string;
 }
 export interface AgentServer {
-  /** Loopback HTTP origin; pass the token using Authorization, never in a query. */
+  /** Loopback HTTP origin for both Web and local API clients. */
   url: string;
-  token: string;
   close(): Promise<void>;
 }
 class HttpError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) { super(message); }
 }
-interface ApprovalWaiter { approval: PendingApproval; settle(approved: boolean): void }
+interface ApprovalWaiter { approval: PendingApproval; settle(decision: ApprovalDecision): void }
 interface LiveSession {
   turn: TurnState;
   controller: AbortController;
@@ -102,11 +103,19 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
   const workspace = (await Workspace.open(options.workspace)).root, home = resolve(options.home);
   const port = options.port ?? 4317;
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('port must be between 0 and 65535');
-  const token = options.token ?? randomBytes(32).toString('base64url');
-  if (token.length < 16 || /\s/.test(token)) throw new Error('Server token must have at least 16 characters without whitespace');
   const providerName = (options.provider ?? createProvider(config, () => {})).name;
-  const settings = (): TimeoutSettings => ({ requestTimeoutMs: config.requestTimeoutMs, turnTimeoutMs: config.turnTimeoutMs });
-  const info: ServerInfo = { version: 1, workspace, provider: config.provider, model: config.provider === 'demo' ? '' : config.model, mode: config.mode, approval: config.approval, shellEnabled: options.allowShell === true, ...settings() };
+  const info = (): ServerInfo => ({
+    version: 1, workspace, provider: config.provider, model: config.provider === 'demo' ? '' : config.model,
+    mode: config.mode, approval: config.approval, shellEnabled: options.allowShell === true,
+    requestTimeoutMs: config.requestTimeoutMs, turnTimeoutMs: config.turnTimeoutMs,
+  });
+  const runtimeSettings = async (): Promise<ServerSettings> => {
+    // Snapshot before awaiting discovery so the reported threshold matches the ratio.
+    const current = { ...config };
+    return { approval: current.approval, requestTimeoutMs: current.requestTimeoutMs, turnTimeoutMs: current.turnTimeoutMs,
+      contextWindowTokens: current.contextWindowTokens, contextCompactRatio: current.contextCompactRatio,
+      contextBudget: await resolveContextBudget(current, options.provider === undefined) };
+  };
   const live = new Map<string, LiveSession>();
   const listeners = new Map<string, Set<ServerResponse>>();
   let active: string | undefined, stopping = false, origin = '';
@@ -130,6 +139,14 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
     return records;
   };
   const pending = (state?: LiveSession): PendingApproval[] => [...(state?.approvals.values() ?? [])].map(item => item.approval);
+  for (const { session, inputs } of options.pausedQueues ?? []) {
+    const records = recordsFor(session.id), turn = previousTurn(records);
+    if (!turn || records.at(-1)?.time !== session.updatedAt || live.has(session.id)) {
+      throw new Error('Paused queue does not match the latest session snapshot');
+    }
+    live.set(session.id, { turn, controller: new AbortController(), approvals: new Map(),
+      inputs: structuredClone(inputs), followUpsPaused: true });
+  }
   const snapshot = (id: string): SessionSnapshot => {
     const records = recordsFor(id), state = live.get(id);
     return { session: summary(id, records), events: records.flatMap(r => { const event = visible(r.event); return event ? [event] : []; }), turn: state?.turn ?? previousTurn(records), approvals: pending(state), inputs: state?.inputs ?? [] };
@@ -142,17 +159,17 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
   };
   const publish = (id: string, value: ServerFrame): void => { for (const res of listeners.get(id) ?? []) frame(res, value); };
   const publishState = (id: string, state: LiveSession): void => publish(id, { type: 'state', sessionId: id, turn: state.turn, approvals: pending(state), inputs: state.inputs });
-  const requestApproval = (id: string, state: LiveSession): Approve => (request, signal) => new Promise<boolean>((resolveApproval, reject) => {
+  const requestApproval = (id: string, state: LiveSession): Approve => (request, signal) => new Promise<ApprovalDecision>((resolveApproval, reject) => {
     signal.throwIfAborted();
     const approval: PendingApproval = { id: randomUUID(), turnId: state.turn.id, ...request };
-    const finish = (approved: boolean, aborted = false): void => {
+    const finish = (decision: ApprovalDecision, aborted = false): void => {
       if (!state.approvals.delete(approval.id)) return;
       signal.removeEventListener('abort', abort);
       publishState(id, state);
-      if (aborted) reject(signal.reason); else resolveApproval(approved);
+      if (aborted) reject(signal.reason); else resolveApproval(decision);
     };
     const abort = (): void => finish(false, true);
-    state.approvals.set(approval.id, { approval, settle: approved => finish(approved) });
+    state.approvals.set(approval.id, { approval, settle: decision => finish(decision) });
     signal.addEventListener('abort', abort, { once: true });
     publishState(id, state);
   });
@@ -203,6 +220,7 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
   };
   const server = createServer((req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
     void (async () => {
@@ -210,7 +228,7 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
       const suffix = actualPort ? `:${actualPort}` : '';
       const hosts = new Set([`127.0.0.1${suffix}`, `localhost${suffix}`]);
       if (!req.headers.host || !hosts.has(req.headers.host)) fail(403, 'host_denied', 'Host must match the local server');
-      if (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) fail(403, 'origin_denied', 'Cross-origin requests are not allowed');
+      if (req.headers.origin !== undefined && req.headers.origin !== `http://${req.headers.host}`) fail(403, 'origin_denied', 'Cross-origin requests are not allowed');
       const path = new URL(req.url ?? '/', origin).pathname;
       if (!path.startsWith('/api/')) {
         if (req.method !== 'GET' && req.method !== 'HEAD') fail(405, 'method_not_allowed', 'Use GET');
@@ -224,22 +242,37 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
         res.writeHead(200, { 'Content-Type': asset[1], 'Cache-Control': 'no-cache' });
         res.end(req.method === 'HEAD' ? undefined : content); return;
       }
-      const supplied = req.headers.authorization ?? '', expected = `Bearer ${token}`;
-      if (Buffer.byteLength(supplied) !== Buffer.byteLength(expected) || !timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))) fail(401, 'unauthorized', 'A server access token is required');
+      // Browser subresource requests may omit Origin. Another localhost port is also a separate origin.
+      const site = req.headers['sec-fetch-site'];
+      if (site !== undefined && site !== 'same-origin' && site !== 'none') fail(403, 'origin_denied', 'Cross-origin requests are not allowed');
       if (stopping) fail(503, 'stopping', 'Server is shutting down');
-      if (req.method === 'GET' && path === '/api/v1/info') { json(res, 200, info); return; }
+      if (req.method === 'GET' && path === '/api/v1/info') { json(res, 200, info()); return; }
       if (path === '/api/v1/settings') {
-        if (req.method === 'GET') { json(res, 200, settings()); return; }
+        if (req.method === 'GET') { json(res, 200, await runtimeSettings()); return; }
         if (req.method === 'POST') {
-          const input = await body(req); fields(input, ['requestTimeoutMs', 'turnTimeoutMs']);
-          if (typeof input.requestTimeoutMs !== 'number' || typeof input.turnTimeoutMs !== 'number') fail(400, 'invalid_settings', '请提供两个时限数值（毫秒）。');
+          const input = await body(req);
+          fields(input, ['approval', 'requestTimeoutMs', 'turnTimeoutMs', 'contextWindowTokens', 'contextCompactRatio']);
+          if (!Object.keys(input).length) fail(400, 'invalid_settings', '请提供要修改的设置。');
+          if (('requestTimeoutMs' in input || 'turnTimeoutMs' in input)
+            && (typeof input.requestTimeoutMs !== 'number' || typeof input.turnTimeoutMs !== 'number')) fail(400, 'invalid_settings', '请提供两个时限数值（毫秒）。');
+          if ((input.contextWindowTokens !== undefined && input.contextWindowTokens !== null && typeof input.contextWindowTokens !== 'number')
+            || (input.contextCompactRatio !== undefined && typeof input.contextCompactRatio !== 'number')) {
+            return fail(400, 'invalid_settings', '请检查模型窗口和上下文压缩比例。');
+          }
           let next: Config;
           try { next = validateConfig({ ...config, ...input }); }
-          catch { return fail(400, 'invalid_settings', '单次模型请求需在 1 毫秒～10 分钟之间，整轮任务需在 1 毫秒～3 小时之间。'); }
-          const limits = { requestTimeoutMs: next.requestTimeoutMs, turnTimeoutMs: next.turnTimeoutMs };
-          saveTimeoutEnv(options.envFile ?? join(workspace, '.env'), limits);
-          Object.assign(config, limits); Object.assign(info, limits);
-          json(res, 200, limits); return;
+          catch (error) { return fail(400, 'invalid_settings', errorText(error)); }
+          const changes: Partial<RuntimeSettings> = {};
+          if (input.requestTimeoutMs !== undefined) {
+            changes.requestTimeoutMs = next.requestTimeoutMs;
+            changes.turnTimeoutMs = next.turnTimeoutMs;
+          }
+          if (input.approval !== undefined) changes.approval = next.approval;
+          if (input.contextWindowTokens !== undefined) changes.contextWindowTokens = next.contextWindowTokens;
+          if (input.contextCompactRatio !== undefined) changes.contextCompactRatio = next.contextCompactRatio;
+          saveRuntimeEnv(options.envFile ?? join(workspace, '.env'), changes);
+          Object.assign(config, changes);
+          json(res, 200, await runtimeSettings()); return;
         }
       }
       if (path === '/api/v1/sessions') {
@@ -317,11 +350,13 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
       }
       const approval = /^approvals\/([^/]+)$/.exec(tail ?? '');
       if (req.method === 'POST' && approval) {
-        const input = await body(req); fields(input, ['approved']);
+        const input = await body(req); fields(input, ['approved', 'remember']);
         if (typeof input.approved !== 'boolean') return fail(400, 'invalid_approval', 'approved must be a boolean');
+        if (input.remember !== undefined && typeof input.remember !== 'boolean') return fail(400, 'invalid_approval', 'remember must be a boolean');
         const waiter = live.get(id)?.approvals.get(approval[1]!);
         if (!waiter) return fail(409, 'stale_approval', 'Approval was already handled or cancelled');
-        waiter.settle(input.approved); json(res, 200, { ok: true }); return;
+        if (input.remember && (!input.approved || !waiter.approval.commandPrefix)) return fail(400, 'invalid_approval', 'Only an approved command with an offered prefix can be remembered');
+        waiter.settle(input.remember ? 'remember' : input.approved); json(res, 200, { ok: true }); return;
       }
       fail(404, 'not_found', 'Unknown API endpoint or method');
     })().catch(error => {
@@ -341,7 +376,7 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
   if (!address || typeof address === 'string') throw new Error('Could not determine server address');
   origin = `http://127.0.0.1:${address.port}`;
   let closing: Promise<void> | undefined;
-  return { url: origin, token, close() {
+  return { url: origin, close() {
     return closing ??= (async () => {
       stopping = true;
       for (const state of live.values()) if (state.turn.status === 'running') state.controller.abort(new Error('Server is shutting down'));

@@ -27,11 +27,6 @@
       </header>
       <div class="content-layout">
         <main class="conversation" aria-label="Agent 对话">
-          <section class="connection-panel" id="connection-panel" hidden>
-            <span class="eyebrow">LOCAL CONNECTION</span><h2>连接你的 Agent Server</h2><p>打开服务启动时显示的完整链接，或在这里输入连接令牌。</p>
-            <form id="connect-form"><label class="sr-only" for="connection-token">连接令牌</label><input id="connection-token" type="password" autocomplete="off" placeholder="粘贴 Server 连接令牌" required><button class="primary-button" type="submit">连接</button></form>
-            <p class="connection-error" id="connection-error" role="alert"></p>
-          </section>
           <div class="notice" id="notice" role="status" hidden></div>
           <div class="messages-scroll" id="messages-scroll">
             <section class="welcome" id="welcome">
@@ -57,7 +52,7 @@
             <form class="composer" id="composer-form">
               <label class="sr-only" for="message-input">给 Kraken 发送消息</label>
               <textarea id="message-input" placeholder="描述你的任务，或问一个关于代码的问题…" rows="2" disabled></textarea>
-              <div class="composer-toolbar"><div class="composer-settings"><span class="model-chip"><span class="tiny-dot"></span><span id="composer-model">尚未连接</span></span><span class="permission-chip" id="composer-permission">审批模式</span></div><div class="composer-actions">
+              <div class="composer-toolbar"><div class="composer-settings"><span class="model-chip"><span class="tiny-dot"></span><span id="composer-model">尚未连接</span></span><button type="button" class="permission-chip" id="composer-permission" title="更改审批模式" disabled>审批模式</button></div><div class="composer-actions">
                 <span class="keyboard-hint" id="send-hint">↵ 发送</span>
                 <button id="steer-turn" class="queue-button" type="button" title="在下一次模型请求前加入当前任务" hidden>调整当前任务</button>
                 <button id="follow-up-turn" class="queue-button" type="button" title="当前任务成功后启动下一轮" hidden>排到下一轮</button>
@@ -82,9 +77,19 @@
     <form id="settings-form">
       <div class="settings-heading"><h2 id="settings-title">运行设置</h2><button class="icon-button" id="close-settings" type="button" aria-label="关闭运行设置">×</button></div>
       <p class="settings-description">保存到 .env，从下一轮任务生效。正在执行的任务继续使用原设置。</p>
+      <label class="settings-field" for="settings-approval" id="settings-approval-field">工具审批<select id="settings-approval" name="approval" aria-describedby="settings-approval-help">
+        <option value="ask">每次问我</option>
+        <option value="auto-review">替我审批</option>
+        <option value="full-auto">完全权限</option>
+        <option value="read-only">只读模式</option>
+        <option value="workspace-write">工作区可写</option>
+      </select><small id="settings-approval-help"></small></label>
       <label class="settings-field" for="settings-request-timeout">单次模型请求（分钟）<input id="settings-request-timeout" name="requestTimeout" type="number" min="0.001" max="10" step="any" required><small>包含思考和完整流式输出，最长 10 分钟。</small></label>
       <label class="settings-field" for="settings-turn-timeout">整轮任务（小时）<input id="settings-turn-timeout" name="turnTimeout" type="number" min="0.001" max="3" step="any" required><small>包含所有模型调用、工具执行和审批等待，最长 3 小时。</small></label>
-      <p class="settings-help">也可手动修改 .env 的 KRAKEN_REQUEST_TIMEOUT_MS 和 KRAKEN_TURN_TIMEOUT_MS（单位：毫秒），然后重启服务。</p>
+      <div id="settings-context" hidden>
+        <label class="settings-field" for="settings-context-ratio">上下文压缩阈值（%）<input id="settings-context-ratio" type="number" min="10" max="95" step="any" value="80" required><small id="settings-context-budget"></small></label>
+        <label class="settings-field" for="settings-context-window">模型上下文窗口（token）<input id="settings-context-window" type="number" min="0" step="1" placeholder="自动探测"><small>留空自动探测。填 0 使用本地字符预算。</small></label>
+      </div>
       <p class="settings-error" id="settings-error" role="alert" hidden></p>
       <div class="settings-actions"><button class="primary-button" id="save-settings" type="submit">保存设置</button></div>
     </form>

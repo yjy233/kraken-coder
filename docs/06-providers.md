@@ -26,7 +26,9 @@ Demo 不理解一般自然语言。它支持 `/files`、`/read PATH`、`/search 
 | model | 空 | 线上服务必须指定 |
 | baseUrl | 空；responses 自动使用 OpenAI v1 | API 根地址，不包含具体资源路径 |
 | maxSteps | 16 | 每回合模型请求数，包含最终答复 |
-| contextChars | 120000 | 消息与工具 schema 的近似字符预算 |
+| contextChars | 120000 | 未获得 token 窗口时使用的本地字符预算 |
+| contextWindowTokens | null（自动） | 手动填写 token 窗口，填 0 使用字符预算 |
+| contextCompactRatio | 0.8 | token 窗口触发压缩的比例，可填 0.1–0.95 |
 | requestTimeoutMs | 180000（3 分钟） | 单次 HTTP 请求和读取响应总超时，最长 10 分钟 |
 | turnTimeoutMs | 10800000（3 小时） | 整个回合，包括审批等待与工具执行，最长 3 小时 |
 
@@ -37,9 +39,13 @@ Demo 不理解一般自然语言。它支持 `/files`、`/read PATH`、`/search 
 ```dotenv
 KRAKEN_REQUEST_TIMEOUT_MS=180000
 KRAKEN_TURN_TIMEOUT_MS=10800000
+KRAKEN_CONTEXT_WINDOW_TOKENS=auto
+KRAKEN_CONTEXT_COMPACT_RATIO=0.8
 ```
 
-手动修改后重启服务。网页右上角“运行设置”可修改同一组字段，保存到服务启动时使用的环境文件（`--env-file` 或默认 `.env`），并立即更新服务内的配置，从下一轮生效；正在执行的回合使用启动时的配置快照。页面只写这两个时限字段，不读回或展示 API Key。服务重启后仍按命令行 > 环境变量 > config.json > 默认值的顺序取值。
+手动修改后重启服务。网页右上角「运行设置」可以修改上述字段并保存到启动时使用的环境文件（`--env-file` 或默认 `.env`），从下一轮生效。正在执行的回合继续使用启动时的配置快照。保存时会保留 API Key 和其他环境设置。服务重启后仍按命令行 > 环境变量 > config.json > 默认值的顺序取值。
+
+Kraken 从当前供应商的 `GET /models` 按模型 ID 读取窗口，支持 [火山方舟的 `context_window`](https://docs.volcengine.com/docs/ark/models-api?lang=zh) 和 [OpenRouter 的 `context_length`](https://openrouter.ai/docs/api/api-reference/models/get-model)。预算为 `floor(窗口 × 压缩比例)`，有单独的输入上限时取较小值。发现结果会缓存，缺少窗口字段或发现请求失败时使用本地字符预算。CLI 可用 `--context-window-tokens N|auto` 和 `--context-compact-ratio 0.7`。单独传 `--context-chars N` 会直接选择字符预算。请求前以 UTF-8 JSON 大小估算 token，触发后的处理见 [上下文裁剪](05-sessions-and-context.md#l4-的预算)。
 
 单次请求时限包含思考及整个流式输出，收到增量不会重置计时。报错会明确区分“模型单次请求超时”和“整轮任务超时”；`update_plan` 的 completed 只是模型更新的计划状态，不等于最终答案已经成功返回。
 
