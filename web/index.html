@@ -4,42 +4,66 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <meta name="theme-color" content="#172825">
-  <title>Kraken · Agent Workspace</title>
+  <meta name="theme-color" content="#ffffff">
+  <title>Kraken · 工作台</title>
+  <link rel="icon" href="/kraken-avatar.jpg" type="image/jpeg">
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/conversation.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body>
+  <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 4H6a3 3 0 0 0-3 3v11a3 3 0 0 0 3 3h11a3 3 0 0 0 3-3v-6M10 15l1-4L18.5 3.5a1.8 1.8 0 0 1 2.5 2.5L13.5 14Z"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M3 6h9m5 0h4M3 12h3m5 0h10M3 18h10m5 0h3"/><circle cx="14.5" cy="6" r="2.5"/><circle cx="8.5" cy="12" r="2.5"/><circle cx="15.5" cy="18" r="2.5"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 8V6a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8Z"/><path d="M3 9h18"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20.5 11.5a8.5 8.5 0 0 1-8.5 8.5 9 9 0 0 1-3.4-.7L4 20.5l1.2-4.4a8.6 8.6 0 1 1 15.3-4.6Z"/><path d="M8.5 11.7h.1m3.4 0h.1m3.4 0h.1"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2.5"/><path d="M12 17v3m-4 0h8"/></symbol>
+    <symbol id="i-test" viewBox="0 0 24 24"><path d="M9 3h6m-5 0v6l-5.8 9.1A1.9 1.9 0 0 0 5.8 21h12.4a1.9 1.9 0 0 0 1.6-2.9L14 9V3M8.3 15h7.4"/></symbol>
+    <symbol id="i-stack" viewBox="0 0 24 24"><path d="m3 8 9-5 9 5-9 5-9-5Zm1 5 8 4.5 8-4.5M4 17l8 4.5 8-4.5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 4.1-3.5 7.2-8 9-4.5-1.8-8-4.9-8-9V6l8-3Z"/><path d="m8.5 12 2.3 2.3 4.7-5"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="m7 7-4 5 4 5m10-10 4 5-4 5m-4-13-2 16"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 20V4m-7 7 7-7 7 7"/></symbol>
+    <symbol id="i-details" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16M6.5 9H11m-4.5 4H10"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  </svg>
+  <template id="session-icon"><svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg></template>
   <div class="app-shell">
     <aside class="sidebar" id="sidebar" aria-label="会话导航">
-      <a class="brand" href="/" aria-label="Kraken 首页"><span class="brand-mark" aria-hidden="true">k<span>•</span></span><span>kraken<span class="brand-sub">AGENT WORKSPACE</span></span></a>
-      <button class="new-session" id="new-session" type="button"><span aria-hidden="true">＋</span> 新建会话 <kbd>⌘ K</kbd></button>
-      <div class="section-label">工作区 <span>01</span></div>
-      <div class="workspace-card"><span class="folder-icon" aria-hidden="true">⌑</span><div><strong id="workspace-name">本地工作区</strong><span id="workspace-location">等待连接 Agent Server</span></div><span class="workspace-dot" aria-hidden="true"></span></div>
+      <div class="brand"><span class="brand-mark" aria-hidden="true">k</span><strong>Kraken</strong></div>
+      <button class="nav-action" id="new-session" type="button" disabled><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg> 新建任务 <kbd>⌘ K</kbd></button>
+      <button class="nav-action" id="open-settings" type="button" disabled><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg> 运行设置</button>
+      <div class="section-label">当前项目</div>
+      <div class="workspace-card"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg><div><strong id="workspace-name">本地工作区</strong><span id="workspace-location">正在连接…</span></div></div>
       <div class="section-label sessions-heading">最近会话 <span id="session-count">0</span></div>
-      <nav id="session-list" class="session-list" aria-label="最近会话"><p class="sidebar-empty">从一个问题开始。</p></nav>
-      <div class="sidebar-footer"><span class="server-icon" aria-hidden="true">▤</span><div><strong>Agent Server</strong><span id="server-label">正在连接本地服务</span></div><span class="connection-dot" id="sidebar-dot"></span></div>
+      <nav id="session-list" class="session-list" aria-label="最近会话"></nav>
+      <div class="sidebar-footer"><span class="server-symbol"><svg class="icon" aria-hidden="true"><use href="#i-server"/></svg></span><div><strong>本地服务</strong><span id="server-label">正在连接</span></div><span id="sidebar-dot" class="connection-dot"></span></div>
     </aside>
     <div class="workspace-main">
       <header class="topbar">
-        <div class="breadcrumb"><button id="menu-toggle" class="icon-button menu-toggle" type="button" aria-label="展开会话导航" aria-expanded="false">☰</button><span class="breadcrumb-root">工作空间</span><span class="slash">/</span><strong id="session-title">新会话</strong></div>
-        <div class="topbar-right"><span class="connection-badge" id="connection-badge"><span class="connection-dot"></span><span id="connection-text">连接中</span></span><button class="settings-button" id="open-settings" type="button" disabled>运行设置</button><button class="icon-button" id="inspector-toggle" type="button" aria-label="切换运行详情" aria-expanded="true">▥</button></div>
+        <div class="breadcrumb"><button id="menu-toggle" class="icon-button" type="button" title="切换会话导航" aria-label="切换会话导航" aria-controls="sidebar" aria-expanded="true"><svg class="icon" aria-hidden="true"><use href="#i-panel"/></svg></button><strong id="session-title">新任务</strong></div>
+        <div class="topbar-right">
+          <span class="connection-badge" id="connection-badge"><span class="connection-dot"></span><span id="connection-text">连接中</span></span>
+          <button class="icon-button" id="inspector-toggle" type="button" title="运行详情" aria-label="切换运行详情" aria-controls="inspector" aria-expanded="false"><svg class="icon" aria-hidden="true"><use href="#i-details"/></svg></button>
+          <button class="icon-button" id="top-new-session" type="button" title="新建任务" aria-label="新建任务" disabled><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg></button>
+        </div>
       </header>
       <div class="content-layout">
         <main class="conversation" aria-label="Agent 对话">
           <div class="notice" id="notice" role="status" hidden></div>
           <div class="messages-scroll" id="messages-scroll">
-            <section class="welcome" id="welcome">
-              <div class="welcome-symbol" aria-hidden="true">k<span>•</span></div>
-              <span class="eyebrow">YOUR LOCAL CODING AGENT</span>
-              <h1>让想法，开始运行。</h1>
-              <p class="welcome-description">一起读懂代码、定位问题、完成修改。<br>每一步工具调用，都在你的掌握之中。</p>
-              <div class="suggestions" id="suggestions">
-                <button class="suggestion" type="button" data-prompt="先查看项目文件结构，介绍主要模块，以及一个适合开始阅读的入口。"><span class="suggestion-icon" aria-hidden="true">⌘</span><strong>读懂这个项目</strong><span>从结构到关键调用路径</span><span class="suggestion-arrow" aria-hidden="true">↗</span></button>
-                <button class="suggestion" type="button" data-prompt="阅读项目现有的测试和运行命令，帮我分析验证流程以及可能遗漏的边界情况。先只分析，不修改文件。"><span class="suggestion-icon" aria-hidden="true">⌁</span><strong>检查测试与边界</strong><span>找到值得验证的假设</span><span class="suggestion-arrow" aria-hidden="true">↗</span></button>
-                <button class="suggestion" type="button" data-prompt="我想实现一个新功能。请先阅读项目说明，梳理修改前需要确认的信息，等我补充具体需求。"><span class="suggestion-icon" aria-hidden="true">＋</span><strong>一起实现功能</strong><span>把需求拆成可执行的步骤</span><span class="suggestion-arrow" aria-hidden="true">↗</span></button>
+            <section class="welcome" id="welcome" hidden>
+              <div class="welcome-hero">
+                <img class="welcome-avatar" src="/kraken-avatar.jpg" width="92" height="92" alt="">
+                <h1>今天想一起做什么？</h1>
               </div>
-              <div class="welcome-footnote"><span class="tiny-dot"></span> 本地工作区 <span>·</span> 会话可恢复 <span>·</span> 操作可审批</div>
+              <div class="suggestions" id="suggestions">
+                <p class="suggestion-label">试试这些任务</p>
+                <button class="suggestion" type="button" data-prompt="先查看项目文件结构，介绍主要模块，以及一个适合开始阅读的入口。"><svg class="icon" aria-hidden="true"><use href="#i-stack"/></svg><strong>读懂项目</strong><span class="suggestion-detail">梳理代码结构</span></button>
+                <button class="suggestion" type="button" data-prompt="阅读项目现有的测试和运行命令，帮我分析验证流程以及可能遗漏的边界情况。先只分析，不修改文件。"><svg class="icon" aria-hidden="true"><use href="#i-test"/></svg><strong>检查测试</strong><span class="suggestion-detail">分析测试与边界</span></button>
+                <button class="suggestion" type="button" data-prompt="我想实现一个新功能。请先阅读项目说明，梳理修改前需要确认的信息，等我补充具体需求。"><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg><strong>实现功能</strong><span class="suggestion-detail">规划一次修改</span></button>
+              </div>
             </section>
             <div class="message-list" id="message-list" aria-live="polite" aria-relevant="additions text"></div>
           </div>
@@ -51,27 +75,33 @@
             </section>
             <form class="composer" id="composer-form">
               <label class="sr-only" for="message-input">给 Kraken 发送消息</label>
-              <textarea id="message-input" placeholder="描述你的任务，或问一个关于代码的问题…" rows="2" disabled></textarea>
-              <div class="composer-toolbar"><div class="composer-settings"><span class="model-chip"><span class="tiny-dot"></span><span id="composer-model">尚未连接</span></span><button type="button" class="permission-chip" id="composer-permission" title="更改审批模式" disabled>审批模式</button></div><div class="composer-actions">
-                <span class="keyboard-hint" id="send-hint">↵ 发送</span>
-                <button id="steer-turn" class="queue-button" type="button" title="在下一次模型请求前加入当前任务" hidden>调整当前任务</button>
-                <button id="follow-up-turn" class="queue-button" type="button" title="当前任务成功后启动下一轮" hidden>排到下一轮</button>
-                <button id="cancel-turn" class="stop-button" type="button" hidden><span aria-hidden="true">■</span> 停止</button>
-                <button id="send-message" class="send-button" type="submit" aria-label="发送消息" disabled>↑</button>
-              </div></div>
+              <textarea id="message-input" placeholder="发消息，或描述一个编程任务…" rows="2" disabled></textarea>
+              <div class="composer-toolbar">
+                <div class="composer-settings">
+                  <span class="model-chip"><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg><span id="composer-model">尚未连接</span></span>
+                  <button type="button" class="permission-chip" id="composer-permission" title="更改审批模式" disabled><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg><span id="permission-label">审批模式</span><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></button>
+                </div>
+                <div class="composer-actions">
+                  <span class="keyboard-hint" id="send-hint">↵ 发送</span>
+                  <button id="steer-turn" class="queue-button" type="button" title="在下一次模型请求前加入当前任务" hidden>调整当前任务</button>
+                  <button id="follow-up-turn" class="queue-button" type="button" title="当前任务成功后启动下一轮" hidden>排到下一轮</button>
+                  <button id="cancel-turn" class="stop-button" type="button" hidden>停止</button>
+                  <button id="send-message" class="send-button" type="submit" aria-label="发送消息" disabled><svg class="icon" aria-hidden="true"><use href="#i-up"/></svg></button>
+                </div>
+              </div>
             </form>
-            <p class="composer-caption" id="composer-caption">Shift + Enter 换行 <span>·</span> 工具在服务端配置的工作区中运行</p>
+            <p class="composer-caption" id="composer-caption" hidden></p>
           </div>
         </main>
-        <aside class="inspector" id="inspector" aria-label="运行详情">
-          <div class="inspector-heading"><span>运行详情</span><span class="inspector-mark" aria-hidden="true">↗</span></div>
+        <aside class="inspector" id="inspector" aria-label="运行详情" hidden>
+          <div class="inspector-heading"><span>运行详情</span><button type="button" class="icon-button" id="close-inspector" aria-label="关闭运行详情"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
           <div class="run-status-card"><div class="run-status-symbol" id="run-status-symbol" aria-hidden="true">◌</div><strong id="run-status">准备就绪</strong><p id="run-description">发送任务后，执行过程会显示在这里。</p><div class="run-metrics"><div><strong id="model-count">0</strong><span>模型步骤</span></div><div><strong id="tool-count">0</strong><span>工具调用</span></div></div></div>
           <div class="inspector-section"><h2>执行过程</h2><ol class="activity-list" id="activity-list"><li class="activity-placeholder">还没有执行记录</li></ol></div>
-          <div class="inspector-section"><h2>运行配置 <span>SERVER</span></h2><dl class="config-list"><div><dt>Provider</dt><dd id="config-provider">—</dd></div><div><dt>算法</dt><dd id="config-mode">—</dd></div><div><dt>权限</dt><dd id="config-approval">—</dd></div><div><dt>Shell</dt><dd id="config-shell">—</dd></div><div><dt>单次请求</dt><dd id="config-request-timeout">—</dd></div><div><dt>整轮任务</dt><dd id="config-turn-timeout">—</dd></div><div><dt>连接</dt><dd id="config-protocol">HTTP + SSE</dd></div></dl><div class="session-reference"><div><span>会话 ID</span><button id="copy-session-id" type="button" aria-label="复制当前会话 ID" title="复制会话 ID，用于 CLI --session" disabled>复制</button></div><code id="current-session-id">尚未建立会话</code></div></div>
-          <div class="inspector-note"><span aria-hidden="true">◈</span><p>一个 Agent Server，<br>连接不同的工作方式。</p><span class="client-label">WEB CLIENT / V1</span></div>
+          <div class="inspector-section"><h2>运行配置</h2><dl class="config-list"><div><dt>Provider</dt><dd id="config-provider">—</dd></div><div><dt>算法</dt><dd id="config-mode">—</dd></div><div><dt>权限</dt><dd id="config-approval">—</dd></div><div><dt>Shell</dt><dd id="config-shell">—</dd></div><div><dt>单次请求</dt><dd id="config-request-timeout">—</dd></div><div><dt>整轮任务</dt><dd id="config-turn-timeout">—</dd></div><div><dt>连接</dt><dd id="config-protocol">HTTP + SSE</dd></div></dl><div class="session-reference"><div><span>会话 ID</span><button id="copy-session-id" type="button" aria-label="复制当前会话 ID" title="复制会话 ID，用于 CLI --session" disabled>复制</button></div><code id="current-session-id">尚未建立会话</code></div></div>
         </aside>
       </div>
     </div>
+    <button class="panel-backdrop" id="panel-backdrop" type="button" aria-label="关闭侧边面板" hidden></button>
   </div>
   <dialog class="settings-dialog" id="settings-dialog" aria-labelledby="settings-title">
     <form id="settings-form">

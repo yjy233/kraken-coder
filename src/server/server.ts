@@ -125,6 +125,8 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
     '/index.html': [join(webRoot, 'index.html'), 'text/html; charset=utf-8'],
     '/app.js': [join(webRoot, 'app.js'), 'text/javascript; charset=utf-8'],
     '/styles.css': [join(webRoot, 'styles.css'), 'text/css; charset=utf-8'],
+    '/conversation.css': [join(webRoot, 'conversation.css'), 'text/css; charset=utf-8'],
+    '/kraken-avatar.jpg': [join(webRoot, 'kraken-avatar.jpg'), 'image/jpeg'],
     '/client.js': [fileURLToPath(new URL('../client/client.js', import.meta.url)), 'text/javascript; charset=utf-8'],
   };
   const recordsFor = (id: string): RecordLine[] => {

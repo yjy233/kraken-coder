@@ -40,7 +40,7 @@ function setConnection(status) {
   const dotClass = status === 'live' ? 'online' : status === 'offline' ? 'offline' : 'connecting';
   $('sidebar-dot').className = `connection-dot ${dotClass}`;
   $('connection-badge').querySelector('.connection-dot').className = `connection-dot ${dotClass}`;
-  text('server-label', state.info ? `本地服务 · API v${state.info.version}` : '等待本地服务连接');
+  text('server-label', state.info ? `Agent Server · v${state.info.version}` : '正在连接…');
   renderControls();
 }
 function configure(info) {
@@ -51,7 +51,7 @@ function configure(info) {
   $('workspace-location').title = info.workspace;
   text('composer-model', info.model || (info.provider === 'demo' ? '离线 Demo' : info.provider));
   $('composer-model').title = info.model || info.provider;
-  text('composer-permission', policyLabels[info.approval] || info.approval);
+  text('permission-label', policyLabels[info.approval] || info.approval);
   text('config-provider', info.provider);
   text('config-mode', info.mode);
   text('config-approval', policyLabels[info.approval] || info.approval);
@@ -69,24 +69,23 @@ function configure(info) {
     suggestions.forEach((button, i) => {
       button.dataset.prompt = prompts[i][0];
       button.querySelector('strong').textContent = prompts[i][1];
-      button.querySelector('span:not(.suggestion-icon):not(.suggestion-arrow)').textContent = prompts[i][2];
+      button.querySelector('.suggestion-detail').textContent = prompts[i][2];
     });
-    text('composer-caption', '离线 Demo 仅支持 /files、/read、/search 等命令，不理解任意自然语言。');
-  } else {
-    $('composer-caption').replaceChildren('Shift + Enter 换行 ', node('span', '', '·'), ' 工具在服务端配置的工作区中运行');
+    text('composer-caption', '离线 Demo 可用 /files、/read 或 /search。');
   }
+  $('composer-caption').hidden = info.provider !== 'demo';
 }
 function renderSessions() {
-  text('session-count', String(state.sessions.length).padStart(2, '0'));
+  text('session-count', String(state.sessions.length));
   const list = $('session-list');
   list.replaceChildren();
-  if (!state.sessions.length) list.append(node('p', 'sidebar-empty', '从一个问题开始。'));
+  if (!state.sessions.length) list.append(node('p', 'sidebar-empty', '暂无会话'));
   for (const session of state.sessions) {
     const button = node('button', `session-item${session.id === state.selectedId ? ' active' : ''}`);
     button.type = 'button';
     button.title = session.title || session.id;
     if (session.id === state.selectedId) button.setAttribute('aria-current', 'page');
-    button.append(node('span', '', '◷'), node('span', '', session.title || '新会话'));
+    button.append($('session-icon').content.cloneNode(true), node('span', '', session.title || '新任务'));
     if (session.updatedAt) {
       const time = new Date(session.updatedAt);
       if (!Number.isNaN(time.getTime())) {
@@ -97,7 +96,7 @@ function renderSessions() {
     button.addEventListener('click', () => { void selectSession(session.id); closeMobileNav(); });
     list.append(button);
   }
-  text('session-title', state.sessions.find(s => s.id === state.selectedId)?.title || '新会话');
+  text('session-title', state.sessions.find(s => s.id === state.selectedId)?.title || '新任务');
   text('current-session-id', state.selectedId || '尚未建立会话');
   $('copy-session-id').disabled = !state.selectedId;
 }
@@ -131,9 +130,10 @@ function renderControls() {
   $('cancel-turn').hidden = !running;
   $('cancel-turn').disabled = state.cancelling || !connected;
   $('new-session').disabled = !state.connected || state.creating;
+  $('top-new-session').disabled = $('new-session').disabled;
   $('open-settings').disabled = !state.connected || state.settingsBusy;
   $('composer-permission').disabled = $('open-settings').disabled;
-  $('message-input').placeholder = running ? '调整当前任务（Enter），或排到下一轮…' : '描述你的任务，或问一个关于代码的问题…';
+  $('message-input').placeholder = running ? '补充要求，或排到下一轮…' : '发消息，或描述一个编程任务…';
 }
 function currentTurnEvents() {
   const start = state.events.findLastIndex(event => event.type === 'turn.started');
@@ -635,7 +635,26 @@ async function connect() {
     disconnect(`连接失败：${errorText(error)}。确认本机服务已启动后，刷新页面重试。`);
   }
 }
-function closeMobileNav() { $('sidebar').classList.remove('open'); $('menu-toggle').setAttribute('aria-expanded', 'false'); }
+const mobileNav = matchMedia('(max-width: 720px)');
+const floatingInspector = matchMedia('(max-width: 1000px)');
+const shell = document.querySelector('.app-shell');
+function syncPanels() {
+  const navOpen = mobileNav.matches ? $('sidebar').classList.contains('open') : !shell.classList.contains('nav-collapsed');
+  const detailsOpen = !$('inspector').hidden;
+  $('menu-toggle').setAttribute('aria-expanded', String(navOpen));
+  $('inspector-toggle').setAttribute('aria-expanded', String(detailsOpen));
+  $('panel-backdrop').hidden = !(mobileNav.matches && navOpen || floatingInspector.matches && detailsOpen);
+}
+function closeMobileNav() { $('sidebar').classList.remove('open'); syncPanels(); }
+function closePanels() {
+  if (!$('inspector').hidden) {
+    $('inspector').hidden = true;
+    $('inspector-toggle').focus();
+  } else if ($('sidebar').classList.contains('open')) {
+    $('menu-toggle').focus();
+  }
+  closeMobileNav();
+}
 function setSettingsBusy(busy) {
   state.settingsBusy = busy;
   for (const id of ['settings-approval', 'settings-request-timeout', 'settings-turn-timeout', 'settings-context-ratio', 'settings-context-window', 'save-settings']) $(id).disabled = busy;
@@ -720,7 +739,8 @@ $('steer-turn').addEventListener('click', () => { void sendMessage('steer'); });
 $('follow-up-turn').addEventListener('click', () => { void sendMessage('follow_up'); });
 $('resume-follow-ups').addEventListener('click', () => { void resumeFollowUps(); });
 $('new-session').addEventListener('click', () => { void createSession(); });
-$('open-settings').addEventListener('click', () => { void openSettings(); });
+$('top-new-session').addEventListener('click', () => { void createSession(); });
+$('open-settings').addEventListener('click', () => { closeMobileNav(); void openSettings(); });
 $('composer-permission').addEventListener('click', () => { void openSettings(true); });
 $('settings-approval').addEventListener('change', describeApproval);
 $('close-settings').addEventListener('click', () => $('settings-dialog').close());
@@ -749,19 +769,28 @@ $('suggestions').addEventListener('click', event => {
   $('message-input').value = button.dataset.prompt; resizeComposer(); $('message-input').focus();
 });
 $('menu-toggle').addEventListener('click', () => {
-  const open = $('sidebar').classList.toggle('open'); $('menu-toggle').setAttribute('aria-expanded', String(open));
+  if (mobileNav.matches) {
+    $('inspector').hidden = true;
+    $('sidebar').classList.toggle('open');
+  } else { shell.classList.toggle('nav-collapsed'); }
+  syncPanels();
 });
 $('inspector-toggle').addEventListener('click', () => {
   const inspector = $('inspector');
-  if (matchMedia('(max-width:1000px)').matches) {
-    const shown = inspector.classList.toggle('show-mobile'); $('inspector-toggle').setAttribute('aria-expanded', String(shown));
-  } else { inspector.hidden = !inspector.hidden; $('inspector-toggle').setAttribute('aria-expanded', String(!inspector.hidden)); }
+  inspector.hidden = !inspector.hidden;
+  closeMobileNav();
+  if (!inspector.hidden && floatingInspector.matches) $('close-inspector').focus();
 });
+$('close-inspector').addEventListener('click', closePanels);
+$('panel-backdrop').addEventListener('click', closePanels);
+mobileNav.addEventListener('change', closeMobileNav);
+floatingInspector.addEventListener('change', syncPanels);
+syncPanels();
 document.addEventListener('keydown', event => {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
     event.preventDefault(); if (state.connected) void createSession();
   }
-  if (event.key === 'Escape') { closeMobileNav(); $('inspector').classList.remove('show-mobile'); }
+  if (event.key === 'Escape' && !$('settings-dialog').open) closePanels();
 });
 window.addEventListener('beforeunload', () => state.stream?.abort());
 void connect();
