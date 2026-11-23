@@ -14,5 +14,7 @@
 | [08 学习进度与接续说明](08-learning-progress.md) | 已经学过什么、用户有哪些基础、下一次从哪里继续？ |
 | [09 Harness 面试问题清单](09-interview-questions.md) | 面试 Coding Agent harness 工程师时，本项目可能被问什么、怎么答？ |
 | [10 Agent Server 与多客户端](10-agent-server.md) | Web、CLI 如何共用会话、审批与执行，后续怎样接入 VS Code？ |
+| [11 长任务运行验收](11-long-task-validation.md) | 怎样独立判定一轮是否交付，已有实测覆盖多长时间？ |
+| [12 长期记忆设计](12-long-term-memory-design.md) | 对照 Codex V2，哪些数据进 SQLite，新会话怎样找到旧结论？ |
 
 所有阶段默认离线；文档中的在线聊天命令只有在读者主动执行时才访问配置的模型服务。

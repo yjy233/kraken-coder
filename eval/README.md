@@ -1,6 +1,28 @@
 # 黑盒 Eval 与测评结果
 
-本目录通过公开 CLI 测量 kraken-coder × Kimi `kimi-k3.1-pro`，不修改 Agent 实现。
+本目录包含当前配置模型的多步任务验收，以及通过公开 CLI 测得的历史 Kimi `kimi-k3.1-pro` 基准结果。
+
+## 用当前模型验收一次多步任务
+
+两次真实运行的对照、JSONL 复核和小时级任务的验收口径见[长任务运行验收](../docs/11-long-task-validation.md)。
+
+仓库内有一个可重复的真实故障：执行输出很长的 shell 命令后，模型的下一次请求可能因上下文超限而失败。安装项目依赖并配置好根目录 `.env` 后，运行：
+
+```bash
+node --import tsx eval/harness/run_shell_context.mjs
+```
+
+脚本在 `eval/runs/` 中从固定提交生成干净副本，启动独立的本地 Agent Server，用当前模型和 learner 模式执行一次修复。每次运行都会产生真实模型调用。默认使用当前配置的步数上限（项目默认 16），外部观察时限为 15 分钟。测试客户端代答普通补丁和题面列出的测试命令。当前网页服务及其审批设置不参与实验。
+
+终端打印本次产物目录。先看 `summary.json` 中的 `pass`、`status`、`failure`、`modelSteps`、`tools` 和 `seconds`。`deliveryOK` 要求回合正常收尾、独立验收全绿、新增的回归测试在原版失败且在候选版通过、原有测试与类型检查通过。`pass` 还会检查改动范围，允许实现源码、新回归测试，以及仓库协作说明指定的学习记录 `docs/08-learning-progress.md`。这份记录会单列在 `extraPaths`。
+
+`before.log` 和 `after.log` 使用真实 shell 输出核对首尾、退出状态和预算，固定基线为 4 失败 / 4 通过。`journal.log` 在两种算法模式下经真实工具和离线模型适配器运行完整回合，分别核对发给模型的压缩输出和实际写入会话文件的原文。`project/` 保存候选补丁，`home/sessions/` 保留真实模型轨迹。复查已有实验不需要模型调用：
+
+```bash
+node --import tsx eval/harness/run_shell_context.mjs --grade-run eval/runs/shell-context-实际目录名
+```
+
+要对比步数限制，可以给运行脚本加 `--max-steps 48`，从干净副本独立重跑，再并列报告两次结果。这个案例测一次多步修复。要测半小时或一小时的工作，需另选该时长、具有外部验收的真实任务，并单列人工等待、超时和限流。
 
 ## 当前结果
 
