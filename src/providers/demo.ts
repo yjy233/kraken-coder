@@ -7,7 +7,8 @@ export class DemoProvider implements Provider {
   name = 'demo:v1';
   async complete(messages: readonly Message[]): Promise<ModelReply> {
     const at = messages.findLastIndex(m => m.role === 'user');
-    const input = messages[at]?.content ?? '', turn = messages.slice(at + 1);
+    // Demo commands are single-line; selected skills and hooks may append context underneath.
+    const input = (messages[at]?.content ?? '').split(/\r?\n/, 1)[0]!, turn = messages.slice(at + 1);
     const results = turn.filter(m => m.role === 'tool');
     const last = results.at(-1);
     if (last && JSON.parse(last.content).ok === false) return { content: `演示停止：${JSON.parse(last.content).error}` };

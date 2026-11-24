@@ -21,7 +21,8 @@ Schema 校验器实现本项目需要的有限 JSON Schema 子集：object、str
 | apply_patch | write | 一次 1～32 文件、参数上限、唯一完整行匹配 |
 | shell | shell | POSIX `/bin/sh`，默认 30 秒，最多 120 秒，输出上限 16000 字符 |
 | update_plan | state | 1～12 步，最多一个 in_progress |
-| read_skill | read | 只能读已索引的工作区 Skill 名称 |
+| read_skill | read | 读取已登记 Skill 的正文或技能目录内的文本资源，支持按行读取 |
+| mcp_list_tools / mcp_call_tool | shell | 配置了本地 stdio MCP 服务时提供，连接、发现和调用均走 shell 权限 |
 
 所有工具输出最终还有一层 20000 字符限制；超长结果转成带 `truncated` 的头尾预览。读取大文件时缩小行数，搜索结果只作为定位依据。文件与搜索有明确扫描上限，空结果不等于大仓库绝对不存在目标。
 
@@ -82,3 +83,74 @@ shell 只继承 PATH、HOME、USER、TMPDIR、LANG、LC_ALL，不自动继承 AP
 `ToolRegistry.register` 是公开扩展点，可通过 `src/index.ts` 导入。添加内置工具时，在 `registerBuiltins` 注册，并补能覆盖其实际副作用的案例。
 
 设计时首先决定 effect，再写参数约束；先把动作准备成具体预览，再把真正写入放进 `run`。如果一个工具既读又写，应按 write 分类。如果会执行任意命令，应按 shell 分类。不要把自定义写入工具伪装成 read 来绕过审批。
+
+## Skills 与本地插件
+
+仓库内置了一个可以直接加载的 [team-qa 插件](../examples/plugins/team-qa/plugin.json)。它提供 `team-qa:review` 技能和一个 `SessionStart` 命令 Hook。在仓库根目录运行：
+
+```bash
+npm install
+npm run dev -- skills --plugin ./examples/plugins/team-qa
+npm run dev -- plugins --plugin ./examples/plugins/team-qa
+npm run dev -- hooks --plugin ./examples/plugins/team-qa
+npm run serve -- --plugin ./examples/plugins/team-qa --allow-shell
+```
+
+打开服务打印的地址，在输入框点「扩展」，选择 `team-qa:review`，再写任务。也可以直接输入 `$team-qa:review 请检查这次修改的测试证据`。CLI 输入同一段文本走相同的解析路径。在命令行参数里放带 `$` 的消息时，记得用单引号。若要查看已运行服务的清单，用 `npm run dev -- plugins --server http://127.0.0.1:4317`。
+
+**持久配置。** `--plugin` 可重复，指定时替代本次启动的插件目录清单。长期使用可将以下字段加入 `<home>/config.json`。默认 home 是当前工作区的 `.kraken-coder`，也可用 `--home` 指定。配置中的路径使用实际绝对路径。调整启用目录后重新启动服务；目录内的技能文件会在新回合重新读取。
+
+```json
+{
+  "plugins": ["/absolute/path/to/team-qa"],
+  "skillRoots": ["/absolute/path/to/personal/skills"],
+  "hookFiles": ["/absolute/path/to/hooks.json"]
+}
+```
+
+**包格式。** 支持带 `$schema` 的 Agent Plugins v1 根 `plugin.json`（见示例），以及 `.codex-plugin/plugin.json`。标准包按约定提供 `skills/`、`hooks/hooks.json` 和 `mcp.json`。旧格式支持清单里声明的技能目录、Hook 和 MCP 配置，默认 MCP 文件是 `.mcp.json`。只加载显式启用的本地插件包。项目独立技能继续从 `.agents/skills/` 发现，额外的个人目录由 `skillRoots` 登记。[清单解析](../src/extensions/manifest.ts) · [Codex 快照中的加载约定](https://github.com/openai/codex/blob/5c3ff1dabf644169f4bd74b215719f381e4fdb3f/codex-rs/core-plugins/src/loader.rs#L1114)
+
+**技能。** 每个技能使用 `SKILL.md` 和 YAML frontmatter。`description` 必填，支持多行。`name` 省略时取目录名。模型默认收到名称和简介。用户点名时，当轮请求会带上相应正文，普通文本和正文快照分别落盘。大文件可用 `read_skill` 的 `start_line` 和 `line_count` 分页；配套文档用 `resource` 指定技能目录下的相对路径。发现技能时不会运行其中的脚本。工作区里的 `review` 与打包的 `team-qa:review` 是两个独立 ID。[目录](../src/extensions/catalog.ts) · [显式选择](../src/extensions/mentions.ts)
+
+### Hook 事件与审批
+
+| 阶段 | 可订阅的事件 | 适合做什么 |
+| --- | --- | --- |
+| 输入 | `SessionStart`、`UserPromptSubmit` | 初始化、补充上下文、在发送模型请求前检查输入 |
+| 工具 | `PreToolUse`、`PermissionRequest`、`PostToolUse` | 检查或改写工具参数、拒绝审批、处理工具结果 |
+| 模型和压缩 | `PreModelRequest`、`PostModelRequest`、`PreCompact`、`PostCompact` | 观察模型请求状态，订阅自动压缩前后通知 |
+| 收尾 | `Stop`、`Interrupt` | 提醒模型完成遗漏工作，观察用户取消 |
+
+命令 Hook 接收 stdin JSON，可在 stdout 返回结构化结果。下面这个同步 Hook 在执行 `shell` 前要求人工确认。包内脚本可以使用 `CODEX_PLUGIN_ROOT` 定位自身。已有的只读模式、`--allow-shell` 和工具审批仍然生效。Hook 改写的工具参数会重新校验，并据此生成审批预览。
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Bash",
+      "hooks": [{
+        "type": "command",
+        "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\"}}'"
+      }]
+    }]
+  }
+}
+```
+
+命令 Hook 本身也受 shell 开关和审批策略约束。同步 Hook 可以参与相应阶段的决定。命令声明 `"async": true` 后可在本回合后台运行，结束时清理进程，后台结果只产生事件。模型请求 Hook 只提供状态等元数据。取消时仅在已开启 shell 的完全权限模式下短暂运行 `Interrupt`，避免为一个正在取消的回合弹出新审批。Web 运行详情与 CLI 的 `--trace` 可查看 Hook 事件。[Hook 执行](../src/extensions/hooks.ts) · [运行策略](../src/tools/registry.ts)
+
+Hook 也可指定 `"type": "mcp_tool"`，用 `server`、`tool` 和 `input` 将事件交给已登记的本地 MCP 工具。例如 `"input": {"path":"${tool_input.path}"}` 会引用当前事件字段。宿主先展示已解析的参数，获准后才调用。工具返回的文本按相同的 Hook 输出协议解释。[MCP Hook 参数与结果](../src/extensions/mcp-hook.ts)
+
+### 本地 MCP 工具
+
+标准包的 `mcp.json` 可以声明一个 stdio 服务。下面假设包内已经提供 `tools/server.mjs` 并实现 MCP 协议。
+
+```json
+{
+  "mcpServers": {
+    "checks": { "command": "node", "args": ["${CODEX_PLUGIN_ROOT}/tools/server.mjs"] }
+  }
+}
+```
+
+打开扩展清单不会启动子进程。模型通过 `mcp_list_tools` 发现 `team-qa:checks` 提供的工具及参数，再用 `mcp_call_tool` 调用。进程在获准后启动，同一回合复用，结束或取消时清理。当前兼容范围是本地包、上述事件和 stdio 工具。远程市场安装、HTTP/OAuth MCP，以及 Codex 的 `SessionEnd`、`SubagentStart` 和 `SubagentStop` 事件尚未接入。[MCP 桥接](../src/extensions/mcp.ts)

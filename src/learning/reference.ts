@@ -25,19 +25,20 @@ export const reference: Algorithms = {
     const history = [...messages];
     validateHistory(history);
     const used = new Set(history.flatMap(m => m.toolCalls?.map(c => c.id) ?? []));
-    const appendSteering = () => {
+    const appendSteering = async () => {
       const inputs = r.takeSteering?.() ?? [];
       for (const content of inputs) {
-        const message: Message = { role: 'user', content, steered: true };
+        const message: Message = r.prepareSteering ? await r.prepareSteering(content) : { role: 'user', content };
+        message.steered = true;
         r.checkpoint(message); history.push(message);
       }
       return inputs.length > 0;
     };
     for (let step = 0; step < r.maxSteps; step++) {
       r.signal.throwIfAborted();
-      if (step === 0) appendSteering();
+      if (step === 0) await appendSteering();
       r.emit({ type: 'model.start', step });
-      const reply = await r.provider.complete(r.context(history), r.tools, r.signal);
+      const reply = await r.provider.complete(await r.context(history), r.tools, r.signal);
       r.signal.throwIfAborted(); validateReply(reply);
       const calls = reply.toolCalls ?? [];
       for (const call of calls) if (used.has(call.id)) throw new Error('Reused tool call ID');
@@ -52,8 +53,16 @@ export const reference: Algorithms = {
         r.checkpoint(result); history.push(result);
       }
       r.signal.throwIfAborted();
-      const steered = step + 1 < r.maxSteps && appendSteering();
-      if (!calls.length && !steered) return reply.content;
+      const steered = step + 1 < r.maxSteps && await appendSteering();
+      if (!calls.length && !steered) {
+        const feedback = await r.beforeFinish?.(reply.content);
+        if (feedback) {
+          const message: Message = { role: 'user', steered: true, hookFeedback: true, content: feedback };
+          r.checkpoint(message); history.push(message);
+        }
+        const afterHook = r.beforeFinish && step + 1 < r.maxSteps && await appendSteering();
+        if (!feedback && !afterHook) return reply.content;
+      }
     }
     throw new Error('Step limit reached');
   },

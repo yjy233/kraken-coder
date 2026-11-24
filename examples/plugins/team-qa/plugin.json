@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "team-qa",
+  "version": "0.1.0",
+  "description": "核对代码修改、回归测试和交付范围。"
+}

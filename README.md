@@ -2,7 +2,7 @@
 
 一个以 **Codex 开源实现为参考的 Coding Agent 教学项目**，沿用 `my-hermes` 的学习方式：可运行的外围框架、独立的学习算法与参考实现、中文逐阶段教程，以及不需要密钥的离线验收。
 
-使用 **TypeScript + Node.js 24+**，构建产物没有第三方运行时依赖。重点是读懂“用户任务 → 模型决策 → 工具审批与执行 → 观察结果 → 修改代码 → 测试 → 会话恢复”的完整链路。它是独立实现，不需要安装 Codex，也不调用本机 Codex CLI。
+使用 **TypeScript + Node.js 24+**，技能元数据通过 `yaml` 解析。重点是读懂“用户任务 → 模型决策 → 工具审批与执行 → 观察结果 → 修改代码 → 测试 → 会话恢复”的完整链路。它是独立实现，不需要安装 Codex，也不调用本机 Codex CLI。
 
 ## 五分钟运行
 
@@ -162,7 +162,14 @@ npm run dev -- chat --provider compatible --approval ask --allow-shell
 
 每轮读取工作区根 `AGENTS.md`。`read_file` 与 `project_instructions` 会返回目标文件从根到所在目录的指令；补丁工具要求新出现或已变化的目录指令先被读取。不会向工作区之外寻找祖先指令，也不实现 `AGENTS.override.md`。
 
-Skill 放在 `<workspace>/.agents/skills/<name>/SKILL.md`，frontmatter 使用单行 `name` 与 `description`。只有元数据进入初始提示词，正文由 `read_skill` 按需加载。可复制 [review 示例](examples/skills/review/SKILL.md)，再用 `skills` 命令检查。Skill 是文本程序说明，不会被自动当作 JavaScript 执行。
+工作区技能放在 `.agents/skills/<name>/SKILL.md`。可通过 `$技能名` 明确选用，也可让模型按需读正文。插件可以打包 Skills、生命周期 Hooks 和本地 MCP 工具。试用内置示例：
+
+```bash
+npm run dev -- plugins --plugin ./examples/plugins/team-qa
+npm run serve -- --plugin ./examples/plugins/team-qa --allow-shell
+```
+
+Web 输入框点击「扩展」即可选择 `team-qa:review`。常驻配置、Hook 事件和 MCP 文件示例见 [Skills 与本地插件](docs/04-tools-and-permissions.md#skills-与本地插件)。
 
 ## 开发与调试
 
@@ -196,7 +203,7 @@ web/                     聊天页面、工具轨迹、审批与连接状态
 
 ## 教学取舍
 
-本项目完整实现上述学习范围，并提供自己的本机 Agent Server 与 Web/CLI 客户端协议。Codex 上游更广泛的工程功能——原生 TUI、上游 app-server 协议兼容、OAuth 登录、OS 沙箱、远端 compaction、MCP、插件运行时、多 Agent、PTY 长任务——不在这个版本内。这里的 L4 是可检查的**整轮裁剪**，不是语义摘要；shell 是限时的一次性命令，不支持后台任务恢复。多文件补丁先做全量预检，但不提供跨文件崩溃事务。
+本项目完整实现上述学习范围，并提供自己的本机 Agent Server 与 Web/CLI 客户端协议。Codex 上游更广泛的工程功能——原生 TUI、上游 app-server 协议兼容、OAuth 登录、OS 沙箱、远端 compaction、插件市场、远程 MCP、多 Agent、PTY 长任务——不在这个版本内。这里的 L4 是可检查的**整轮裁剪**，不是语义摘要；shell 是限时的一次性命令，不支持后台任务恢复。多文件补丁先做全量预检，但不提供跨文件崩溃事务。
 
 上游参考固定为 openai/codex 的提交 `5c3ff1dabf644169f4bd74b215719f381e4fdb3f`；本地 checkout 位置因人而异，文档中以 `$CODEX_REPO` 指代。具体源码路径、对应关系与差异见 [Codex 源码导读](docs/02-codex-reference.md)。
 

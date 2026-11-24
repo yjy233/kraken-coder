@@ -1,5 +1,5 @@
 import type { Algorithms, Emit } from '../core/types.js';
-import { Instructions, type Skill } from '../context/instructions.js';
+import { Instructions, readSkill, type Skill } from '../context/instructions.js';
 import { Workspace } from './workspace.js';
 import { applyChanges, preparePatch } from './patch.js';
 import { runShell } from './shell.js';
@@ -80,12 +80,18 @@ export function registerBuiltins(registry: ToolRegistry, workspace: Workspace, a
       return { preview: JSON.stringify(steps), run: async () => { emit({ type: 'plan.updated', steps }); return { steps }; } };
     },
   });
-  registry.register({ name: 'read_skill', effect: 'read', description: 'Load the full body of a skill from the advertised workspace catalog.',
-    parameters: params({ name: str(64) }),
+  registry.register({ name: 'read_skill', effect: 'read', description: 'Read an advertised skill or a text resource relative to its directory. For long files use start_line and line_count.',
+    parameters: params({ name: str(129), resource: str(1000), start_line: integer(1, 256_000), line_count: integer(1, 400) }, ['name']),
     async prepare(a) {
       const skill = skills.find(s => s.name === a.name);
       if (!skill) throw new Error('Unknown skill');
-      return { preview: skill.path, run: async () => ({ ...skill, content: await workspace.read(skill.path) }) };
+      return { preview: skill.path, run: async () => {
+        const content = await readSkill(workspace, skill, a.resource as string | undefined);
+        const metadata = { name: skill.name, path: skill.path, description: skill.description };
+        if (a.start_line === undefined && a.line_count === undefined) return { ...metadata, content };
+        const lines = content.split('\n'), start = Number(a.start_line ?? 1) - 1;
+        return { ...metadata, content: lines.slice(start, start + Number(a.line_count ?? 160)).join('\n'), total_lines: lines.length };
+      } };
     },
   });
 }

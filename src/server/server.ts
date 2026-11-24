@@ -9,6 +9,7 @@ import { resolveContextBudget } from '../context/budget.js';
 import { errorText } from '../core/validation.js';
 import type { Event, Message, Provider } from '../core/types.js';
 import { Workspace } from '../tools/workspace.js';
+import { extensionInventory } from '../extensions/inventory.js';
 import type { ApprovalDecision, Approve } from '../tools/registry.js';
 import { listSessions, readSession, SessionStore, sessionId, type RecordLine } from '../session/store.js';
 import type { ApiError, PendingApproval, PendingInput, ServerFrame, ServerInfo, ServerSettings, SessionSnapshot, SessionSummary, TurnState } from './protocol.js';
@@ -55,12 +56,14 @@ function visible(event: Event): Event | undefined {
   const m = event.message as Message;
   return { type: 'message', message: { role: m.role, content: m.content,
     ...(m.role === 'user' && m.steered ? { steered: true } : {}),
+    ...(m.role === 'user' && m.hookFeedback ? { hookFeedback: true } : {}),
     ...(m.role === 'assistant' && m.reasoningContent?.trim() ? { reasoningContent: m.reasoningContent } : {}),
     ...(m.toolCalls ? { toolCalls: m.toolCalls } : {}), ...(m.toolCallId ? { toolCallId: m.toolCallId } : {}) } };
 }
 function summary(id: string, records: RecordLine[]): SessionSummary {
-  const user = records.find(r => r.event.type === 'message' && (r.event.message as Message).role === 'user');
-  return { id, title: user ? (user.event.message as Message).content.replace(/\s+/g, ' ').slice(0, 72) : '新会话', updatedAt: records.at(-1)?.time ?? new Date().toISOString() };
+  const first = records.find(r => r.event.type === 'turn.input' || (r.event.type === 'message' && (r.event.message as Message).role === 'user'))?.event;
+  const input = first?.type === 'turn.input' ? String(first.content) : (first?.message as Message | undefined)?.content;
+  return { id, title: input?.replace(/\s+/g, ' ').slice(0, 72) || '新会话', updatedAt: records.at(-1)?.time ?? new Date().toISOString() };
 }
 function previousTurn(records: RecordLine[]): TurnState | null {
   const start = records.findLastIndex(r => r.event.type === 'turn.started');
@@ -249,6 +252,7 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
       if (site !== undefined && site !== 'same-origin' && site !== 'none') fail(403, 'origin_denied', 'Cross-origin requests are not allowed');
       if (stopping) fail(503, 'stopping', 'Server is shutting down');
       if (req.method === 'GET' && path === '/api/v1/info') { json(res, 200, info()); return; }
+      if (req.method === 'GET' && path === '/api/v1/extensions') { json(res, 200, await extensionInventory(workspace, config)); return; }
       if (path === '/api/v1/settings') {
         if (req.method === 'GET') { json(res, 200, await runtimeSettings()); return; }
         if (req.method === 'POST') {

@@ -31,10 +31,11 @@ export const runLoop: Algorithms['runLoop'] = async (messages, runtime) => {
   const history = messages.slice();
   validateHistory(history);
   const usedIds = new Set(history.flatMap(m => (m.toolCalls ?? []).map(c => c.id)));
-  const appendSteering = () => {
+  const appendSteering = async () => {
     const inputs = runtime.takeSteering?.() ?? [];
     for (const content of inputs) {
-      const message: Message = { role: 'user', content, steered: true };
+      const message: Message = runtime.prepareSteering ? await runtime.prepareSteering(content) : { role: 'user', content };
+      message.steered = true;
       runtime.checkpoint(message);
       history.push(message);
     }
@@ -42,9 +43,9 @@ export const runLoop: Algorithms['runLoop'] = async (messages, runtime) => {
   };
   for (let step = 0; step < runtime.maxSteps; step++) {
     runtime.signal.throwIfAborted();
-    if (step === 0) appendSteering();
+    if (step === 0) await appendSteering();
     runtime.emit({ type: 'model.start', step });
-    const response = await runtime.provider.complete(runtime.context(history), runtime.tools, runtime.signal);
+    const response = await runtime.provider.complete(await runtime.context(history), runtime.tools, runtime.signal);
     runtime.signal.throwIfAborted();
     validateReply(response);
     const calls = response.toolCalls ?? [];
@@ -64,8 +65,18 @@ export const runLoop: Algorithms['runLoop'] = async (messages, runtime) => {
     }
     // Insert user input only after all tool results, including after a text-only reply.
     runtime.signal.throwIfAborted();
-    const steered = step + 1 < runtime.maxSteps && appendSteering();
-    if (calls.length === 0 && !steered) return assistant.content;
+    const steered = step + 1 < runtime.maxSteps && await appendSteering();
+    if (calls.length === 0 && !steered) {
+      const feedback = await runtime.beforeFinish?.(assistant.content);
+      if (feedback) {
+        const message: Message = { role: 'user', steered: true, hookFeedback: true, content: feedback };
+        runtime.checkpoint(message);
+        history.push(message);
+      }
+      // A stop hook may have waited for approval while the user steered the task.
+      const afterHook = runtime.beforeFinish && step + 1 < runtime.maxSteps && await appendSteering();
+      if (!feedback && !afterHook) return assistant.content;
+    }
   }
   throw new Error('Step limit reached');
 };

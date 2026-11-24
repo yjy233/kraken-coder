@@ -133,6 +133,7 @@ function renderControls() {
   $('top-new-session').disabled = $('new-session').disabled;
   $('open-settings').disabled = !state.connected || state.settingsBusy;
   $('composer-permission').disabled = $('open-settings').disabled;
+  $('open-extensions').disabled = !state.connected;
   $('message-input').placeholder = running ? '补充要求，或排到下一轮…' : '发消息，或描述一个编程任务…';
 }
 function currentTurnEvents() {
@@ -161,6 +162,8 @@ function renderInspector() {
     if (event.type === 'turn.started') timeline.push(['任务开始', 'turn.started']);
     if (event.type === 'model.start') timeline.push([`模型步骤 ${Number(event.step) + 1}`, 'model.start']);
     if (event.type === 'tool.start') timeline.push([event.name, 'tool.start']);
+    if (event.type === 'hook.end') timeline.push([`Hook · ${event.event}`, [event.source, event.status, event.message].filter(Boolean).join(' · ')]);
+    if (event.type === 'extension.warning' || event.type === 'extension.diagnostic') timeline.push(['扩展提示', event.message]);
     if (event.type === 'approval.reviewing') timeline.push(['模型正在替你审批', event.name]);
     if (event.type === 'approval.result') {
       const label = event.source === 'rule' ? '命中已允许的命令'
@@ -220,7 +223,7 @@ function pretty(value) {
   try { return JSON.stringify(JSON.parse(value), null, 2); } catch { return value; }
 }
 function buildItems(streamedReply) {
-  let modelStart;
+  let modelStart, submitted;
   const items = [], tools = new Map();
   function getTool(id, name) {
     if (tools.has(id)) return tools.get(id);
@@ -228,12 +231,23 @@ function buildItems(streamedReply) {
     tools.set(id, tool); items.push(tool); return tool;
   }
   for (const [index, event] of state.events.entries()) {
+    if (event.type === 'turn.started') submitted = undefined;
+    if (event.type === 'turn.input') {
+      submitted = event.content;
+      items.push({ type: 'message', id: index, role: 'user', content: submitted });
+    }
     if (event.type === 'turn.started' || event.type === 'model.start') modelStart = index;
     if (event.type === 'turn.completed' || event.type === 'turn.cancelled' || event.type === 'turn.failed') modelStart = undefined;
     if (event.type === 'message') {
       const message = event.message;
       if (!message) continue;
-      if (message.role === 'user') items.push({ type: 'message', id: index, role: 'user', content: message.content, steered: message.steered });
+      if (message.hookFeedback) items.push({ type: 'notice', id: index, content: message.content });
+      else if (message.role === 'user') {
+        if (message.steered || message.content !== submitted) {
+          items.push({ type: 'message', id: index, role: 'user', content: message.content, steered: message.steered });
+        }
+        submitted = undefined;
+      }
       if (message.role === 'assistant') {
         const id = modelStart ?? index;
         modelStart = undefined;
@@ -727,6 +741,49 @@ function resizeComposer() {
   const input = $('message-input'); input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 180)}px`;
   renderControls();
 }
+async function openExtensions() {
+  const dialog = $('extensions-dialog'), list = $('extension-list'), client = state.client;
+  if (!client || dialog.open) return;
+  dialog.showModal();
+  list.textContent = '正在读取扩展…';
+  try {
+    const catalog = await client.extensions();
+    if (client !== state.client || !dialog.open) return;
+    list.replaceChildren();
+    list.append(node('h3', '', '可用技能'));
+    if (!catalog.skills.length) list.append(node('p', '', '将 SKILL.md 放在工作区的 .agents/skills/<名称>/ 中，或在 config.json 中启用插件。'));
+    for (const skill of catalog.skills) {
+      const button = node('button', 'skill-choice');
+      button.type = 'button';
+      button.append(node('strong', '', skill.name), node('span', '', skill.description));
+      button.addEventListener('click', () => {
+        dialog.close();
+        const input = $('message-input'), start = input.selectionStart, end = input.selectionEnd;
+        const gap = start && !/\s/.test(input.value[start - 1]) ? ' ' : '';
+        input.setRangeText(gap + '$' + skill.name + ' ', start, end, 'end');
+        resizeComposer();
+        input.focus();
+      });
+      list.append(button);
+    }
+    if (catalog.plugins.length) list.append(node('h3', '', '已启用插件'));
+    for (const plugin of catalog.plugins) {
+      const row = node('div', 'plugin-details');
+      row.append(node('strong', '', plugin.name + (plugin.version ? ' · ' + plugin.version : '')));
+      if (plugin.description) row.append(node('span', '', plugin.description));
+      if (plugin.hookEvents.length) row.append(node('span', '', 'Hooks · ' + plugin.hookEvents.join('、')));
+      if (plugin.mcpServers.length) row.append(node('span', '', 'MCP · ' + plugin.mcpServers.join('、')));
+      list.append(row);
+    }
+    const standalone = catalog.hooks.filter(hook => !catalog.plugins.some(plugin => plugin.name === hook.source));
+    if (standalone.length) {
+      list.append(node('h3', '', '独立 Hooks'));
+      for (const hook of standalone) list.append(node('p', '', hook.event + ' · ' + hook.source));
+    }
+    for (const warning of catalog.diagnostics) list.append(node('p', 'settings-error', warning));
+  } catch (error) { list.textContent = '无法读取扩展。' + errorText(error); }
+}
+$('open-extensions').addEventListener('click', () => { void openExtensions(); });
 $('composer-form').addEventListener('submit', event => { event.preventDefault(); void sendMessage(); });
 $('message-input').addEventListener('input', resizeComposer);
 $('message-input').addEventListener('keydown', event => {

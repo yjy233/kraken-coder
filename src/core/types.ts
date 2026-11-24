@@ -8,6 +8,11 @@ export interface Message {
   content: string;
   /** A user message inside an existing turn, so it cannot split a context group. */
   steered?: true;
+  /** Snapshot of explicitly selected skills, attached only to the model's view of a user message. */
+  skillContext?: string;
+  /** Observations supplied by lifecycle hooks, kept distinct from human input. */
+  hookContext?: string;
+  hookFeedback?: true;
   toolCalls?: ToolCall[];
   toolCallId?: string;
   reasoningContent?: string;
@@ -27,7 +32,7 @@ export interface Schema {
   maximum?: number;
 }
 export interface ToolSpec { name: string; description: string; parameters: Schema }
-export interface ModelReply extends Omit<Message, 'role' | 'toolCallId' | 'steered'> {}
+export interface ModelReply extends Omit<Message, 'role' | 'toolCallId' | 'steered' | 'skillContext' | 'hookContext' | 'hookFeedback'> {}
 export interface Provider {
   name: string;
   complete(messages: readonly Message[], tools: ToolSpec[], signal: AbortSignal): Promise<ModelReply>;
@@ -43,7 +48,9 @@ export interface LoopRuntime {
   /** checkpoint 是原始轨迹；context 只改变发给模型的窗口。 */
   checkpoint(message: Message): void;
   takeSteering?(): string[];
-  context(messages: Message[]): Message[];
+  prepareSteering?(text: string): Promise<Message>;
+  beforeFinish?(answer: string): Promise<string | undefined>;
+  context(messages: Message[]): Message[] | Promise<Message[]>;
   execute(call: ToolCall, signal: AbortSignal): Promise<Message>;
 }
 export interface Algorithms {

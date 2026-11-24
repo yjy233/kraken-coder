@@ -275,6 +275,12 @@
   box-shadow: 0 16px 56px #1c273124;
 }
 .settings-dialog::backdrop { background: #17233445; }
+#extension-list { max-height: 65dvh; overflow: auto; overscroll-behavior: contain; }
+#extension-list h3 { font-size: 14px; margin: 16px 0 6px; }
+#extension-list p, #extension-list span { font-size: 13px; color: #596171; overflow-wrap: anywhere; }
+.skill-choice, .plugin-details { display: grid; gap: 3px; padding: 9px 6px; text-align: left; overflow-wrap: anywhere; }
+.skill-choice { width: 100%; border-radius: 7px; }
+.skill-choice:hover, .skill-choice:focus-visible { background: #f1f5fc; }
 .settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .settings-heading h2 { font-size: 19px; font-weight: 650; margin: 0; }
 .settings-description { margin-block: 7px 18px; }

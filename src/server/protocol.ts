@@ -2,6 +2,7 @@ import type { Config, RuntimeSettings, TimeoutSettings } from '../config.js';
 import type { ContextBudget } from '../context/budget.js';
 import type { Event } from '../core/types.js';
 import type { ApprovalRequest } from '../tools/registry.js';
+export type { ExtensionInventory } from '../extensions/inventory.js';
 
 /** Versioned transport boundary shared by browser, CLI and future IDE clients. */
 export const API_VERSION = 1;

@@ -79,6 +79,7 @@ flowchart LR
 | 方法与路径 | 输入 | 返回 / 行为 |
 | --- | --- | --- |
 | `GET /info` | — | 版本、工作区、provider/model、模式、审批策略、shell 是否启用 |
+| `GET /extensions` | — | 技能与插件清单、已解析的 Hook 及其来源、受支持的本地 MCP 服务名和加载诊断。查询不会执行 Hook 或启动 MCP 进程 |
 | `GET /settings` | — | 审批模式、两个时限（毫秒）、窗口配置、压缩比例和生效预算 |
 | `POST /settings` | 可单独提交 `approval`，也可提交两个时限字段、`contextWindowTokens` 和 `contextCompactRatio` | 保存到环境文件，从下一轮生效 |
 | `GET /sessions` | — | `{ sessions }`，当前工作区与 Provider 匹配的会话 |

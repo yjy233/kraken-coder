@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 import { parseEnv } from 'node:util';
 import type { Mode, Policy } from './core/types.js';
 import { object } from './core/validation.js';
@@ -12,6 +12,10 @@ export interface Config {
   contextWindowTokens: number | null;
   contextCompactRatio: number;
   requestTimeoutMs: number; turnTimeoutMs: number;
+  /** Explicit local plugin packages and additional standalone skill directories. */
+  plugins?: string[];
+  skillRoots?: string[];
+  hookFiles?: string[];
 }
 export type TimeoutSettings = Pick<Config, 'requestTimeoutMs' | 'turnTimeoutMs'>;
 export type RuntimeSettings = TimeoutSettings & Pick<Config, 'approval' | 'contextWindowTokens' | 'contextCompactRatio'>;
@@ -19,6 +23,7 @@ export const defaults: Config = {
   provider: 'demo', mode: 'reference', approval: 'ask', model: '', baseUrl: '',
   maxSteps: 16, contextChars: 120_000, contextWindowTokens: null, contextCompactRatio: 0.8,
   requestTimeoutMs: 180_000, turnTimeoutMs: 10_800_000,
+  plugins: [], skillRoots: [], hookFiles: [],
 };
 export function loadEnv(path: string): void {
   if (!existsSync(path)) return;
@@ -28,6 +33,14 @@ export function loadEnv(path: string): void {
   }
 }
 export function validateConfig(config: Config): Config {
+  for (const key of ['plugins', 'skillRoots', 'hookFiles'] as const) {
+    const paths = config[key] === undefined ? [] : config[key];
+    if (!Array.isArray(paths) || paths.length > 64 ||
+        paths.some(path => typeof path !== 'string' || !isAbsolute(path) || path.includes('\0'))) {
+      throw new Error(`${key} must be an array of up to 64 absolute local paths`);
+    }
+    config[key] = [...new Set(paths.map(path => resolve(path)))];
+  }
   const choices: Record<string, string[]> = { provider: ['demo', 'responses', 'compatible'], mode: ['reference', 'learner'], approval: ['read-only', 'ask', 'auto-review', 'workspace-write', 'full-auto'] };
   for (const [key, values] of Object.entries(choices)) if (!values.includes(config[key as keyof Config] as string)) throw new Error(`Invalid ${key}`);
   for (const [key, min, max] of [['maxSteps', 1, 100], ['contextChars', 1000, 2_000_000], ['requestTimeoutMs', 1, 600_000], ['turnTimeoutMs', 1, 10_800_000]] as const) {

@@ -11,8 +11,7 @@ import type { Emit, Mode } from './core/types.js';
 import { createDemoProject } from './demo-project.js';
 import { listSessions, readSession } from './session/store.js';
 import { runChecks } from './lab.js';
-import { listSkills } from './context/instructions.js';
-import { Workspace } from './tools/workspace.js';
+import { extensionInventory } from './extensions/inventory.js';
 import { startAgentServer } from './server/server.js';
 import { AgentClient } from './client/client.js';
 import { runRemoteTurn } from './client/remote-turn.js';
@@ -27,12 +26,15 @@ const help = `kraken-coder — Codex 风格 Coding Agent 教学项目（Node.js 
   exec --message TEXT           执行一次用户回合（chat --message 等价）
   sessions                      列出本地会话
   history SESSION_ID            输出持久化 JSONL 轨迹
-  skills                        列出当前工作区 .agents/skills
+  skills                        列出工作区、个人目录和插件提供的技能
+  plugins                       列出配置的插件、Hook 事件与 MCP 服务
+  hooks                         列出已加载的 Hook、事件及来源
   init                          创建无密钥的本地配置，保留已有文件
   doctor                        查看生效配置与密钥是否配置，不访问网络
 
   --cwd PATH                    工具工作区，默认当前目录
   --home PATH                   运行数据目录，默认工作区/.kraken-coder
+  --plugin PATH                 为本次启动加载本地插件，可重复
   --session ID                  恢复同一工作区和 Provider/model 的会话
   --provider demo|responses|compatible
   --model ID --base-url URL      真实模型配置；密钥只从环境读取
@@ -45,7 +47,7 @@ const help = `kraken-coder — Codex 风格 Coding Agent 教学项目（Node.js 
   --request-timeout-ms N --turn-timeout-ms N
   --env-file PATH                .env 文件；已有 shell 环境优先
   --port N                       serve 监听端口，固定绑定 127.0.0.1
-  --server URL                   chat/exec/sessions/doctor 连接已有本机服务
+  --server URL                   聊天、会话、诊断及扩展查询连接已有本机服务
   --json                        stdout 输出 JSONL 事件；非交互审批自动拒绝
   --trace --debug                stderr 事件摘要 / 错误栈
 
@@ -59,7 +61,7 @@ async function main(): Promise<void> {
     provider: { type: 'string' }, mode: { type: 'string' }, approval: { type: 'string' }, model: { type: 'string' }, 'base-url': { type: 'string' },
     'max-steps': { type: 'string' }, 'context-chars': { type: 'string' }, 'request-timeout-ms': { type: 'string' }, 'turn-timeout-ms': { type: 'string' },
     'context-window-tokens': { type: 'string' }, 'context-compact-ratio': { type: 'string' },
-    'env-file': { type: 'string' }, stage: { type: 'string' }, port: { type: 'string' }, server: { type: 'string' },
+    'env-file': { type: 'string' }, plugin: { type: 'string', multiple: true }, stage: { type: 'string' }, port: { type: 'string' }, server: { type: 'string' },
   } });
   const command = positionals[0] ?? 'help';
   if (flags.help || command === 'help') { console.log(help); return; }
@@ -90,13 +92,15 @@ async function main(): Promise<void> {
   if (flags['env-file'] && !existsSync(resolve(flags['env-file']))) throw new Error('Specified --env-file does not exist');
   loadEnv(resolve(flags['env-file'] ?? '.env'));
   if (flags.port !== undefined && command !== 'serve') throw new Error('--port is only supported by serve');
-  if (flags.server && !['exec', 'chat', 'sessions', 'doctor'].includes(command)) throw new Error('--server supports chat, exec, sessions and doctor');
+  if (flags.server && !['exec', 'chat', 'sessions', 'doctor', 'skills', 'plugins', 'hooks'].includes(command)) throw new Error('--server supports chat, exec, sessions, doctor, skills, plugins and hooks');
   if (flags.server) {
-    for (const key of ['cwd', 'home', 'provider', 'model', 'mode', 'approval', 'base-url', 'allow-shell', 'max-steps', 'context-chars', 'context-window-tokens', 'context-compact-ratio', 'request-timeout-ms', 'turn-timeout-ms'] as const) {
+    for (const key of ['cwd', 'home', 'plugin', 'provider', 'model', 'mode', 'approval', 'base-url', 'allow-shell', 'max-steps', 'context-chars', 'context-window-tokens', 'context-compact-ratio', 'request-timeout-ms', 'turn-timeout-ms'] as const) {
       if (flags[key] !== undefined) throw new Error(`--${key} is owned by the server; set it when starting serve`);
     }
   }
   const remote = flags.server ? new AgentClient(flags.server) : undefined;
+  const overrides: Partial<Config> = {};
+  if (flags.plugin) overrides.plugins = flags.plugin.map(path => resolve(path));
   const workspace = resolve(flags.cwd ?? '.'), home = resolve(flags.home ?? process.env.KRAKEN_HOME ?? resolve(workspace, '.kraken-coder'));
   if (command === 'sessions') { console.log(JSON.stringify(remote ? await remote.sessions() : listSessions(home), null, 2)); return; }
   if (command === 'history') {
@@ -105,7 +109,11 @@ async function main(): Promise<void> {
     for (const r of readSession(home, id)) console.log(JSON.stringify(r));
     return;
   }
-  if (command === 'skills') { console.log(JSON.stringify(await listSkills(await Workspace.open(workspace)), null, 2)); return; }
+  if (command === 'skills' || command === 'plugins' || command === 'hooks') {
+    const catalog = remote ? await remote.extensions() : await extensionInventory(workspace, loadConfig(home, { ...overrides, provider: 'demo' }));
+    for (const warning of catalog.diagnostics) console.error(warning);
+    console.log(JSON.stringify(catalog[command], null, 2)); return;
+  }
   if (command === 'init') {
     mkdirSync(home, { recursive: true, mode: 0o700 });
     const path = resolve(home, 'config.json');
@@ -113,7 +121,6 @@ async function main(): Promise<void> {
     console.log(`配置：${path}`); return;
   }
   if (!['exec', 'chat', 'doctor', 'serve'].includes(command)) throw new Error(`Unknown command: ${command}`);
-  const overrides: Partial<Config> = {};
   for (const key of ['provider', 'mode', 'approval', 'model'] as const) if (flags[key] !== undefined) Object.assign(overrides, { [key]: flags[key] });
   if (flags['base-url'] !== undefined) overrides.baseUrl = flags['base-url'];
   const windowFlag = flags['context-window-tokens'];

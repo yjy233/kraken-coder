@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Team QA: use the review skill when checking a patch or test evidence.'"
+          }
+        ]
+      }
+    ]
+  }
+}

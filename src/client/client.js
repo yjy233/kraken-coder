@@ -42,6 +42,8 @@ export class AgentClient {
 
   /** @returns {Promise<import('../server/protocol.js').ServerInfo>} */
   info() { return this.request('/info'); }
+  /** @returns {Promise<import('../server/protocol.js').ExtensionInventory>} */
+  extensions() { return this.request('/extensions'); }
   /** @returns {Promise<import('../server/protocol.js').ServerSettings>} */
   settings() { return this.request('/settings'); }
   /** @param {Partial<import('../config.js').RuntimeSettings>} settings @returns {Promise<import('../server/protocol.js').ServerSettings>} */

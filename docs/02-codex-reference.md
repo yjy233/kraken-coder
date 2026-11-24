@@ -53,7 +53,7 @@ rg -n 'enum Hunk|UpdateFileChunk' codex-rs/apply-patch/src/parser.rs
 | Patch | 更宽的语法、移动文件、多种上下文定位 | 严格子集，仅 bare `@@` 和唯一完整行匹配 |
 | 历史 | 更多事件、状态索引、压缩与持久化策略 | 单个 session 一个 JSONL，独占目录锁、fsync |
 | 上下文 | 本地/远端 compaction 和不透明 checkpoint | 删除完整旧轮次；不生成摘要，不伪装成无损压缩 |
-| 扩展 | 多种 Skill、插件、MCP、工具发现 | 工作区 Skill 文本索引和公开 ToolRegistry |
+| 扩展 | 多种 Skill、插件、MCP、工具发现 | 工作区与插件技能、同步与异步命令 Hook、本地 stdio MCP 工具 |
 | 任务控制 | 更复杂的并发输入、子 Agent、后台执行 | 串行工具、单次 shell、一个活动回合 |
 
 这些差异体现在行为与文档里，不能把“教学版通过了测试”理解成复现了 Codex 的全部工程保障。
