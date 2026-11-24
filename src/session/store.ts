@@ -1,8 +1,17 @@
 import { appendFileSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, statSync, truncateSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Event, Message } from '../core/types.js';
+import { profileForBaseUrl } from '../providers/profiles.js';
 export interface Meta { id: string; workspace: string; provider: string }
 export interface RecordLine { version: 1; seq: number; time: string; event: Event }
+function isSelectableChatProvider(name: string): boolean {
+  // Legacy journals store "compatible:<model>:<endpoint>", including colons in some model IDs.
+  const match = /^compatible:\S+?:(https?:\/\/\S+)\/chat\/completions$/.exec(name);
+  return !!match && !!profileForBaseUrl(match[1]!);
+}
+export function sessionProvidersMatch(stored: unknown, current: string): boolean {
+  return typeof stored === 'string' && (stored === current || (isSelectableChatProvider(stored) && isSelectableChatProvider(current)));
+}
 export function sessionId(id: string): string {
   if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id)) throw new Error('Session ID must contain 1–80 letters, numbers, _ or -');
   return id;
@@ -43,7 +52,7 @@ export class SessionStore {
       const { records, validBytes } = readJournal(path);
       if (records.length) {
         const first = records[0]!.event;
-        if (first.type !== 'session.created' || first.workspace !== meta.workspace || first.provider !== meta.provider || first.id !== meta.id) throw new Error('Session belongs to a different workspace/provider/model; use a new session');
+        if (first.type !== 'session.created' || first.workspace !== meta.workspace || !sessionProvidersMatch(first.provider, meta.provider) || first.id !== meta.id) throw new Error('Session belongs to a different workspace/provider/model; use a new session');
       }
       // 仅修剪没有换行的尾部；完整行损坏必须报错，不能静默跳过。
       if (existsSync(path) && statSync(path).size !== validBytes) truncateSync(path, validBytes);
@@ -57,7 +66,21 @@ export class SessionStore {
     const record: RecordLine = { version: 1, seq: this.records.length, time: new Date().toISOString(), event };
     appendFileSync(this.fd, JSON.stringify(record) + '\n'); fsyncSync(this.fd); this.records.push(record);
   }
-  messages(): Message[] { return this.records.filter(r => r.event.type === 'message').map(r => r.event.message as Message); }
+  messages(forProvider?: string): Message[] {
+    // Old turns inherit session.created.provider until the first recorded per-turn selection.
+    let source = this.records[0]?.event.provider;
+    const messages: Message[] = [];
+    for (const { event } of this.records) {
+      if (event.type === 'turn.started' && typeof event.provider === 'string') source = event.provider;
+      if (event.type !== 'message') continue;
+      const message = event.message as Message;
+      if (forProvider && source !== forProvider && message.role === 'assistant') {
+        const { reasoningContent, responseItems, openRouterReasoning, ...portable } = message;
+        messages.push(portable);
+      } else messages.push(message);
+    }
+    return messages;
+  }
   close(): void {
     if (this.closed) return;
     this.closed = true; try { closeSync(this.fd); } finally { rmSync(this.lock, { recursive: true, force: true }); }

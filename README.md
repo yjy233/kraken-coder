@@ -108,7 +108,7 @@ npm run dev -- exec --provider demo --message /files --json
 
 ## 接入真实模型
 
-复制 `.env.example` 为 `.env`，选择协议并填写自己账户可用的模型 ID。没有绑定某个特定或“最新”模型。
+Web 用户可直接点击输入框下方的模型名称，选择「火山方舟」或「OpenRouter」。首次使用某个平台时填入它的 API Key，读取模型列表，再选模型并保存。也可以手动输入模型 ID 或火山推理接入点 ID。每个平台分别记住自己的 Key 和上次选用的模型，从下一轮起生效。[模型配置与 .env 示例](docs/06-providers.md#火山方舟和-openrouter)
 
 OpenAI Responses：
 

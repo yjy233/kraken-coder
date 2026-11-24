@@ -8,9 +8,27 @@
 | --- | --- | --- | --- |
 | demo | 确定性离线教学脚本 | 无 | 直接返回模型协议对象 |
 | responses | OpenAI Responses 工具循环 | 配置的 endpoint | SSE；兼容返回完整 JSON 的网关 |
-| compatible | OpenAI-compatible Chat Completions 服务 | 配置的 endpoint | 非流式 JSON |
+| compatible | OpenAI-compatible Chat Completions 服务，包括火山方舟与 OpenRouter | 配置的 endpoint | SSE，也接受完整 JSON |
 
 Demo 不理解一般自然语言。它支持 `/files`、`/read PATH`、`/search TEXT`、`/skill NAME`，以及专用计算器项目的 `/fix`。执行过程中若工具被拒绝或失败，Demo 明确停止，不假装修复成功。
+
+## 火山方舟和 OpenRouter
+
+点击 Web 输入框下方的模型名，选择服务商。首次配置时输入该平台的 API Key，点击「读取模型」，从列表中选择模型或手动输入 ID，保存后从下一轮起生效。同一平台的模型共用这把 Key。服务为每个平台记住上次使用的模型，两家预设可以在同一会话中切换，历史对话文本和工具结果会发送给新选的平台。
+
+列表由服务端从平台的 `GET /models` 获取。火山普通按量端点也可手填已开通的 `ep-…` 推理接入点。列表中的模型仍受账号开通范围、额度及工具调用能力限制。[火山方舟模型列表](https://console.volcengine.com/ark/region%3Acn-beijing/docs/models-api) · [OpenRouter 模型列表](https://openrouter.ai/docs/api/api-reference/models/get-models)
+
+也可以在启动目录的 `.env` 中配置，或者用 `--env-file` 指定文件。将示例中的模型 ID 替换为账户可用的 ID，再启动服务。
+
+```dotenv
+KRAKEN_MODEL_PROVIDER=volcengine
+KRAKEN_VOLCENGINE_API_KEY=
+KRAKEN_VOLCENGINE_MODEL=你的火山模型或接入点ID
+KRAKEN_OPENROUTER_API_KEY=
+KRAKEN_OPENROUTER_MODEL=厂商/模型ID
+```
+
+`KRAKEN_MODEL_PROVIDER` 可取 `volcengine`、`openrouter`，对应平台和它的模型名一起生效。Web 保存选择会更新启动所用的 `.env`。原先通过 `KRAKEN_BASE_URL` 指向这两家标准地址的配置，仍可使用原有的 `KRAKEN_API_KEY` 和 `KRAKEN_MODEL`。为另一家平台填写独立 Key 即可。
 
 ## 配置优先级
 
@@ -58,6 +76,8 @@ POST `<baseUrl>/chat/completions`，发送 messages 和函数 tools。工具调�
 `decodeChat` 只接受 `stop/tool_calls`。`length/content_filter` 等结束状态报未完成；空文本且没有工具调用也拒绝。来自服务的 `reasoning_content` 保存在 `reasoningContent`，在后续消息中原样回传，但不拼到最终用户答复。
 
 该实现可以连接实现相同协议的服务，包括兼容的 Kimi endpoint；并未声称支持每家服务的专有参数。通过 `KRAKEN_API_KEY` 提供凭据；不自动借用 `OPENAI_API_KEY`。本地无鉴权服务可省略凭据。
+
+OpenRouter 的 Chat 接口还可能返回 `reasoning` 和 `reasoning_details`。前者可作为思考文本展示，后者可能含下一步工具调用所需的签名或加密数据。Kraken 保存这些块供原模型继续调用，切换模型时只带上可移植的对话和工具结果。[OpenRouter 推理字段](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens)
 
 ## Responses
 

@@ -1,18 +1,18 @@
 import type { Config } from '../config.js';
 import type { Algorithms, Message } from '../core/types.js';
+import { apiKeyForConfig } from '../providers/profiles.js';
 import { discoverModelWindow } from '../providers/models.js';
 
 export type ContextBudget =
   | { source: 'api' | 'manual'; windowTokens: number; thresholdTokens: number }
   | { source: 'fallback'; thresholdChars: number };
 
-export async function resolveContextBudget(config: Config, discover = true): Promise<ContextBudget> {
+export async function resolveContextBudget(config: Config, discover = true, apiKey: string | null = apiKeyForConfig(config) ?? null): Promise<ContextBudget> {
   if (config.contextWindowTokens) {
     return { source: 'manual', windowTokens: config.contextWindowTokens, thresholdTokens: Math.floor(config.contextWindowTokens * config.contextCompactRatio) };
   }
   if (config.contextWindowTokens === null && discover && config.provider !== 'demo') {
-    const apiKey = config.provider === 'responses' ? process.env.OPENAI_API_KEY : process.env.KRAKEN_API_KEY;
-    const detected = await discoverModelWindow(config.baseUrl, config.model, apiKey);
+    const detected = await discoverModelWindow(config.baseUrl, config.model, apiKey ?? undefined);
     if (detected) {
       const threshold = Math.floor(detected.windowTokens * config.contextCompactRatio);
       return { source: 'api', windowTokens: detected.windowTokens, thresholdTokens: Math.min(threshold, detected.maxInputTokens ?? threshold) };

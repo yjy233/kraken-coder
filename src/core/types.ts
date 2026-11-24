@@ -16,6 +16,8 @@ export interface Message {
   toolCalls?: ToolCall[];
   toolCallId?: string;
   reasoningContent?: string;
+  /** OpenRouter tool continuation state belongs to the originating endpoint/model. */
+  openRouterReasoning?: { provider: string; details?: Record<string, unknown>[] };
   /** Responses 原始输出（含 reasoning）按原序回传，不能只保存可见文本。 */
   responseItems?: Record<string, unknown>[];
 }

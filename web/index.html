@@ -78,7 +78,7 @@
               <textarea id="message-input" placeholder="发消息，或描述一个编程任务…" rows="2" disabled></textarea>
               <div class="composer-toolbar">
                 <div class="composer-settings">
-                  <span class="model-chip"><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg><span id="composer-model">尚未连接</span></span>
+                  <button type="button" class="model-chip" id="open-model-picker" title="切换模型" aria-haspopup="dialog" aria-controls="model-dialog" disabled><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg><span id="composer-model">尚未连接</span><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></button>
                   <button type="button" class="permission-chip" id="composer-permission" title="更改审批模式" disabled><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg><span id="permission-label">审批模式</span><svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></button>
                   <button type="button" class="permission-chip" id="open-extensions" aria-haspopup="dialog" title="选择技能或查看已启用插件" disabled><svg class="icon" aria-hidden="true"><use href="#i-stack"/></svg>扩展</button>
                 </div>
@@ -104,6 +104,30 @@
     </div>
     <button class="panel-backdrop" id="panel-backdrop" type="button" aria-label="关闭侧边面板" hidden></button>
   </div>
+  <dialog class="settings-dialog" id="model-dialog" aria-labelledby="model-title">
+    <form id="model-form" autocomplete="off">
+      <div class="settings-heading"><h2 id="model-title">切换模型</h2><button class="icon-button" id="close-model" type="button" aria-label="关闭模型选择">×</button></div>
+      <p class="settings-description">从本机服务的下一轮任务生效。在已有会话中切换服务商时，新服务商会收到对话历史。</p>
+      <fieldset id="model-fields" disabled>
+        <label class="settings-field">服务商<select id="model-provider" required></select></label>
+        <details class="model-credentials" id="model-credentials">
+          <summary>API Key <span id="model-key-status"></span></summary>
+          <div class="settings-field">
+            <label for="model-key" id="model-key-label">API Key</label>
+            <div class="model-key-row"><input id="model-key" type="password" autocomplete="new-password" spellcheck="false"><button id="load-models" type="button">读取模型</button></div>
+          </div>
+        </details>
+        <div class="settings-field">
+          <label for="model-id">模型</label>
+          <input id="model-id" type="text" required spellcheck="false" autocapitalize="none" placeholder="搜索或直接输入模型 ID">
+          <select id="model-list" size="5" aria-label="服务商模型列表" hidden></select>
+          <small id="model-catalog-status" role="status"></small>
+        </div>
+      </fieldset>
+      <p class="settings-error" id="model-error" role="alert" hidden></p>
+      <div class="settings-actions"><button class="primary-button" id="save-model" type="submit" disabled>使用此模型</button></div>
+    </form>
+  </dialog>
   <dialog class="settings-dialog" id="extensions-dialog" aria-labelledby="extensions-title">
     <div class="settings-heading"><h2 id="extensions-title">技能与插件</h2><form method="dialog"><button class="icon-button" aria-label="关闭技能与插件">×</button></form></div>
     <div id="extension-list" aria-live="polite"></div>

@@ -151,6 +151,8 @@ button, a, summary, textarea { -webkit-tap-highlight-color: transparent; }
   border-radius: 8px; font-size: 12px; line-height: 18px; white-space: nowrap;
 }
 .model-chip { min-width: 0; background: #eff4ff; color: #2762ce; }
+.model-chip:hover:enabled { background: #e1ebff; }
+.model-chip .icon:last-child { width: 11px; }
 #composer-model { max-width: min(26vw, 200px); overflow: hidden; text-overflow: ellipsis; }
 .permission-chip { color: #414651; }
 .permission-chip:hover:enabled { background: #f3f4f6; }

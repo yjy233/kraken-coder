@@ -3,6 +3,7 @@ import { AgentClient } from '/client.js';
 const $ = id => document.getElementById(id);
 const selectionKey = 'kraken.server.session';
 const policyLabels = { ask: '每次问我', 'auto-review': '替我审批', 'full-auto': '完全权限', 'read-only': '只读模式', 'workspace-write': '工作区可写' };
+const providerLabels = { volcengine: '火山方舟', openrouter: 'OpenRouter' };
 const policyHelp = {
   ask: '修改文件或运行命令前请你确认。你可以记住常用命令。',
   'auto-review': '由当前模型单独审核补丁和命令。审核无法判断时交给你确认。',
@@ -16,6 +17,15 @@ const state = {
   submitting: false, creating: false, cancelling: false, settingsBusy: false, pendingApprovals: new Set(),
   connection: 'connecting', notice: '',
 };
+const suggestionButtons = [...$('suggestions').querySelectorAll('button')];
+const onlineSuggestions = suggestionButtons.map(button => [
+  button.dataset.prompt, button.querySelector('strong').textContent, button.querySelector('.suggestion-detail').textContent,
+]);
+const demoSuggestions = [
+  ['/files', '查看项目文件', '运行 list_files 工具'],
+  ['/read README.md', '阅读项目说明', '运行 read_file 工具'],
+  ['/search TODO', '搜索待办事项', '运行 search 工具'],
+];
 // Clean up credentials from bookmarks and tabs used by earlier versions.
 if (location.hash.startsWith('#token=')) history.replaceState(null, '', location.pathname + location.search);
 try { sessionStorage.removeItem('kraken.server.token'); } catch { /* Optional storage. */ }
@@ -49,30 +59,26 @@ function configure(info) {
   text('workspace-name', name);
   text('workspace-location', info.workspace);
   $('workspace-location').title = info.workspace;
-  text('composer-model', info.model || (info.provider === 'demo' ? '离线 Demo' : info.provider));
-  $('composer-model').title = info.model || info.provider;
+  const vendor = providerLabels[info.modelProvider] || info.provider;
+  const model = info.model || (info.provider === 'demo' ? '离线 Demo' : info.provider);
+  text('composer-model', model);
+  $('open-model-picker').title = `切换模型（${vendor} · ${model}）`;
+  $('open-model-picker').setAttribute('aria-label', $('open-model-picker').title);
   text('permission-label', policyLabels[info.approval] || info.approval);
-  text('config-provider', info.provider);
+  text('config-provider', vendor);
   text('config-mode', info.mode);
   text('config-approval', policyLabels[info.approval] || info.approval);
   text('config-shell', info.shellEnabled ? '已启用' : '未启用');
   text('config-protocol', `HTTP + SSE · v${info.version}`);
   text('config-request-timeout', `${Number((info.requestTimeoutMs / 60000).toFixed(3))} 分钟`);
   text('config-turn-timeout', `${Number((info.turnTimeoutMs / 3600000).toFixed(3))} 小时`);
-  if (info.provider === 'demo') {
-    const suggestions = [...$('suggestions').querySelectorAll('button')];
-    const prompts = [
-      ['/files', '查看项目文件', '运行 list_files 工具'],
-      ['/read README.md', '阅读项目说明', '运行 read_file 工具'],
-      ['/search TODO', '搜索待办事项', '运行 search 工具'],
-    ];
-    suggestions.forEach((button, i) => {
-      button.dataset.prompt = prompts[i][0];
-      button.querySelector('strong').textContent = prompts[i][1];
-      button.querySelector('.suggestion-detail').textContent = prompts[i][2];
-    });
-    text('composer-caption', '离线 Demo 可用 /files、/read 或 /search。');
-  }
+  const prompts = info.provider === 'demo' ? demoSuggestions : onlineSuggestions;
+  suggestionButtons.forEach((button, i) => {
+    button.dataset.prompt = prompts[i][0];
+    button.querySelector('strong').textContent = prompts[i][1];
+    button.querySelector('.suggestion-detail').textContent = prompts[i][2];
+  });
+  if (info.provider === 'demo') text('composer-caption', '离线 Demo 可用 /files、/read 或 /search。');
   $('composer-caption').hidden = info.provider !== 'demo';
 }
 function renderSessions() {
@@ -108,8 +114,10 @@ function mergeSession(session) {
   renderSessions();
 }
 async function refreshSessions() {
+  const info = state.info;
   try {
     const sessions = await state.client.sessions();
+    if (info !== state.info) return;
     state.sessions = sessions;
     renderSessions();
   } catch { /* The stream's connection indicator owns transport errors. */ }
@@ -134,6 +142,7 @@ function renderControls() {
   $('open-settings').disabled = !state.connected || state.settingsBusy;
   $('composer-permission').disabled = $('open-settings').disabled;
   $('open-extensions').disabled = !state.connected;
+  $('open-model-picker').disabled = !state.connected || state.submitting || state.creating;
   $('message-input').placeholder = running ? '补充要求，或排到下一轮…' : '发消息，或描述一个编程任务…';
 }
 function currentTurnEvents() {
@@ -540,13 +549,37 @@ async function selectSession(id) {
   state.submitting = false; state.cancelling = false;
   state.pendingApprovals.clear();
   showNotice('');
-  try { sessionStorage.setItem(selectionKey, id); } catch { /* Optional preference. */ }
-  setConnection('connecting');
+  try {
+    if (id) sessionStorage.setItem(selectionKey, id);
+    else sessionStorage.removeItem(selectionKey);
+  } catch { /* Optional preference. */ }
+  setConnection(id ? 'connecting' : 'live');
   render();
+  if (!id) { state.stream = null; return; }
   const controller = new AbortController();
   state.stream = controller;
   void streamSession(id, generation, controller);
 }
+async function refreshModelSessions(client, info) {
+  const current = state.info;
+  const sessions = await client.sessions();
+  if (state.info !== current) return;
+  configure(info);
+  state.sessions = sessions;
+  if (state.selectedId && !sessions.some(session => session.id === state.selectedId)) await selectSession(null);
+  renderSessions();
+}
+document.addEventListener('visibilitychange', async () => {
+  if (document.hidden || !state.connected || modelPicker.saving) return;
+  const current = state.info;
+  try {
+    const info = await state.client.info();
+    if (current !== state.info || modelPicker.saving) return;
+    if (info.model !== current.model || info.modelProvider !== current.modelProvider || info.provider !== current.provider) {
+      await refreshModelSessions(state.client, info);
+    }
+  } catch { /* Normal session reconnect handles transport errors. */ }
+});
 async function createSession() {
   if (!state.client || state.creating) return null;
   state.creating = true; renderControls();
@@ -741,6 +774,129 @@ function resizeComposer() {
   const input = $('message-input'); input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 180)}px`;
   renderControls();
 }
+
+const modelPicker = { providers: [], models: [], query: '', request: 0, saving: false };
+function modelError(message = '') {
+  text('model-error', message); $('model-error').hidden = !message;
+}
+function updateModelSave() {
+  $('save-model').disabled = $('model-fields').disabled || !$('model-id').value.trim()
+    || ($('model-key').required && !$('model-key').value.trim());
+}
+function renderModelList() {
+  const list = $('model-list');
+  const matches = modelPicker.models.filter(id => id.toLowerCase().includes(modelPicker.query.toLowerCase()));
+  list.replaceChildren(...matches.map(id => new Option(id, id)));
+  list.value = $('model-id').value.trim();
+  list.hidden = !matches.length;
+  if (modelPicker.models.length) {
+    text('model-catalog-status', matches.length ? '' : '列表中没有匹配项，也可以直接使用输入的模型 ID。');
+  }
+  updateModelSave();
+}
+async function loadModelCatalog() {
+  const request = ++modelPicker.request;
+  const provider = $('model-provider').value, apiKey = $('model-key').value.trim();
+  modelPicker.models = [];
+  renderModelList();
+  text('model-catalog-status', '正在读取模型列表…');
+  try {
+    const client = state.client;
+    const result = apiKey ? await client.previewModelCatalog({ provider, apiKey }) : await client.modelSelection(provider);
+    if (request !== modelPicker.request || !$('model-dialog').open) return;
+    modelPicker.models = result.models;
+    text('model-catalog-status', result.catalogError || (result.models.length ? '' : '暂无模型列表，可以手动输入模型 ID。'));
+    renderModelList();
+  } catch (error) {
+    if (request === modelPicker.request && $('model-dialog').open) {
+      text('model-catalog-status', `读取模型列表失败：${errorText(error)}。可以手动输入模型 ID。`);
+    }
+  }
+}
+function changeModelProvider() {
+  const provider = modelPicker.providers.find(p => p.id === $('model-provider').value);
+  $('model-key').value = '';
+  $('model-key').required = !provider.configured;
+  $('model-credentials').open = !provider.configured;
+  text('model-key-status', provider.configured ? '已配置' : '待配置');
+  text('model-key-label', `${provider.label} API Key`);
+  $('model-key').placeholder = provider.configured ? '留空沿用现有 Key' : '输入此服务商的 Key';
+  $('model-id').value = provider.model;
+  modelPicker.query = '';
+  modelError();
+  if (provider.id === 'volcengine' && !provider.configured) {
+    ++modelPicker.request;
+    modelPicker.models = []; renderModelList();
+    text('model-catalog-status', '填写 Key 后，可点击「读取模型」查看列表。');
+  } else { void loadModelCatalog(); }
+}
+async function openModelPicker() {
+  const dialog = $('model-dialog');
+  if (!state.connected || dialog.open) return;
+  const request = ++modelPicker.request;
+  $('model-fields').disabled = true;
+  $('model-key').value = ''; $('model-id').value = '';
+  $('model-list').hidden = true; $('model-credentials').open = false;
+  $('model-provider').replaceChildren(); text('model-key-status', '');
+  modelError(); updateModelSave();
+  text('model-catalog-status', '正在读取服务商设置…');
+  dialog.showModal();
+  try {
+    const selection = await state.client.modelSelection();
+    if (request !== modelPicker.request || !dialog.open) return;
+    modelPicker.providers = selection.providers;
+    const select = $('model-provider');
+    select.replaceChildren(...selection.providers.map(p => new Option(p.label, p.id)));
+    select.value = selection.active.provider || selection.providers.find(p => p.configured)?.id || selection.providers[0].id;
+    $('model-fields').disabled = false;
+    changeModelProvider();
+    select.focus();
+  } catch (error) {
+    if (request === modelPicker.request && dialog.open) {
+      text('model-catalog-status', '');
+      modelError(`无法读取服务商设置：${errorText(error)}`);
+    }
+  }
+}
+async function saveModelSelection() {
+  if (!state.connected || $('save-model').disabled || modelPicker.saving) return;
+  const provider = $('model-provider').value, model = $('model-id').value.trim(), apiKey = $('model-key').value.trim();
+  ++modelPicker.request;
+  modelPicker.saving = true;
+  $('model-fields').disabled = true; $('close-model').disabled = true;
+  modelError(); updateModelSave();
+  const client = state.client;
+  try {
+    const saved = await client.saveModelSelection({ provider, model, ...(apiKey ? { apiKey } : {}) });
+    $('model-key').value = '';
+    configure({ ...state.info, provider: 'compatible', modelProvider: saved.active.provider, model: saved.active.model });
+    try {
+      const info = await client.info();
+      await refreshModelSessions(client, info);
+      showNotice(`已选择 ${providerLabels[info.modelProvider] || info.provider} · ${info.model}，从下一轮任务生效。`);
+    } catch { showNotice('模型已保存。请刷新页面以重新加载会话列表。'); }
+    $('model-dialog').close();
+  } catch (error) {
+    modelError(`保存失败：${errorText(error)}`);
+  } finally {
+    modelPicker.saving = false;
+    $('model-fields').disabled = false; $('close-model').disabled = false; updateModelSave();
+  }
+}
+$('open-model-picker').addEventListener('click', () => { void openModelPicker(); });
+$('close-model').addEventListener('click', () => $('model-dialog').close());
+$('model-dialog').addEventListener('cancel', event => { if (modelPicker.saving) event.preventDefault(); });
+$('model-dialog').addEventListener('close', () => { ++modelPicker.request; $('model-key').value = ''; });
+$('model-provider').addEventListener('change', changeModelProvider);
+$('model-key').addEventListener('input', () => {
+  ++modelPicker.request; modelPicker.models = []; renderModelList();
+  text('model-catalog-status', '点击「读取模型」获取列表，或直接输入模型 ID。');
+});
+$('load-models').addEventListener('click', () => { void loadModelCatalog(); });
+$('model-id').addEventListener('input', () => { modelPicker.query = $('model-id').value.trim(); renderModelList(); });
+$('model-list').addEventListener('change', () => { $('model-id').value = $('model-list').value; updateModelSave(); });
+$('model-form').addEventListener('submit', event => { event.preventDefault(); void saveModelSelection(); });
+
 async function openExtensions() {
   const dialog = $('extensions-dialog'), list = $('extension-list'), client = state.client;
   if (!client || dialog.open) return;
@@ -844,10 +1000,11 @@ mobileNav.addEventListener('change', closeMobileNav);
 floatingInspector.addEventListener('change', syncPanels);
 syncPanels();
 document.addEventListener('keydown', event => {
+  if (document.querySelector('dialog[open]')) return;
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
     event.preventDefault(); if (state.connected) void createSession();
   }
-  if (event.key === 'Escape' && !$('settings-dialog').open) closePanels();
+  if (event.key === 'Escape') closePanels();
 });
 window.addEventListener('beforeunload', () => state.stream?.abort());
 void connect();

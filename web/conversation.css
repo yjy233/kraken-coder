@@ -298,6 +298,18 @@
   font-weight: 400;
 }
 .settings-field input:focus-visible, .settings-field select:focus-visible { outline: 2px solid var(--detail-blue); outline-offset: 1px; }
+#model-fields { margin: 0; padding: 0; border: 0; min-width: 0; }
+.model-credentials { padding: 8px 10px; border: 1px solid var(--detail-line); border-radius: 8px; font-size: 13px; }
+.model-credentials summary { cursor: pointer; }
+#model-key-status { margin-left: 6px; color: var(--detail-muted); font-size: 12px; }
+.model-credentials .settings-field { margin: 12px 0 2px; }
+.model-key-row { display: flex; gap: 6px; }
+.model-key-row input { min-width: 0; }
+.model-key-row button { flex: none; padding: 5px 10px; border-radius: 7px; background: var(--detail-surface); }
+#model-list { padding: 3px; }
+#model-list option { padding: 4px 6px; }
+#model-catalog-status:empty { display: none; }
+#save-model:disabled { opacity: .5; }
 .settings-actions { margin-top: 18px; }
 .settings-actions button { padding: 8px 17px; font-size: 13px; }
 .settings-error { font-size: 13px; }

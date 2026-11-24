@@ -15,6 +15,7 @@ import { withModelHooks, withCompactHooks } from '../extensions/model-hooks.js';
 import { contextSize, fitModelContext, resolveContextBudget } from '../context/budget.js';
 import { createReviewer } from '../permissions/reviewer.js';
 import { SessionStore } from '../session/store.js';
+import { apiKeyForConfig } from '../providers/profiles.js';
 import { DemoProvider } from '../providers/demo.js';
 import { CompatibleProvider } from '../providers/compatible.js';
 import { ResponsesProvider } from '../providers/responses.js';
@@ -24,16 +25,16 @@ export interface AgentOptions {
   takeSteering?: LoopRuntime['takeSteering'];
 }
 const processInstance = randomUUID();
-export function createProvider(config: Config, emit: Emit): Provider {
+export function createProvider(config: Config, emit: Emit, apiKey: string | null = apiKeyForConfig(config) ?? null): Provider {
   if (config.provider === 'demo') return new DemoProvider();
-  const apiKey = config.provider === 'responses' ? process.env.OPENAI_API_KEY : process.env.KRAKEN_API_KEY;
   if (config.provider === 'responses' && !apiKey) throw new Error('Set OPENAI_API_KEY for Responses');
-  const http = { model: config.model, baseUrl: config.baseUrl, apiKey, timeoutMs: config.requestTimeoutMs };
+  const http = { model: config.model, baseUrl: config.baseUrl, apiKey: apiKey ?? undefined, timeoutMs: config.requestTimeoutMs };
   return config.provider === 'responses' ? new ResponsesProvider(http, emit) : new CompatibleProvider(http, algorithms(config.mode).decodeChat, emit);
 }
 export async function runTurn(options: AgentOptions, input: string, signal: AbortSignal = new AbortController().signal): Promise<{ answer: string; session: string; journal: string }> {
   if (!input.trim()) throw new Error('Message cannot be empty');
   const config = validateConfig({ ...options.config }), alg = algorithms(config.mode);
+  const apiKey = apiKeyForConfig(config) ?? null;
   const workspace = await Workspace.open(options.workspace);
   let store: SessionStore | undefined;
   const emit: Emit = event => {
@@ -41,7 +42,7 @@ export async function runTurn(options: AgentOptions, input: string, signal: Abor
     if (event.type !== 'model.delta') store?.append(event);
     options.emit?.(event);
   };
-  const provider = options.provider ?? createProvider(config, emit);
+  const provider = options.provider ?? createProvider(config, emit, apiKey);
   store = SessionStore.open(options.home, { id: options.session, workspace: workspace.root, provider: provider.name });
   const deadline = AbortSignal.timeout(config.turnTimeoutMs), active = AbortSignal.any([signal, deadline]);
   let mcp: ReturnType<typeof registerPluginMcp> | undefined;
@@ -52,14 +53,14 @@ export async function runTurn(options: AgentOptions, input: string, signal: Abor
     for (const message of catalog.diagnostics) emit({ type: 'extension.warning', message });
     const instructions = new Instructions(workspace), skills = catalog.skills;
     const system: Message = { role: 'system', content: await systemPrompt(workspace, instructions, skills) };
-    const raw = store.messages(), restored = alg.replay(raw);
+    const raw = store.messages(provider.name), restored = alg.replay(raw);
     const userMessages = [input];
     const checkpoint = (message: Message): void => {
       if (message.role === 'user' && message.steered && !message.hookFeedback) userMessages.push(message.content);
       emit({ type: 'message', message });
     };
     for (const repair of restored.slice(raw.length)) checkpoint(repair);
-    emit({ type: 'turn.started', session: options.session, mode: config.mode, approval: config.approval, shellEnabled: options.allowShell === true });
+    emit({ type: 'turn.started', session: options.session, provider: provider.name, model: config.model, mode: config.mode, approval: config.approval, shellEnabled: options.allowShell === true });
     emit({ type: 'instructions.snapshot', content: system.content });
     let user: Message | undefined;
     const hasHookSources = !!config.hookFiles?.length || catalog.plugins.some(p => p.hooks.length !== 0);
@@ -70,10 +71,10 @@ export async function runTurn(options: AgentOptions, input: string, signal: Abor
       user = await prepareSkillMessage(input, skills, workspace);
       checkpoint(user);
     }
-    const budget = await resolveContextBudget(config, options.provider === undefined);
+    const budget = await resolveContextBudget(config, options.provider === undefined, apiKey);
     active.throwIfAborted();
     const reviewer = config.approval === 'auto-review' && config.provider !== 'demo'
-      ? createReviewer(() => createProvider(config, () => {}), workspace.root, userMessages, budget)
+      ? createReviewer(() => createProvider(config, () => {}, apiKey), workspace.root, userMessages, budget)
       : undefined;
     const registry = new ToolRegistry({
       policy: config.approval, workspace: workspace.root, shellEnabled: options.allowShell === true,

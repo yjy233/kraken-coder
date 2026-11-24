@@ -2,15 +2,24 @@ import type { Config, RuntimeSettings, TimeoutSettings } from '../config.js';
 import type { ContextBudget } from '../context/budget.js';
 import type { Event } from '../core/types.js';
 import type { ApprovalRequest } from '../tools/registry.js';
+import type { ModelProvider } from '../providers/profiles.js';
 export type { ExtensionInventory } from '../extensions/inventory.js';
 
 /** Versioned transport boundary shared by browser, CLI and future IDE clients. */
 export const API_VERSION = 1;
 export interface ServerSettings extends RuntimeSettings { contextBudget: ContextBudget }
+export interface ModelSelection {
+  active: { provider: ModelProvider | null; model: string };
+  providers: { id: ModelProvider; label: string; configured: boolean; model: string }[];
+  models: string[];
+  catalogError?: string;
+}
+export interface ModelSelectionInput { provider: ModelProvider; model: string; apiKey?: string }
 export interface ServerInfo extends TimeoutSettings {
   version: 1;
   workspace: string;
   provider: Config['provider'];
+  modelProvider?: ModelProvider;
   model: string;
   mode: Config['mode'];
   approval: Config['approval'];

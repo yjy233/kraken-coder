@@ -48,6 +48,12 @@ export class AgentClient {
   settings() { return this.request('/settings'); }
   /** @param {Partial<import('../config.js').RuntimeSettings>} settings @returns {Promise<import('../server/protocol.js').ServerSettings>} */
   updateSettings(settings) { return this.request('/settings', settings); }
+  /** @param {import('../providers/profiles.js').ModelProvider} [provider] @returns {Promise<import('../server/protocol.js').ModelSelection>} */
+  modelSelection(provider) { return this.request('/model-selection' + (provider ? '?provider=' + encodeURIComponent(provider) : '')); }
+  /** @param {Pick<import('../server/protocol.js').ModelSelectionInput, 'provider' | 'apiKey'>} input @returns {Promise<import('../server/protocol.js').ModelSelection>} */
+  previewModelCatalog(input) { return this.request('/model-selection/catalog', input); }
+  /** @param {import('../server/protocol.js').ModelSelectionInput} input @returns {Promise<import('../server/protocol.js').ModelSelection>} */
+  saveModelSelection(input) { return this.request('/model-selection', input); }
   /** @returns {Promise<import('../server/protocol.js').SessionSummary[]>} */
   async sessions() { return (await this.request('/sessions')).sessions; }
   /** @returns {Promise<import('../server/protocol.js').SessionSummary>} */

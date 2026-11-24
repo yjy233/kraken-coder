@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { defaults, loadConfig, loadEnv, type Config } from './config.js';
+import { apiKeyForConfig, isModelProvider } from './providers/profiles.js';
 import { runTurn } from './core/agent.js';
 import { errorText } from './core/validation.js';
 import type { Emit, Mode } from './core/types.js';
@@ -35,8 +36,9 @@ const help = `kraken-coder — Codex 风格 Coding Agent 教学项目（Node.js 
   --cwd PATH                    工具工作区，默认当前目录
   --home PATH                   运行数据目录，默认工作区/.kraken-coder
   --plugin PATH                 为本次启动加载本地插件，可重复
-  --session ID                  恢复同一工作区和 Provider/model 的会话
+  --session ID                  恢复会话，火山方舟和 OpenRouter 支持在同一会话切换模型
   --provider demo|responses|compatible
+  --model-provider volcengine|openrouter   选择预设平台，可用 --model 指定该平台的模型
   --model ID --base-url URL      真实模型配置；密钥只从环境读取
   --mode reference|learner       两份独立算法，默认 reference
   --approval ask|auto-review|full-auto|read-only|workspace-write   默认 ask
@@ -58,7 +60,7 @@ async function main(): Promise<void> {
   const { values: flags, positionals } = parseArgs({ allowPositionals: true, strict: true, options: {
     help: { type: 'boolean', short: 'h' }, trace: { type: 'boolean' }, debug: { type: 'boolean' }, json: { type: 'boolean' }, all: { type: 'boolean' },
     'allow-shell': { type: 'boolean' }, cwd: { type: 'string' }, home: { type: 'string' }, session: { type: 'string' }, message: { type: 'string', short: 'm' },
-    provider: { type: 'string' }, mode: { type: 'string' }, approval: { type: 'string' }, model: { type: 'string' }, 'base-url': { type: 'string' },
+    'model-provider': { type: 'string' }, provider: { type: 'string' }, mode: { type: 'string' }, approval: { type: 'string' }, model: { type: 'string' }, 'base-url': { type: 'string' },
     'max-steps': { type: 'string' }, 'context-chars': { type: 'string' }, 'request-timeout-ms': { type: 'string' }, 'turn-timeout-ms': { type: 'string' },
     'context-window-tokens': { type: 'string' }, 'context-compact-ratio': { type: 'string' },
     'env-file': { type: 'string' }, plugin: { type: 'string', multiple: true }, stage: { type: 'string' }, port: { type: 'string' }, server: { type: 'string' },
@@ -94,7 +96,7 @@ async function main(): Promise<void> {
   if (flags.port !== undefined && command !== 'serve') throw new Error('--port is only supported by serve');
   if (flags.server && !['exec', 'chat', 'sessions', 'doctor', 'skills', 'plugins', 'hooks'].includes(command)) throw new Error('--server supports chat, exec, sessions, doctor, skills, plugins and hooks');
   if (flags.server) {
-    for (const key of ['cwd', 'home', 'plugin', 'provider', 'model', 'mode', 'approval', 'base-url', 'allow-shell', 'max-steps', 'context-chars', 'context-window-tokens', 'context-compact-ratio', 'request-timeout-ms', 'turn-timeout-ms'] as const) {
+    for (const key of ['cwd', 'home', 'plugin', 'provider', 'model-provider', 'model', 'mode', 'approval', 'base-url', 'allow-shell', 'max-steps', 'context-chars', 'context-window-tokens', 'context-compact-ratio', 'request-timeout-ms', 'turn-timeout-ms'] as const) {
       if (flags[key] !== undefined) throw new Error(`--${key} is owned by the server; set it when starting serve`);
     }
   }
@@ -122,6 +124,13 @@ async function main(): Promise<void> {
   }
   if (!['exec', 'chat', 'doctor', 'serve'].includes(command)) throw new Error(`Unknown command: ${command}`);
   for (const key of ['provider', 'mode', 'approval', 'model'] as const) if (flags[key] !== undefined) Object.assign(overrides, { [key]: flags[key] });
+  if (flags['model-provider'] !== undefined) {
+    if (!isModelProvider(flags['model-provider'])) throw new Error('--model-provider must be volcengine or openrouter');
+    if (flags['base-url'] !== undefined || (flags.provider && flags.provider !== 'compatible')) {
+      throw new Error('--model-provider selects a fixed compatible endpoint');
+    }
+    overrides.modelProvider = flags['model-provider'];
+  }
   if (flags['base-url'] !== undefined) overrides.baseUrl = flags['base-url'];
   const windowFlag = flags['context-window-tokens'];
   if (windowFlag !== undefined) overrides.contextWindowTokens = windowFlag === 'auto' ? null : Number(windowFlag);
@@ -144,7 +153,7 @@ async function main(): Promise<void> {
     return;
   }
   if (command === 'doctor') {
-    console.log(JSON.stringify(remote ? await remote.info() : { config, workspace, home, shellEnabled: !!flags['allow-shell'], apiKeyConfigured: !!(config!.provider === 'responses' ? process.env.OPENAI_API_KEY : config!.provider === 'compatible' ? process.env.KRAKEN_API_KEY : undefined) }, null, 2)); return;
+    console.log(JSON.stringify(remote ? await remote.info() : { config, workspace, home, shellEnabled: !!flags['allow-shell'], apiKeyConfigured: !!apiKeyForConfig(config!) }, null, 2)); return;
   }
   if (command === 'exec' && !flags.message) throw new Error('exec requires --message');
   if (!flags.message && (!process.stdin.isTTY || flags.json)) throw new Error('Interactive chat requires a terminal without --json; use exec --message');

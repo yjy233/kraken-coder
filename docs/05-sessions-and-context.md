@@ -10,14 +10,14 @@
 {"version":1,"seq":0,"time":"2026-11-12T02:00:00.000Z","event":{"type":"session.created","id":"study","workspace":"/path/project","provider":"demo:v1"}}
 ```
 
-`seq` 从 0 连续增加，时间使用 UTC ISO 格式。会话创建记录绑定实际工作区和 Provider；换模型、协议、服务地址或工作区时，应使用新 session。
+`seq` 从 0 连续增加，时间使用 UTC ISO 格式。创建记录保存实际工作区和初始 Provider。火山方舟与 OpenRouter 的预设 Chat 模型可在同一会话内切换，新回合记录实际使用的 Provider 和模型。续聊会带上之前的对话文本和配对的工具结果，模型专属的推理字段只回传给产生它的模型。旧日志从创建记录识别初始模型。其他协议、自定义端点及工作区继续按原身份匹配。
 
 常见事件：
 
 | 事件 | 用途 |
 | --- | --- |
 | session.created | 身份和工作区元数据 |
-| turn.started | 当前模式、策略、shell 开关 |
+| turn.started | 当前回合的模型、Provider、模式、策略和 shell 开关 |
 | instructions.snapshot | 本轮实际加载的根提示词 |
 | message | 原始 user / assistant / tool 消息，恢复输入来源 |
 | model.start / model.end | 模型请求边界 |

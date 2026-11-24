@@ -4,15 +4,17 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve, join } from 'node:path';
 import { runTurn, createProvider } from '../core/agent.js';
-import { saveRuntimeEnv, validateConfig, type Config, type RuntimeSettings } from '../config.js';
+import { saveModelSelection, saveRuntimeEnv, validateConfig, type Config, type RuntimeSettings } from '../config.js';
+import { apiKeyForConfig, isModelProvider, isValidProfileKey, modelConfig, modelProfiles, profileApiKey, profileForBaseUrl, rememberedModel, type ModelProvider } from '../providers/profiles.js';
+import { listChatModels } from '../providers/models.js';
 import { resolveContextBudget } from '../context/budget.js';
 import { errorText } from '../core/validation.js';
 import type { Event, Message, Provider } from '../core/types.js';
 import { Workspace } from '../tools/workspace.js';
 import { extensionInventory } from '../extensions/inventory.js';
 import type { ApprovalDecision, Approve } from '../tools/registry.js';
-import { listSessions, readSession, SessionStore, sessionId, type RecordLine } from '../session/store.js';
-import type { ApiError, PendingApproval, PendingInput, ServerFrame, ServerInfo, ServerSettings, SessionSnapshot, SessionSummary, TurnState } from './protocol.js';
+import { listSessions, readSession, SessionStore, sessionId, sessionProvidersMatch, type RecordLine } from '../session/store.js';
+import type { ApiError, ModelSelection, PendingApproval, PendingInput, ServerFrame, ServerInfo, ServerSettings, SessionSnapshot, SessionSummary, TurnState } from './protocol.js';
 
 export interface AgentServerOptions {
   config: Config;
@@ -102,13 +104,36 @@ function messageText(value: unknown): string {
 
 /** A single owner of turns, approval promises and session streams; transports never run tools themselves. */
 export async function startAgentServer(options: AgentServerOptions): Promise<AgentServer> {
-  const config = validateConfig({ ...options.config });
+  let config = validateConfig({ ...options.config });
   const workspace = (await Workspace.open(options.workspace)).root, home = resolve(options.home);
   const port = options.port ?? 4317;
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('port must be between 0 and 65535');
-  const providerName = (options.provider ?? createProvider(config, () => {})).name;
+  let providerOverride = options.provider;
+  let providerName = (providerOverride ?? createProvider(config, () => {})).name;
+  const activeProfile = () => config.provider === 'compatible' && !providerOverride ? profileForBaseUrl(config.baseUrl) : undefined;
+  const selectedKey = (id: ModelProvider) => profileApiKey(id) ?? (id === activeProfile() ? apiKeyForConfig(config) : undefined);
+  const modelSelection = async (forCatalog?: ModelProvider, previewKey?: string): Promise<ModelSelection> => {
+    const activeId = activeProfile();
+    const view: ModelSelection = { active: { provider: activeId ?? null, model: config.provider === 'demo' ? '' : config.model },
+      providers: (Object.keys(modelProfiles) as ModelProvider[]).map(id => ({ id, label: modelProfiles[id].label,
+        configured: !!selectedKey(id), model: id === activeId ? config.model : rememberedModel(id) })), models: [] };
+    if (!forCatalog) return view;
+    const key = previewKey ?? selectedKey(forCatalog);
+    if (forCatalog === 'volcengine' && !key) {
+      view.catalogError = '输入火山方舟 API Key 后可以获取模型列表。';
+      return view;
+    }
+    try {
+      view.models = await listChatModels(modelProfiles[forCatalog].baseUrl, key);
+    } catch (error) {
+      // Upstream response bodies and fetch errors can reference private request data.
+      const status = /^Provider HTTP (\d{3})$/.exec(errorText(error))?.[1];
+      view.catalogError = `获取模型列表失败${status ? `（HTTP ${status}）` : ''}，可重试或手动填写模型 ID。`;
+    }
+    return view;
+  };
   const info = (): ServerInfo => ({
-    version: 1, workspace, provider: config.provider, model: config.provider === 'demo' ? '' : config.model,
+    version: 1, workspace, provider: config.provider, modelProvider: activeProfile(), model: config.provider === 'demo' ? '' : config.model,
     mode: config.mode, approval: config.approval, shellEnabled: options.allowShell === true,
     requestTimeoutMs: config.requestTimeoutMs, turnTimeoutMs: config.turnTimeoutMs,
   });
@@ -117,7 +142,7 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
     const current = { ...config };
     return { approval: current.approval, requestTimeoutMs: current.requestTimeoutMs, turnTimeoutMs: current.turnTimeoutMs,
       contextWindowTokens: current.contextWindowTokens, contextCompactRatio: current.contextCompactRatio,
-      contextBudget: await resolveContextBudget(current, options.provider === undefined) };
+      contextBudget: await resolveContextBudget(current, providerOverride === undefined) };
   };
   const live = new Map<string, LiveSession>();
   const listeners = new Map<string, Set<ServerResponse>>();
@@ -140,7 +165,7 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
       throw e;
     }
     const meta = records[0]?.event;
-    if (!meta || meta.type !== 'session.created' || meta.workspace !== workspace || meta.provider !== providerName) fail(409, 'session_mismatch', 'Session belongs to a different workspace/provider/model');
+    if (!meta || meta.type !== 'session.created' || meta.workspace !== workspace || !sessionProvidersMatch(meta.provider, providerName)) fail(409, 'session_mismatch', 'Session belongs to a different workspace/provider/model');
     return records;
   };
   const pending = (state?: LiveSession): PendingApproval[] => [...(state?.approvals.values() ?? [])].map(item => item.approval);
@@ -198,7 +223,7 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
     // Do not await the turn in the HTTP handler: client disconnection never owns its lifetime.
     state.done = (async () => {
       try {
-        await runTurn({ config, workspace, home, session: id, allowShell: options.allowShell, provider: options.provider, emit, approve: requestApproval(id, state), takeSteering }, message, state.controller.signal);
+        await runTurn({ config: { ...config }, workspace, home, session: id, allowShell: options.allowShell, provider: providerOverride, emit, approve: requestApproval(id, state), takeSteering }, message, state.controller.signal);
         state.turn = { ...state.turn, status: 'completed' };
       } catch (error) {
         const cancelled = state.controller.signal.aborted || (error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name));
@@ -234,7 +259,7 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
       const hosts = new Set([`127.0.0.1${suffix}`, `localhost${suffix}`]);
       if (!req.headers.host || !hosts.has(req.headers.host)) fail(403, 'host_denied', 'Host must match the local server');
       if (req.headers.origin !== undefined && req.headers.origin !== `http://${req.headers.host}`) fail(403, 'origin_denied', 'Cross-origin requests are not allowed');
-      const path = new URL(req.url ?? '/', origin).pathname;
+      const url = new URL(req.url ?? '/', origin), path = url.pathname;
       if (!path.startsWith('/api/')) {
         if (req.method !== 'GET' && req.method !== 'HEAD') fail(405, 'method_not_allowed', 'Use GET');
         const asset = Object.hasOwn(assets, path) ? assets[path]! : undefined;
@@ -253,6 +278,34 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
       if (stopping) fail(503, 'stopping', 'Server is shutting down');
       if (req.method === 'GET' && path === '/api/v1/info') { json(res, 200, info()); return; }
       if (req.method === 'GET' && path === '/api/v1/extensions') { json(res, 200, await extensionInventory(workspace, config)); return; }
+      if (path === '/api/v1/model-selection' && req.method === 'GET') {
+        const id = url.searchParams.get('provider');
+        if (id !== null && !isModelProvider(id)) return fail(400, 'invalid_provider', '请选择火山方舟或 OpenRouter。');
+        json(res, 200, await modelSelection(id ?? undefined)); return;
+      }
+      if (req.method === 'POST' && (path === '/api/v1/model-selection' || path === '/api/v1/model-selection/catalog')) {
+        const preview = path.endsWith('/catalog');
+        const input = await body(req);
+        fields(input, preview ? ['provider', 'apiKey'] : ['provider', 'model', 'apiKey']);
+        const { provider, model, apiKey } = input;
+        if (!isModelProvider(provider)) return fail(400, 'invalid_provider', '请选择火山方舟或 OpenRouter。');
+        if (apiKey !== undefined && !isValidProfileKey(apiKey)) return fail(400, 'invalid_key', '请检查 API Key 格式。');
+        if (preview) { json(res, 200, await modelSelection(provider, apiKey)); return; }
+        if (typeof model !== 'string') return fail(400, 'invalid_model', '请填写模型 ID。');
+        let next: Config;
+        try { next = modelConfig(config, provider, model); }
+        catch { return fail(400, 'invalid_model', '请检查模型 ID。'); }
+        if (!(apiKey ?? selectedKey(provider))) return fail(400, 'missing_key', '请先为该平台配置 API Key。');
+        // Incompatible saved threads become hidden after the switch. Keep their active work reachable.
+        if (!activeProfile() && (active || [...live.values()].some(session => session.inputs.length))) {
+          return fail(409, 'turn_busy', '请先结束当前任务并处理待发消息，再切换服务商。');
+        }
+        saveModelSelection(options.envFile ?? join(workspace, '.env'), provider, model, apiKey, config);
+        config = next;
+        providerOverride = undefined;
+        providerName = createProvider(config, () => {}).name;
+        json(res, 200, await modelSelection()); return;
+      }
       if (path === '/api/v1/settings') {
         if (req.method === 'GET') { json(res, 200, await runtimeSettings()); return; }
         if (req.method === 'POST') {
@@ -283,7 +336,7 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
       }
       if (path === '/api/v1/sessions') {
         if (req.method === 'GET') {
-          const sessions = listSessions(home).filter((item: any) => item.workspace === workspace && item.provider === providerName).map((item: any) => summary(item.id, recordsFor(item.id))).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+          const sessions = listSessions(home).filter((item: any) => item.workspace === workspace && sessionProvidersMatch(item.provider, providerName)).map((item: any) => summary(item.id, recordsFor(item.id))).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
           json(res, 200, { sessions }); return;
         }
         if (req.method === 'POST') {
@@ -296,7 +349,9 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
       const match = /^\/api\/v1\/sessions\/([^/]+)(?:\/(.*))?$/.exec(path);
       if (!match) return fail(404, 'not_found', 'Unknown API endpoint');
       const id = match[1]!, tail = match[2];
-      recordsFor(id);
+      // A model switch can occur while a POST body is arriving. Check turn admission
+      // after the body has been read, against the selection used to start that turn.
+      if (req.method !== 'POST' || tail !== 'turns') recordsFor(id);
       if (req.method === 'GET' && tail === undefined) { json(res, 200, snapshot(id)); return; }
       if (req.method === 'GET' && tail === 'events') {
         const first = snapshot(id);
@@ -312,6 +367,7 @@ export async function startAgentServer(options: AgentServerOptions): Promise<Age
       }
       if (req.method === 'POST' && tail === 'turns') {
         const input = await body(req); fields(input, ['message']);
+        recordsFor(id);
         json(res, 202, { turn: start(id, messageText(input.message)) }); return;
       }
       if (req.method === 'POST' && tail === 'inputs') {

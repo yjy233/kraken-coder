@@ -38,7 +38,7 @@ npm run dev -- chat --server http://127.0.0.1:4317 --session SESSION_ID
 npm run dev -- exec --server http://127.0.0.1:4317 --message '/files' --json
 ```
 
-模型、算法模式、shell 开关和工作区由服务启动配置决定。审批策略可通过设置接口更改，提交任务只需发送消息。普通 `chat/exec` 不加 `--server` 时直接调用本地核心。
+模型由服务启动配置提供初值，Web 输入框下方的模型选择器可以为后续回合切换平台和模型。算法模式、shell 开关和工作区由服务启动配置决定。审批策略可通过设置接口更改。普通 `chat/exec` 不加 `--server` 时直接调用本地核心。
 
 ## 源码边界
 
@@ -79,6 +79,9 @@ flowchart LR
 | 方法与路径 | 输入 | 返回 / 行为 |
 | --- | --- | --- |
 | `GET /info` | — | 版本、工作区、provider/model、模式、审批策略、shell 是否启用 |
+| `GET /model-selection` | 可选查询参数 `provider` | 当前选择、各平台是否已配置 Key、上次使用的模型。指定平台时附该平台的模型目录 |
+| `POST /model-selection/catalog` | `{ provider, apiKey }` | 用新输入的 Key 试读模型目录 |
+| `POST /model-selection` | `{ provider, model, apiKey? }` | 保存平台、模型和可选的新 Key，下一回合使用所选模型 |
 | `GET /extensions` | — | 技能与插件清单、已解析的 Hook 及其来源、受支持的本地 MCP 服务名和加载诊断。查询不会执行 Hook 或启动 MCP 进程 |
 | `GET /settings` | — | 审批模式、两个时限（毫秒）、窗口配置、压缩比例和生效预算 |
 | `POST /settings` | 可单独提交 `approval`，也可提交两个时限字段、`contextWindowTokens` 和 `contextCompactRatio` | 保存到环境文件，从下一轮生效 |
